@@ -178,23 +178,26 @@ function RolesPermissionsPanel(){
   );
 }
 
-// Random 12-char temp password (letters+digits, always includes at least one digit) — used to
-// pre-fill the password field so admins aren't forced to invent one, while staying editable.
-const genTempPassword = () => {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let out = '';
-  for (let i=0;i<12;i++) out += chars[Math.floor(Math.random()*chars.length)];
-  return out;
+// Default password rule: first 4 letters of the person's name (lowercased, spaces/punctuation
+// stripped) + "1234" — e.g. "Abin C Pascal" -> "abin1234". Always exactly 8 characters, which meets
+// the 8-char minimum enforced below. Falls back to "user1234" when no name has been typed yet.
+const defaultPasswordFor = (name: string) => {
+  const letters = (name || '').replace(/[^a-zA-Z]/g, '').toLowerCase();
+  const base = letters.slice(0, 4) || 'user';
+  return base + '1234';
 };
 
 function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', password: genTempPassword() });
+  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') });
+  const [pwTouched, setPwTouched] = useState(false); // true once the admin manually edits the password field, so we stop overwriting it as the name changes
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [resetFor, setResetFor] = useState<any>(null); // { user, password }
   const [busy, setBusy] = useState<string|null>(null); // user id currently mid-action
   const [err, setErr] = useState('');
+
+  const setDraftName = (name: string) => setDraft(d => ({ ...d, name, password: pwTouched ? d.password : defaultPasswordFor(name) }));
 
   const addUser = async () => {
     setErr('');
@@ -205,7 +208,7 @@ function UsersPanel(){
     try {
       await db.createUserAccount(email, draft.password, name);
       patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, status:'Active', joined: S.TODAY_ISO }]);
-      setDraft({ name:'', email:'', designation:'Associate', password: genTempPassword() }); setAdding(false);
+      setDraft({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') }); setPwTouched(false); setAdding(false);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
@@ -249,7 +252,7 @@ function UsersPanel(){
         <S.Card className="p-3 mb-3 border-2 border-dashed border-brand-300 bg-brand-50/30">
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
-              <input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+              <input value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
               <input value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
@@ -258,8 +261,8 @@ function UsersPanel(){
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
-                <input value={draft.password} onChange={e=>setDraft(d=>({...d,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                <button type="button" title="Generate a new one" onClick={()=>setDraft(d=>({...d,password:genTempPassword()}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+                <input value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addUser} disabled={busy==='adding'} className="flex-1 text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
@@ -278,7 +281,7 @@ function UsersPanel(){
               <label className="text-[10px] text-slate-400">New Password</label>
               <input value={resetFor.password} onChange={e=>setResetFor(r=>({...r,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
             </div>
-            <button type="button" title="Generate a new one" onClick={()=>setResetFor(r=>({...r,password:genTempPassword()}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+            <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
             <button onClick={doReset} disabled={busy===resetFor.user.id} className="text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{busy===resetFor.user.id?'Resetting…':'Reset Password'}</button>
             <button onClick={()=>{setResetFor(null);setErr('');}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50 whitespace-nowrap">Cancel</button>
           </div>
@@ -312,7 +315,7 @@ function UsersPanel(){
                     {u.status==='Pending Approval' && (
                       <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
                     )}
-                    <button onClick={()=>{setErr('');setResetFor({user:u,password:genTempPassword()});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                    <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
                       <S.Icon name="lock" className="w-3.5 h-3.5"/>
                     </button>
                     <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
