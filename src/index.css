@@ -1,0 +1,98 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial;
+}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+.nav-scroll { scrollbar-width: thin; }
+
+/* ===== Dark mode =====
+   Rather than sprinkling `dark:` utility variants across every one of this app's hundreds of
+   className strings, we remap the small set of neutral/pastel Tailwind classes it actually reuses
+   (bg-white, bg-slate-50/100/200, text-slate-*, border-slate-*, the colored -50 alert/pastel tints,
+   etc.) with plain CSS selectors scoped under a `.dark` ancestor class. The `.dark` class itself is
+   toggled on the app's outermost wrapper div from React state (see App()). */
+.dark { color-scheme: dark; }
+.dark ::-webkit-scrollbar-thumb { background: #334155; }
+
+.dark .bg-white { background-color: #0f172a; }
+.dark .bg-slate-50 { background-color: #1e293b; }
+.dark .bg-slate-100 { background-color: #0b1220; }
+.dark .bg-slate-200 { background-color: #334155; }
+.dark .hover\:bg-slate-50:hover { background-color: #1e293b; }
+.dark .hover\:bg-slate-100:hover { background-color: #1e293b; }
+.dark .hover\:bg-slate-200:hover { background-color: #334155; }
+.dark .bg-slate-50\/60 { background-color: rgba(30,41,59,.6); }
+.dark .bg-slate-100\/40 { background-color: rgba(15,23,42,.4); }
+
+.dark .border-slate-100 { border-color: #1e293b; }
+.dark .border-slate-200 { border-color: #334155; }
+.dark .border-slate-300 { border-color: #475569; }
+.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #1e293b; }
+.dark .divide-slate-200 > :not([hidden]) ~ :not([hidden]) { border-color: #334155; }
+
+.dark .text-slate-800 { color: #f1f5f9; }
+.dark .text-slate-700 { color: #e2e8f0; }
+.dark .text-slate-600 { color: #cbd5e1; }
+.dark .text-slate-500 { color: #94a3b8; }
+.dark .text-slate-400 { color: #64748b; }
+.dark .text-slate-300 { color: #475569; }
+
+.dark input::placeholder, .dark textarea::placeholder { color: #64748b; }
+
+.dark .bg-brand-50 { background-color: rgba(59,91,219,.16); }
+.dark .bg-brand-50\/30 { background-color: rgba(59,91,219,.1); }
+.dark .bg-brand-50\/40 { background-color: rgba(59,91,219,.12); }
+.dark .bg-brand-50\/60 { background-color: rgba(59,91,219,.16); }
+.dark .bg-brand-100 { background-color: rgba(59,91,219,.24); }
+.dark .text-brand-700 { color: #a8bdff; }
+.dark .text-brand-600 { color: #a8bdff; }
+.dark .border-brand-200 { border-color: rgba(59,91,219,.4); }
+.dark .border-brand-300 { border-color: rgba(59,91,219,.55); }
+
+/* Pastel -50 tints (alert banners, AI Insight badges, notification icons, Bento cards) — each
+   gets a translucent dark-friendly background instead of the near-white default. */
+.dark .bg-rose-50 { background-color: rgba(244,63,94,.14); }
+.dark .bg-violet-50 { background-color: rgba(139,92,246,.14); }
+.dark .bg-violet-50\/60 { background-color: rgba(139,92,246,.1); }
+.dark .bg-amber-50 { background-color: rgba(245,158,11,.14); }
+.dark .bg-amber-50\/40 { background-color: rgba(245,158,11,.1); }
+.dark .bg-amber-50\/50 { background-color: rgba(245,158,11,.1); }
+.dark .bg-red-50 { background-color: rgba(239,68,68,.14); }
+.dark .bg-red-50\/40 { background-color: rgba(239,68,68,.1); }
+.dark .bg-red-50\/60 { background-color: rgba(239,68,68,.12); }
+.dark .bg-orange-50 { background-color: rgba(249,115,22,.14); }
+.dark .bg-blue-50 { background-color: rgba(59,130,246,.14); }
+.dark .bg-blue-50\/40 { background-color: rgba(59,130,246,.1); }
+.dark .bg-emerald-50 { background-color: rgba(16,185,129,.14); }
+.dark .bg-purple-50 { background-color: rgba(168,85,247,.14); }
+.dark .bg-sky-50\/50 { background-color: rgba(14,165,233,.1); }
+
+.dark .from-brand-50 { --tw-gradient-from: rgba(59,91,219,.14) var(--tw-gradient-from-position); }
+.dark .from-amber-50 { --tw-gradient-from: rgba(245,158,11,.14) var(--tw-gradient-from-position); }
+.dark .from-emerald-50 { --tw-gradient-from: rgba(16,185,129,.14) var(--tw-gradient-from-position); }
+.dark .from-purple-50 { --tw-gradient-from: rgba(168,85,247,.14) var(--tw-gradient-from-position); }
+.dark .from-red-50 { --tw-gradient-from: rgba(239,68,68,.14) var(--tw-gradient-from-position); }
+.dark .from-violet-50\/60 { --tw-gradient-from: rgba(139,92,246,.1) var(--tw-gradient-from-position); }
+.dark .to-white { --tw-gradient-to: #0f172a var(--tw-gradient-to-position); }
+
+.dark .ring-rose-100 { --tw-ring-color: rgba(244,63,94,.3); }
+.dark .ring-violet-100 { --tw-ring-color: rgba(139,92,246,.3); }
+.dark .ring-amber-100 { --tw-ring-color: rgba(245,158,11,.3); }
+.dark .ring-red-100 { --tw-ring-color: rgba(239,68,68,.3); }
+.dark .ring-orange-100 { --tw-ring-color: rgba(249,115,22,.3); }
+.dark .ring-blue-100 { --tw-ring-color: rgba(59,130,246,.3); }
+.dark .ring-emerald-100 { --tw-ring-color: rgba(16,185,129,.3); }
+
+.dark .text-amber-800 { color: #fbbf24; }
+.dark .text-emerald-800 { color: #34d399; }
+.dark .text-red-800 { color: #f87171; }
+.dark .border-amber-200 { border-color: rgba(245,158,11,.35); }
+.dark .border-emerald-200 { border-color: rgba(16,185,129,.35); }
+.dark .border-red-200 { border-color: rgba(239,68,68,.35); }
+.dark .border-blue-200 { border-color: rgba(59,130,246,.35); }
+.dark .border-violet-100 { border-color: rgba(139,92,246,.3); }
+.dark .border-violet-200 { border-color: rgba(139,92,246,.35); }
