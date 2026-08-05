@@ -47,3 +47,4 @@ split into a proper module structure:
   types incrementally (starting with the core `Project`/`Phase`/`Milestone` shapes) is a natural
   next step.
 
+
