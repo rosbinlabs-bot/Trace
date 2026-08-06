@@ -232,3 +232,6 @@ export const createUserAccount = (email: string, password: string, name: string)
 export const resetUserPassword = (email: string, password: string) => callManageUser({ action: 'resetPassword', email, password });
 export const setUserBanned = (email: string, banned: boolean) => callManageUser({ action: 'setBan', email, banned });
 export const deleteUserAccount = (email: string) => callManageUser({ action: 'delete', email });
+// currentEmail identifies which login to update; newEmail/newName are optional -- omit whichever didn't change.
+export const updateUserProfile = (currentEmail: string, updates: { name?: string; email?: string }) =>
+  callManageUser({ action: 'updateProfile', email: currentEmail, newName: updates.name, newEmail: updates.email });

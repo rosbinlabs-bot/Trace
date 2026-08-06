@@ -189,11 +189,15 @@ const defaultPasswordFor = (name: string) => {
 
 function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { role } = React.useContext(S.RoleContext); // 'admin' covers both Admin and Super Admin permission levels (see deriveRole in shared.tsx)
+  const canEditUsers = role === 'admin';
   const [adding, setAdding] = useState(false);
   const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') });
   const [pwTouched, setPwTouched] = useState(false); // true once the admin manually edits the password field, so we stop overwriting it as the name changes
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [resetFor, setResetFor] = useState<any>(null); // { user, password }
+  const [editingId, setEditingId] = useState<string|null>(null); // id of the user row currently being edited (Name/Email)
+  const [editDraft, setEditDraft] = useState<any>({ name:'', email:'' });
   const [busy, setBusy] = useState<string|null>(null); // user id currently mid-action
   const [err, setErr] = useState('');
 
@@ -236,6 +240,23 @@ function UsersPanel(){
     setErr(''); setBusy(resetFor.user.id);
     try { await db.resetUserPassword(resetFor.user.email, resetFor.password); setResetFor(null); }
     catch(e:any) { setErr(e.message || 'Could not reset that password.'); }
+    setBusy(null);
+  };
+  const startEdit = (u:any) => { setErr(''); setEditingId(u.id); setEditDraft({ name:u.name, email:u.email }); };
+  const cancelEdit = () => { setEditingId(null); setErr(''); };
+  const saveEdit = async (u:any) => {
+    const name = editDraft.name.trim(), email = editDraft.email.trim();
+    if(!name || !email) { setErr('Name and email are required.'); return; }
+    if(admin.users.some((x:any)=>x.id!==u.id && x.email.toLowerCase()===email.toLowerCase())) { setErr('A user with that email already exists.'); return; }
+    setErr(''); setBusy(u.id);
+    try {
+      // Email is the Supabase Auth sign-in identifier, so any change has to go through the edge
+      // function (service role key) to keep the login and the profile record in sync; Name alone
+      // could be a local-only patch, but routing both through the same call keeps this simple.
+      await db.updateUserProfile(u.email, { name, email });
+      patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,name,email}:x));
+      setEditingId(null);
+    } catch(e:any) { setErr(e.message || 'Could not update that user.'); }
     setBusy(null);
   };
 
@@ -294,14 +315,26 @@ function UsersPanel(){
             <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {admin.users.map((u:any)=>(
-              <tr key={u.id} className={u.status==='Suspended'?'bg-slate-50/60 opacity-70':u.status==='Pending Approval'?'bg-amber-50/40':''}>
-                <S.Td className="font-medium whitespace-nowrap">{u.name}</S.Td>
-                <S.Td className="text-slate-500 whitespace-nowrap">{u.email}</S.Td>
+            {admin.users.map((u:any)=>{
+              const isEditing = editingId===u.id;
+              return (
+              <tr key={u.id} className={u.status==='Suspended'?'bg-slate-50/60 opacity-70':u.status==='Pending Approval'?'bg-amber-50/40':isEditing?'bg-brand-50/30':''}>
+                <S.Td className="font-medium whitespace-nowrap">
+                  {isEditing
+                    ? <input autoFocus value={editDraft.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[8rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                    : u.name}
+                </S.Td>
+                <S.Td className="text-slate-500 whitespace-nowrap">
+                  {isEditing
+                    ? <input type="email" value={editDraft.email} onChange={e=>setEditDraft(d=>({...d,email:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[10rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                    : u.email}
+                </S.Td>
                 <S.Td>
-                  <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
-                    {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
-                  </select>
+                  {canEditUsers ? (
+                    <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+                      {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
+                    </select>
+                  ) : u.designation}
                 </S.Td>
                 <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge></S.Td>
                 <S.Td>
@@ -311,28 +344,41 @@ function UsersPanel(){
                 </S.Td>
                 <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
                 <S.Td>
-                  <div className="flex items-center gap-1 whitespace-nowrap">
-                    {u.status==='Pending Approval' && (
-                      <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
-                    )}
-                    <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
-                      <S.Icon name="lock" className="w-3.5 h-3.5"/>
-                    </button>
-                    <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
-                      <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
-                    </button>
-                    {confirmRemove===u.id ? (
-                      <span className="inline-flex items-center gap-1">
-                        <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
-                        <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
-                      </span>
-                    ) : (
-                      <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
-                    )}
-                  </div>
+                  {isEditing ? (
+                    <div className="flex items-center gap-1 whitespace-nowrap">
+                      <button onClick={()=>saveEdit(u)} disabled={busy===u.id} className="text-xs text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Saving…':'Save'}</button>
+                      <button onClick={cancelEdit} disabled={busy===u.id} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 whitespace-nowrap">
+                      {u.status==='Pending Approval' && (
+                        <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
+                      )}
+                      {canEditUsers && (
+                        <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                          <S.Icon name="edit" className="w-3.5 h-3.5"/>
+                        </button>
+                      )}
+                      <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                        <S.Icon name="lock" className="w-3.5 h-3.5"/>
+                      </button>
+                      <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
+                        <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
+                      </button>
+                      {confirmRemove===u.id ? (
+                        <span className="inline-flex items-center gap-1">
+                          <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
+                          <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
+                        </span>
+                      ) : (
+                        <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                      )}
+                    </div>
+                  )}
                 </S.Td>
               </tr>
-            ))}
+              );
+            })}
             {admin.users.length===0 && (
               <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No users yet — click "Add User" above.</td></tr>
             )}
