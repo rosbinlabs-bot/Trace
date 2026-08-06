@@ -40,7 +40,7 @@ export default function Team(){
   const blankDraft: any = { name:'', role:'', dept:'', util:0, avail:'', capacity:'40h/wk' };
   const [draft, setDraft] = useState<any>(blankDraft);
   const [confirmRemove, setConfirmRemove] = useState(null);
-  const [productivityOpen, setProductivityOpen] = useState(true);
+  const [productivityOpen, setProductivityOpen] = useState(false);
   const avgUtil = team.length ? Math.round(team.reduce((a,m)=>a+m.util,0)/team.length) : 0;
   const avgAvail = team.length ? Math.round(team.reduce((a,m)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
   const overloaded = team.filter(m=>m.util>90);
