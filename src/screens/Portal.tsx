@@ -4,6 +4,13 @@ import * as S from '../shared';
 export default function Portal(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  const { admin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  // Same Client Portal capability whether this is a Client-type login or a staff account previewing
+  // the portal (both reach this screen only once App.tsx's route Gate confirms capability >= View) --
+  // Edit or above unlocks the sign-off actions below; exactly View means read-only: the timeline is
+  // visible but Approve/Request Changes/Remark are hidden, since the account can only look, not act.
+  const canAct = S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'Edit');
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const [openPhase, setOpenPhase] = useState({});
   const [openMs, setOpenMs] = useState({});
@@ -48,6 +55,7 @@ export default function Portal(){
   const setRemark = (id, v) => setRemarkDraft(d => ({...d, [id]:v}));
 
   const clientApprove = (entry) => {
+    if(!canAct) return;
     const { level, ph, ms, item } = entry;
     if(level==='Milestone'){
       setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, status:'Implemented', review:'', clientApprovedImpl:true, clientAcceptedDate:S.TODAY_ISO})));
@@ -59,6 +67,7 @@ export default function Portal(){
   };
 
   const requestChanges = (entry) => {
+    if(!canAct) return;
     const { level, ph, ms, item } = entry;
     if(level==='Milestone'){
       setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, review:'', headApprovedImpl:false})));
@@ -72,6 +81,7 @@ export default function Portal(){
   };
 
   const postRemark = (entry) => {
+    if(!canAct) return;
     const { level, ph, item } = entry;
     const text = (remarkDraft[item.id]||'').trim();
     if(!text) return;
@@ -101,6 +111,10 @@ export default function Portal(){
         <div className="mb-4 text-xs text-slate-400">Signed in as Client Owner: <span className="font-medium text-slate-600">{clientOwner.name}</span>, {clientOwner.designation}</div>
       )}
 
+      {!canAct && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access to this portal — sign-off and remarks are turned off for this account.</div>
+      )}
+
       {/* Pending Your Approval — phase-wise, expandable */}
       <S.Card className="p-4 mb-5">
         <div className="flex items-center gap-2 mb-3">
@@ -124,18 +138,24 @@ export default function Portal(){
                 {open && (
                   <div className="px-4 py-3 border-t border-violet-100 bg-white space-y-3">
                     <div className="text-xs text-slate-500">Approved internally by the Project Head — your sign-off marks this <b>Implemented</b>, the most important status in the project.</div>
-                    <div className="flex gap-2">
-                      <button onClick={()=>clientApprove(entry)} className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg flex-1">✓ Approve as Implemented</button>
-                      <button onClick={()=>requestChanges(entry)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-lg flex-1">Request Changes</button>
-                    </div>
-                    <div>
-                      <label className="text-xs text-slate-400 block mb-1">Add a remark (sent as high priority to the whole project team)</label>
-                      <div className="flex gap-2">
-                        <textarea rows={2} value={remarkDraft[item.id]||''} onChange={e=>setRemark(item.id, e.target.value)} placeholder="Type your remark…"
-                          className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
-                        <button onClick={()=>postRemark(entry)} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 self-end whitespace-nowrap">Post Remark</button>
-                      </div>
-                    </div>
+                    {canAct ? (
+                      <>
+                        <div className="flex gap-2">
+                          <button onClick={()=>clientApprove(entry)} className="bg-emerald-500 hover:bg-emerald-600 text-white text-xs px-3 py-1.5 rounded-lg flex-1">✓ Approve as Implemented</button>
+                          <button onClick={()=>requestChanges(entry)} className="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs px-3 py-1.5 rounded-lg flex-1">Request Changes</button>
+                        </div>
+                        <div>
+                          <label className="text-xs text-slate-400 block mb-1">Add a remark (sent as high priority to the whole project team)</label>
+                          <div className="flex gap-2">
+                            <textarea rows={2} value={remarkDraft[item.id]||''} onChange={e=>setRemark(item.id, e.target.value)} placeholder="Type your remark…"
+                              className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"></textarea>
+                            <button onClick={()=>postRemark(entry)} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 self-end whitespace-nowrap">Post Remark</button>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="text-xs text-slate-400">This account has view-only access — sign-off and remarks are disabled.</div>
+                    )}
                   </div>
                 )}
               </div>

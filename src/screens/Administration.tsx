@@ -2,17 +2,18 @@ import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
 import * as db from '../db';
 
-function TagListSetting({ title, hint, field, placeholder, settings, setSettings }: any){
+function TagListSetting({ title, hint, field, placeholder, settings, setSettings, canEdit=true }: any){
   const [draft, setDraft] = useState('');
   const list = settings[field] || [];
   const add = () => {
+    if(!canEdit) return;
     const v = draft.trim();
     if(!v) return;
     if(list.some(x=>x.toLowerCase()===v.toLowerCase())){ setDraft(''); return; }
     setSettings(s => ({ ...s, [field]: [...(s[field]||[]), v] }));
     setDraft('');
   };
-  const remove = (i) => setSettings(s => ({ ...s, [field]: (s[field]||[]).filter((_,j)=>j!==i) }));
+  const remove = (i) => { if(!canEdit) return; setSettings(s => ({ ...s, [field]: (s[field]||[]).filter((_,j)=>j!==i) })); };
   return (
     <S.Card className="p-4">
       <div className="font-semibold text-slate-800">{title}</div>
@@ -20,16 +21,18 @@ function TagListSetting({ title, hint, field, placeholder, settings, setSettings
       <div className="flex flex-wrap items-center gap-1.5 mb-3">
         {list.map((v,i)=>(
           <span key={i} className="inline-flex items-center gap-1 bg-violet-100 text-violet-700 rounded-full px-2 py-0.5 text-[11px]">
-            {v}<button onClick={()=>remove(i)} className="text-violet-400 hover:text-violet-600">×</button>
+            {v}{canEdit && <button onClick={()=>remove(i)} className="text-violet-400 hover:text-violet-600">×</button>}
           </span>
         ))}
         {list.length===0 && <span className="text-xs text-slate-400">None yet.</span>}
       </div>
-      <div className="flex items-center gap-1.5">
-        <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();add();}}}
-          placeholder={placeholder} className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-        <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
-      </div>
+      {canEdit && (
+        <div className="flex items-center gap-1.5">
+          <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();add();}}}
+            placeholder={placeholder} className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
+        </div>
+      )}
     </S.Card>
   );
 }
@@ -38,10 +41,17 @@ function TagListSetting({ title, hint, field, placeholder, settings, setSettings
 // and Engagement Type dropdowns. Lives under Administration -> Project Settings.
 function ProjectSettingsPanel(){
   const { settings, setSettings } = React.useContext(S.SettingsContext);
+  const { admin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  // Every Administration sub-panel independently re-checks the Administration module capability
+  // (rather than trusting a parent wrapper) so it stays correctly locked down even if reached some
+  // other way -- View means read/browse only, Edit or above is required to actually change anything.
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
 
   const [tierCode, setTierCode] = useState('');
   const [tierLabel, setTierLabel] = useState('');
   const addTier = () => {
+    if(!canEdit) return;
     const code = tierCode.trim().toUpperCase();
     const label = tierLabel.trim();
     if(!code || !label) return;
@@ -49,15 +59,16 @@ function ProjectSettingsPanel(){
     setSettings(s => ({ ...s, categories:[...s.categories, { code, label }] }));
     setTierCode(''); setTierLabel('');
   };
-  const removeTier = (code) => setSettings(s => ({ ...s, categories: s.categories.filter(c=>c.code!==code) }));
-  const editTierLabel = (code, label) => setSettings(s => ({ ...s, categories: s.categories.map(c=>c.code===code?{...c,label}:c) }));
-  const resetDefaults = () => setSettings(S.DEFAULT_PROJECT_SETTINGS);
+  const removeTier = (code) => { if(!canEdit) return; setSettings(s => ({ ...s, categories: s.categories.filter(c=>c.code!==code) })); };
+  const editTierLabel = (code, label) => { if(!canEdit) return; setSettings(s => ({ ...s, categories: s.categories.map(c=>c.code===code?{...c,label}:c) })); };
+  const resetDefaults = () => { if(canEdit) setSettings(S.DEFAULT_PROJECT_SETTINGS); };
 
   return (
     <div>
+      {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access here — ask a Super Admin for Edit access on Administration to change these lists.</div>}
       <div className="flex justify-between items-start mb-4 gap-3 flex-wrap">
         <div className="text-sm text-slate-500 max-w-2xl">These lists power the dropdowns on the New Project form — Category, Industry, Consulting Category and Engagement Type. Add or remove options here and they apply immediately across the app.</div>
-        <button onClick={resetDefaults} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset to Defaults</button>
+        {canEdit && <button onClick={resetDefaults} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset to Defaults</button>}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <S.Card className="p-4">
@@ -67,26 +78,28 @@ function ProjectSettingsPanel(){
             {settings.categories.map(c=>(
               <div key={c.code} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5">
                 <span className="font-mono text-xs font-semibold text-slate-500 w-6">{c.code}</span>
-                <input value={c.label} onChange={e=>editTierLabel(c.code, e.target.value)}
-                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500" />
-                <button onClick={()=>removeTier(c.code)} className="text-xs text-red-400 hover:text-red-600">✕</button>
+                <input value={c.label} disabled={!canEdit} onChange={e=>editTierLabel(c.code, e.target.value)}
+                  className="flex-1 border border-slate-200 rounded-lg px-2 py-1 text-sm bg-white disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500" />
+                {canEdit && <button onClick={()=>removeTier(c.code)} className="text-xs text-red-400 hover:text-red-600">✕</button>}
               </div>
             ))}
             {settings.categories.length===0 && <div className="text-xs text-slate-400">No categories defined yet.</div>}
           </div>
-          <div className="flex items-center gap-1.5">
-            <input value={tierCode} onChange={e=>setTierCode(e.target.value)} placeholder="Code (e.g. D)" maxLength={3}
-              className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <input value={tierLabel} onChange={e=>setTierLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addTier();}}} placeholder="Label (e.g. Strategic)"
-              className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
-            <button onClick={addTier} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
-          </div>
+          {canEdit && (
+            <div className="flex items-center gap-1.5">
+              <input value={tierCode} onChange={e=>setTierCode(e.target.value)} placeholder="Code (e.g. D)" maxLength={3}
+                className="w-24 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <input value={tierLabel} onChange={e=>setTierLabel(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addTier();}}} placeholder="Label (e.g. Strategic)"
+                className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+              <button onClick={addTier} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
+            </div>
+          )}
         </S.Card>
 
-        <TagListSetting title="Industry" hint="Top industries shown in the New Project Industry dropdown. New industries can also be added inline from the form itself." field="industries" placeholder="e.g. Aviation" settings={settings} setSettings={setSettings} />
-        <TagListSetting title="Consulting Category" hint="Options offered in the New Project Consulting Category dropdown." field="consultingCategories" placeholder="e.g. Strategy Advisory" settings={settings} setSettings={setSettings} />
-        <TagListSetting title="Engagement Type" hint="Options offered in the New Project Engagement Type dropdown." field="engagementTypes" placeholder="e.g. Retainer Plus" settings={settings} setSettings={setSettings} />
-        <TagListSetting title="Phase / Milestone / Sub Task Status" hint="Shared status vocabulary used across Phase Management (Not Started / In Progress are picked freely; Completed and Implemented still require their normal approvals)." field="itemStatuses" placeholder="e.g. Blocked" settings={settings} setSettings={setSettings} />
+        <TagListSetting title="Industry" hint="Top industries shown in the New Project Industry dropdown. New industries can also be added inline from the form itself." field="industries" placeholder="e.g. Aviation" settings={settings} setSettings={setSettings} canEdit={canEdit} />
+        <TagListSetting title="Consulting Category" hint="Options offered in the New Project Consulting Category dropdown." field="consultingCategories" placeholder="e.g. Strategy Advisory" settings={settings} setSettings={setSettings} canEdit={canEdit} />
+        <TagListSetting title="Engagement Type" hint="Options offered in the New Project Engagement Type dropdown." field="engagementTypes" placeholder="e.g. Retainer Plus" settings={settings} setSettings={setSettings} canEdit={canEdit} />
+        <TagListSetting title="Phase / Milestone / Sub Task Status" hint="Shared status vocabulary used across Phase Management (Not Started / In Progress are picked freely; Completed and Implemented still require their normal approvals)." field="itemStatuses" placeholder="e.g. Blocked" settings={settings} setSettings={setSettings} canEdit={canEdit} />
       </div>
     </div>
   );
@@ -95,40 +108,48 @@ function ProjectSettingsPanel(){
 /* ===================== Administration sub-panels ===================== */
 
 // Small reusable "simple tag list" editor — add/remove plain strings — used for template lists.
-function SimpleListEditor({ list, onChange, placeholder }: any){
+function SimpleListEditor({ list, onChange, placeholder, canEdit=true }: any){
   const [draft, setDraft] = useState('');
-  const add = () => { const v=draft.trim(); if(!v) return; onChange([...(list||[]), v]); setDraft(''); };
-  const remove = (i) => onChange(list.filter((_,idx)=>idx!==i));
+  const add = () => { if(!canEdit) return; const v=draft.trim(); if(!v) return; onChange([...(list||[]), v]); setDraft(''); };
+  const remove = (i) => { if(!canEdit) return; onChange(list.filter((_,idx)=>idx!==i)); };
   return (
     <div>
       <div className="space-y-1.5 mb-2">
         {(list||[]).map((v,i)=>(
           <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
             <span className="flex-1 text-sm text-slate-700 truncate">{v}</span>
-            <button onClick={()=>remove(i)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+            {canEdit && <button onClick={()=>remove(i)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
           </div>
         ))}
         {(!list||list.length===0) && <div className="text-xs text-slate-400">Nothing added yet.</div>}
       </div>
-      <div className="flex gap-1.5">
-        <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();add();}}} placeholder={placeholder||'Add new…'}
-          className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-        <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-1.5">
+          <input value={draft} onChange={e=>setDraft(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();add();}}} placeholder={placeholder||'Add new…'}
+            className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
+        </div>
+      )}
     </div>
   );
 }
 
 function RolesPermissionsPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
-  const setLevel = (designation, level) => patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level }));
-  const setCap = (mod, level, cap) => patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } }));
-  const resetDefaults = () => { patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); };
+  const { email } = React.useContext(S.CurrentUserContext);
+  // Deliberately a HIGHER bar than the rest of Administration (Edit): this panel rewrites the rules
+  // themselves, so an Edit-level Admin (who can otherwise manage Users/Company/Billing) still can't
+  // grant themselves more access by editing the matrix -- only Full (Super Admin by default) can.
+  const canEditRoles = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Full');
+  const setLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level })); };
+  const setCap = (mod, level, cap) => { if(!canEditRoles) return; patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } })); };
+  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); };
   return (
     <div className="space-y-5">
+      {!canEditRoles && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access to Roles & Permissions — only a Super Admin (Full capability on Administration) can change designation levels or the capability matrix.</div>}
       <div className="flex justify-between items-start gap-3 flex-wrap">
-        <div className="text-sm text-slate-500 max-w-2xl">Every person is assigned one <b>designation</b>. Each designation maps to exactly one <b>permission level</b>, which drives the capability matrix below. Both are fully editable.</div>
-        <button onClick={resetDefaults} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset to Defaults</button>
+        <div className="text-sm text-slate-500 max-w-2xl">Every person is assigned one <b>designation</b>. Each designation maps to exactly one <b>permission level</b>, which drives the capability matrix below. Both are fully editable. The <b>Client</b> column is separate — it's not assigned via designation, it applies automatically to every Client-type login added from Administration → Users → Add Client.</div>
+        {canEditRoles && <button onClick={resetDefaults} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset to Defaults</button>}
       </div>
 
       <S.Card className="p-4">
@@ -138,8 +159,8 @@ function RolesPermissionsPanel(){
           {S.DESIGNATIONS.map(d=>(
             <div key={d} className="border border-slate-200 rounded-lg p-3">
               <div className="text-sm font-medium text-slate-700 mb-2">{d}</div>
-              <select value={admin.designationLevel[d]} onChange={e=>setLevel(d, e.target.value)}
-                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <select value={admin.designationLevel[d]} disabled={!canEditRoles} onChange={e=>setLevel(d, e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.PERMISSION_LEVELS.map(l=><option key={l} value={l}>{l}</option>)}
               </select>
             </div>
@@ -149,21 +170,21 @@ function RolesPermissionsPanel(){
 
       <S.Card className="p-4 overflow-x-auto">
         <div className="font-semibold text-slate-800 mb-1 flex items-center gap-2"><S.Icon name="shield" className="w-4 h-4 text-slate-400"/> Capability Matrix</div>
-        <div className="text-xs text-slate-400 mb-3">What each permission level can do, per module. Click any cell to change it.</div>
-        <table className="w-full text-sm min-w-[720px]">
+        <div className="text-xs text-slate-400 mb-3">What each permission level — and Client logins — can do, per module. Click any cell to change it.</div>
+        <table className="w-full text-sm min-w-[820px]">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr><S.Th>Module</S.Th>{S.PERMISSION_LEVELS.map(l=><S.Th key={l}>{l}</S.Th>)}</tr>
+            <tr><S.Th>Module</S.Th>{S.MATRIX_COLUMNS.map(l=><S.Th key={l}>{l}</S.Th>)}</tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {S.PERMISSION_MODULES.map(mod=>(
               <tr key={mod}>
                 <S.Td className="font-medium whitespace-nowrap">{mod}</S.Td>
-                {S.PERMISSION_LEVELS.map(level=>{
+                {S.MATRIX_COLUMNS.map(level=>{
                   const cap = (admin.matrix[mod]||{})[level] || 'None';
                   return (
                     <S.Td key={level}>
-                      <select value={cap} onChange={e=>setCap(mod, level, e.target.value)}
-                        className={`text-xs font-medium rounded-full px-2 py-1 border-0 focus:outline-none focus:ring-2 focus:ring-brand-400 ${S.CAPABILITY_COLOR[cap]}`}>
+                      <select value={cap} disabled={!canEditRoles} onChange={e=>setCap(mod, level, e.target.value)}
+                        className={`text-xs font-medium rounded-full px-2 py-1 border-0 disabled:opacity-70 focus:outline-none focus:ring-2 focus:ring-brand-400 ${S.CAPABILITY_COLOR[cap]}`}>
                         {S.CAPABILITY_LEVELS.map(c=><option key={c} value={c}>{c}</option>)}
                       </select>
                     </S.Td>
@@ -190,8 +211,13 @@ const defaultPasswordFor = (name: string) => {
 function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const { role } = React.useContext(S.RoleContext); // 'admin' covers both Admin and Super Admin permission levels (see deriveRole in shared.tsx)
-  const canEditUsers = role === 'admin';
+  const { email } = React.useContext(S.CurrentUserContext);
+  // Derived from the actual Administration capability (configurable in Roles & Permissions), not a
+  // hardcoded role==='admin' shortcut -- by default Admin permission level is 'View' on Administration
+  // (browse only) and Super Admin is 'Full', so only Super Admin can manage users out of the box. A
+  // Super Admin can grant Admin-level staff Edit (or Full) on Administration if they want them to
+  // manage users too.
+  const canEditUsers = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   // addMode drives the two-step "+ Add User" flow: null (closed) -> 'menu' (choose Teammate vs
   // Client) -> 'teammate' or 'client' (the actual form). Teammate keeps the original single-step
   // form/behavior untouched; Client is new (see addClient below).
@@ -211,6 +237,7 @@ function UsersPanel(){
   const setClientDraftName = (name: string) => setClientDraft(d => ({ ...d, name, password: clientPwTouched ? d.password : defaultPasswordFor(name) }));
 
   const addUser = async () => {
+    if(!canEditUsers) return;
     setErr('');
     const name = draft.name.trim(), email = draft.email.trim();
     if(!name || !email || !draft.password || draft.password.length<8) { setErr('Name, email and an 8+ character password are required.'); return; }
@@ -227,6 +254,7 @@ function UsersPanel(){
   // table in App.tsx's Shell) to the Client Portal + Project Structure for exactly ONE tagged
   // project — no designation/permission level, since it never touches the staff permission ladder.
   const addClient = async () => {
+    if(!canEditUsers) return;
     setErr('');
     const name = clientDraft.name.trim(), email = clientDraft.email.trim();
     if(!name || !email || !clientDraft.projectId) { setErr('Name, email and a project are required.'); return; }
@@ -240,10 +268,11 @@ function UsersPanel(){
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
-  const setDesignation = (id, designation) => patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u));
-  const setClientProject = (id, projectId) => patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u));
-  const approveUser = (u:any) => patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x));
+  const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); };
+  const setClientProject = (id, projectId) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u)); };
+  const approveUser = (u:any) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x)); };
   const toggleSuspend = async (u:any) => {
+    if(!canEditUsers) return;
     setErr(''); setBusy(u.id);
     try {
       await db.setUserBanned(u.email, u.status==='Active');
@@ -252,6 +281,7 @@ function UsersPanel(){
     setBusy(null);
   };
   const removeUser = async (u:any) => {
+    if(!canEditUsers) return;
     setErr(''); setBusy(u.id);
     try {
       await db.deleteUserAccount(u.email);
@@ -261,15 +291,17 @@ function UsersPanel(){
     setBusy(null);
   };
   const doReset = async () => {
+    if(!canEditUsers) return;
     if(!resetFor || !resetFor.password || resetFor.password.length<8) { setErr('Password must be at least 8 characters.'); return; }
     setErr(''); setBusy(resetFor.user.id);
     try { await db.resetUserPassword(resetFor.user.email, resetFor.password); setResetFor(null); }
     catch(e:any) { setErr(e.message || 'Could not reset that password.'); }
     setBusy(null);
   };
-  const startEdit = (u:any) => { setErr(''); setEditingId(u.id); setEditDraft({ name:u.name, email:u.email }); };
+  const startEdit = (u:any) => { if(!canEditUsers) return; setErr(''); setEditingId(u.id); setEditDraft({ name:u.name, email:u.email }); };
   const cancelEdit = () => { setEditingId(null); setErr(''); };
   const saveEdit = async (u:any) => {
+    if(!canEditUsers) return;
     const name = editDraft.name.trim(), email = editDraft.email.trim();
     if(!name || !email) { setErr('Name and email are required.'); return; }
     if(admin.users.some((x:any)=>x.id!==u.id && x.email.toLowerCase()===email.toLowerCase())) { setErr('A user with that email already exists.'); return; }
@@ -288,13 +320,14 @@ function UsersPanel(){
   return (
     <div>
       <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
-        <div className="text-sm text-slate-500 max-w-2xl">Everyone who can sign in, their designation and derived permission level. Deactivate blocks sign-in but keeps the record; Remove deletes the login entirely. Only Admin/Super Admin accounts can manage users.</div>
-        <button onClick={()=>setAddMode(m=>m?null:'menu')} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add User</button>
+        <div className="text-sm text-slate-500 max-w-2xl">Everyone who can sign in, their designation and derived permission level. Deactivate blocks sign-in but keeps the record; Remove deletes the login entirely.</div>
+        {canEditUsers && <button onClick={()=>setAddMode(m=>m?null:'menu')} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add User</button>}
       </div>
 
+      {!canEditUsers && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">You have view-only access here — ask a Super Admin for Edit access on Administration to manage users.</div>}
       {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</div>}
 
-      {addMode==='menu' && (
+      {canEditUsers && addMode==='menu' && (
         <S.Card className="p-3 mb-3 border-2 border-dashed border-brand-300 bg-brand-50/30">
           <div className="text-xs text-slate-500 mb-2">What kind of user are you adding?</div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -439,28 +472,31 @@ function UsersPanel(){
                     </div>
                   ) : (
                     <div className="flex items-center gap-1 whitespace-nowrap">
-                      {u.status==='Pending Approval' && (
+                      {canEditUsers && u.status==='Pending Approval' && (
                         <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
                       )}
                       {canEditUsers && (
-                        <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
-                          <S.Icon name="edit" className="w-3.5 h-3.5"/>
-                        </button>
+                        <>
+                          <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                            <S.Icon name="edit" className="w-3.5 h-3.5"/>
+                          </button>
+                          <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                            <S.Icon name="lock" className="w-3.5 h-3.5"/>
+                          </button>
+                          <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
+                            <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
+                          </button>
+                          {confirmRemove===u.id ? (
+                            <span className="inline-flex items-center gap-1">
+                              <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
+                              <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
+                            </span>
+                          ) : (
+                            <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                          )}
+                        </>
                       )}
-                      <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
-                        <S.Icon name="lock" className="w-3.5 h-3.5"/>
-                      </button>
-                      <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
-                        <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
-                      </button>
-                      {confirmRemove===u.id ? (
-                        <span className="inline-flex items-center gap-1">
-                          <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
-                          <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
-                        </span>
-                      ) : (
-                        <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
-                      )}
+                      {!canEditUsers && <span className="text-xs text-slate-300">—</span>}
                     </div>
                   )}
                 </S.Td>
@@ -481,38 +517,41 @@ function UsersPanel(){
 // definition gets a fresh function identity every keystroke, which makes React unmount+remount the
 // underlying <input> and drop focus after every character (same bug class documented for
 // ProjectMaster's TextF/NumF/etc. in shared.tsx; this was the Administration -> Company version of it).
-const CompanyField = ({label, value, type, onChange}: any) => (
+const CompanyField = ({label, value, type, onChange, disabled}: any) => (
   <div className="flex flex-col gap-1">
     <label className="text-[10px] text-slate-400">{label}</label>
-    <input type={type||'text'} value={value||''} onChange={e=>onChange(e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+    <input type={type||'text'} value={value||''} disabled={disabled} onChange={e=>onChange(e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
   </div>
 );
 
 function CompanyPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const c = admin.company;
-  const set = (k,v) => patchAdmin('company', co => ({ ...co, [k]:v }));
+  const set = (k,v) => { if(!canEdit) return; patchAdmin('company', co => ({ ...co, [k]:v })); };
   return (
     <div>
+      {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access here — ask a Super Admin for Edit access on Administration to change the company profile.</div>}
       <div className="text-sm text-slate-500 mb-4 max-w-2xl flex items-center gap-2"><S.Icon name="building" className="w-4 h-4 text-slate-400 shrink-0"/> Legal, contact and localization details used across invoices, exports and client-facing documents. Changes save instantly.</div>
       <S.Card className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <CompanyField label="Legal Name" value={c.legalName} onChange={v=>set('legalName',v)}/>
-        <CompanyField label="Display Name" value={c.displayName} onChange={v=>set('displayName',v)}/>
-        <CompanyField label="GSTIN" value={c.gstin} onChange={v=>set('gstin',v)}/>
-        <CompanyField label="CIN" value={c.cin} onChange={v=>set('cin',v)}/>
-        <CompanyField label="Website" value={c.website} onChange={v=>set('website',v)}/>
-        <CompanyField label="Industry" value={c.industry} onChange={v=>set('industry',v)}/>
-        <CompanyField label="Founded" value={c.founded} onChange={v=>set('founded',v)}/>
-        <CompanyField label="Employee Count" value={c.employeeCount} onChange={v=>set('employeeCount',v)}/>
-        <CompanyField label="Primary Contact" value={c.primaryContact} onChange={v=>set('primaryContact',v)}/>
-        <CompanyField label="Support Email" type="email" value={c.supportEmail} onChange={v=>set('supportEmail',v)}/>
-        <CompanyField label="Phone" value={c.phone} onChange={v=>set('phone',v)}/>
-        <CompanyField label="Time Zone" value={c.timezone} onChange={v=>set('timezone',v)}/>
-        <CompanyField label="Currency" value={c.currency} onChange={v=>set('currency',v)}/>
-        <CompanyField label="Fiscal Year Start" value={c.fiscalYearStart} onChange={v=>set('fiscalYearStart',v)}/>
+        <CompanyField label="Legal Name" value={c.legalName} disabled={!canEdit} onChange={v=>set('legalName',v)}/>
+        <CompanyField label="Display Name" value={c.displayName} disabled={!canEdit} onChange={v=>set('displayName',v)}/>
+        <CompanyField label="GSTIN" value={c.gstin} disabled={!canEdit} onChange={v=>set('gstin',v)}/>
+        <CompanyField label="CIN" value={c.cin} disabled={!canEdit} onChange={v=>set('cin',v)}/>
+        <CompanyField label="Website" value={c.website} disabled={!canEdit} onChange={v=>set('website',v)}/>
+        <CompanyField label="Industry" value={c.industry} disabled={!canEdit} onChange={v=>set('industry',v)}/>
+        <CompanyField label="Founded" value={c.founded} disabled={!canEdit} onChange={v=>set('founded',v)}/>
+        <CompanyField label="Employee Count" value={c.employeeCount} disabled={!canEdit} onChange={v=>set('employeeCount',v)}/>
+        <CompanyField label="Primary Contact" value={c.primaryContact} disabled={!canEdit} onChange={v=>set('primaryContact',v)}/>
+        <CompanyField label="Support Email" type="email" value={c.supportEmail} disabled={!canEdit} onChange={v=>set('supportEmail',v)}/>
+        <CompanyField label="Phone" value={c.phone} disabled={!canEdit} onChange={v=>set('phone',v)}/>
+        <CompanyField label="Time Zone" value={c.timezone} disabled={!canEdit} onChange={v=>set('timezone',v)}/>
+        <CompanyField label="Currency" value={c.currency} disabled={!canEdit} onChange={v=>set('currency',v)}/>
+        <CompanyField label="Fiscal Year Start" value={c.fiscalYearStart} disabled={!canEdit} onChange={v=>set('fiscalYearStart',v)}/>
         <div className="flex flex-col gap-1 sm:col-span-2 lg:col-span-3">
           <label className="text-[10px] text-slate-400">Registered Address</label>
-          <textarea value={c.address||''} onChange={e=>set('address',e.target.value)} rows={2} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <textarea value={c.address||''} disabled={!canEdit} onChange={e=>set('address',e.target.value)} rows={2} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
         </div>
       </S.Card>
     </div>
@@ -521,16 +560,22 @@ function CompanyPanel(){
 
 function BillingPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  // Billing lives inside Administration for this panel (the Financials & Billing matrix module
+  // instead gates the Payment Receipts / Billing Tracker sections inside a project in Project Master),
+  // so this respects the Administration capability like the rest of these panels.
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const b = admin.billing;
-  const set = (k,v) => patchAdmin('billing', bl => ({ ...bl, [k]:v }));
+  const set = (k,v) => { if(!canEdit) return; patchAdmin('billing', bl => ({ ...bl, [k]:v })); };
   const daysToRenewal = b.plan==='Annual' ? S.daysLeft(b.renewalDate) : null;
   return (
     <div className="space-y-4">
+      {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access here — ask a Super Admin for Edit access on Administration to change billing.</div>}
       <S.Card className="p-4">
         <div className="font-semibold text-slate-800 mb-3">Plan</div>
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit mb-4">
           {['Annual','Forever'].map(p=>(
-            <button key={p} onClick={()=>set('plan',p)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${b.plan===p?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>{p}</button>
+            <button key={p} disabled={!canEdit} onClick={()=>set('plan',p)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors disabled:cursor-not-allowed ${b.plan===p?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>{p}</button>
           ))}
         </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
@@ -546,7 +591,7 @@ function BillingPanel(){
           <div className={`text-sm rounded-lg px-3 py-2 flex items-center gap-2 ${daysToRenewal<=30?'bg-amber-50 text-amber-800 border border-amber-200':'bg-slate-50 text-slate-600 border border-slate-200'}`}>
             <S.Icon name="refresh" className="w-4 h-4 shrink-0"/> Annual subscription renews on <b className="mx-1">{b.renewalDate}</b> ({daysToRenewal}d away).
             <label className="ml-auto inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
-              <input type="checkbox" checked={!!b.autoRenew} onChange={e=>set('autoRenew', e.target.checked)}/> Auto-renew
+              <input type="checkbox" checked={!!b.autoRenew} disabled={!canEdit} onChange={e=>set('autoRenew', e.target.checked)}/> Auto-renew
             </label>
           </div>
         ) : (
@@ -559,11 +604,11 @@ function BillingPanel(){
       <S.Card className="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label className="text-[10px] text-slate-400">Payment Method</label>
-          <input value={b.paymentMethod} onChange={e=>set('paymentMethod',e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <input value={b.paymentMethod} disabled={!canEdit} onChange={e=>set('paymentMethod',e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
         </div>
         <div className="flex flex-col gap-1">
           <label className="text-[10px] text-slate-400">Billing Contact</label>
-          <input value={b.billingContact} onChange={e=>set('billingContact',e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <input value={b.billingContact} disabled={!canEdit} onChange={e=>set('billingContact',e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
         </div>
       </S.Card>
 
@@ -584,9 +629,12 @@ function BillingPanel(){
 
 function NotificationsPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
-  const toggle = (key, channel) => patchAdmin('notifications', n => ({ ...n, categories: n.categories.map(c=>c.key===key?{...c,[channel]:!c[channel]}:c) }));
+  const { email } = React.useContext(S.CurrentUserContext);
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
+  const toggle = (key, channel) => { if(!canEdit) return; patchAdmin('notifications', n => ({ ...n, categories: n.categories.map(c=>c.key===key?{...c,[channel]:!c[channel]}:c) })); };
   return (
     <div>
+      {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access here — ask a Super Admin for Edit access on Administration to change notification rules.</div>}
       <div className="text-sm text-slate-500 mb-4 max-w-2xl">Choose how each category of activity reaches your team — by email, in-app, or both.</div>
       <S.Card className="overflow-hidden">
         <table className="w-full text-sm">
@@ -595,8 +643,8 @@ function NotificationsPanel(){
             {admin.notifications.categories.map(c=>(
               <tr key={c.key}>
                 <S.Td className="font-medium">{c.label}</S.Td>
-                <S.Td><input type="checkbox" checked={c.email} onChange={()=>toggle(c.key,'email')}/></S.Td>
-                <S.Td><input type="checkbox" checked={c.inApp} onChange={()=>toggle(c.key,'inApp')}/></S.Td>
+                <S.Td><input type="checkbox" checked={c.email} disabled={!canEdit} onChange={()=>toggle(c.key,'email')}/></S.Td>
+                <S.Td><input type="checkbox" checked={c.inApp} disabled={!canEdit} onChange={()=>toggle(c.key,'inApp')}/></S.Td>
               </tr>
             ))}
           </tbody>
@@ -609,47 +657,51 @@ function NotificationsPanel(){
 // Branch and Holiday Calendar editors each need their own draft-input state, so — same reasoning
 // as TagListSetting/SimpleListEditor — they're standalone components rather than inline hooks
 // inside a switch-case (which would violate the Rules of Hooks as `item` changes).
-function BranchEditor({ branches, setExtras }: any){
+function BranchEditor({ branches, setExtras, canEdit=true }: any){
   const [name,setName]=useState(''), [city,setCity]=useState('');
-  const add=()=>{ if(!name.trim())return; setExtras('branches', b=>[...b,{id:S.uid('BR'),name:name.trim(),city:city.trim()}]); setName(''); setCity(''); };
-  const remove=(id)=>setExtras('branches', b=>b.filter(x=>x.id!==id));
+  const add=()=>{ if(!canEdit || !name.trim())return; setExtras('branches', b=>[...b,{id:S.uid('BR'),name:name.trim(),city:city.trim()}]); setName(''); setCity(''); };
+  const remove=(id)=>{ if(!canEdit) return; setExtras('branches', b=>b.filter(x=>x.id!==id)); };
   return (
     <div>
       <div className="space-y-1.5 mb-3">
         {branches.map(b=>(
           <div key={b.id} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
             <span className="flex-1 text-sm text-slate-700">{b.name}</span><span className="text-xs text-slate-400">{b.city}</span>
-            <button onClick={()=>remove(b.id)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+            {canEdit && <button onClick={()=>remove(b.id)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
           </div>
         ))}
       </div>
-      <div className="flex gap-1.5">
-        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Branch name" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-        <input value={city} onChange={e=>setCity(e.target.value)} placeholder="City" className="w-32 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-        <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5">+ Add</button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-1.5">
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Branch name" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <input value={city} onChange={e=>setCity(e.target.value)} placeholder="City" className="w-32 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5">+ Add</button>
+        </div>
+      )}
     </div>
   );
 }
-function HolidayEditor({ holidays, setExtras }: any){
+function HolidayEditor({ holidays, setExtras, canEdit=true }: any){
   const [date,setDate]=useState(''), [name,setName]=useState('');
-  const add=()=>{ if(!date||!name.trim())return; setExtras('holidays', h=>[...h,{date,name:name.trim()}].sort((a,b)=>a.date.localeCompare(b.date))); setDate(''); setName(''); };
-  const remove=(idx)=>setExtras('holidays', h=>h.filter((_,i)=>i!==idx));
+  const add=()=>{ if(!canEdit || !date||!name.trim())return; setExtras('holidays', h=>[...h,{date,name:name.trim()}].sort((a,b)=>a.date.localeCompare(b.date))); setDate(''); setName(''); };
+  const remove=(idx)=>{ if(!canEdit) return; setExtras('holidays', h=>h.filter((_,i)=>i!==idx)); };
   return (
     <div>
       <div className="space-y-1.5 mb-3">
         {holidays.map((h,i)=>(
           <div key={i} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm">
             <span className="font-mono text-xs text-slate-400 w-24">{h.date}</span><span className="flex-1 text-slate-700">{h.name}</span>
-            <button onClick={()=>remove(i)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+            {canEdit && <button onClick={()=>remove(i)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
           </div>
         ))}
       </div>
-      <div className="flex gap-1.5">
-        <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-        <input value={name} onChange={e=>setName(e.target.value)} placeholder="Holiday name" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-        <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5">+ Add</button>
-      </div>
+      {canEdit && (
+        <div className="flex gap-1.5">
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="Holiday name" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+          <button onClick={add} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5">+ Add</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -661,8 +713,10 @@ function AdminOverviewDetail({ item, setTab }: any){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { settings, setSettings } = React.useContext(S.SettingsContext);
   const { team } = React.useContext(S.TeamDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const extras = admin.extras;
-  const setExtras = (k, updater) => patchAdmin('extras', ex => ({ ...ex, [k]: typeof updater==='function'?updater(ex[k]):updater }));
+  const setExtras = (k, updater) => { if(!canEdit) return; patchAdmin('extras', ex => ({ ...ex, [k]: typeof updater==='function'?updater(ex[k]):updater })); };
 
   switch(item){
     case 'Company':
@@ -674,7 +728,7 @@ function AdminOverviewDetail({ item, setTab }: any){
       return <div><div className="text-sm text-slate-500 mb-3">Per-category email / in-app rules live in their own tab.</div><button onClick={()=>setTab('notifications')} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2">Open Notifications</button></div>;
 
     case 'Branch':
-      return <BranchEditor branches={extras.branches} setExtras={setExtras}/>;
+      return <BranchEditor branches={extras.branches} setExtras={setExtras} canEdit={canEdit}/>;
     case 'Departments': {
       const deptCounts: any = {}; team.forEach(m=>{ deptCounts[m.dept]=(deptCounts[m.dept]||0)+1; });
       return (
@@ -691,7 +745,7 @@ function AdminOverviewDetail({ item, setTab }: any){
       );
     }
     case 'Holiday Calendar':
-      return <HolidayEditor holidays={extras.holidays} setExtras={setExtras}/>;
+      return <HolidayEditor holidays={extras.holidays} setExtras={setExtras} canEdit={canEdit}/>;
     case 'Working Days': {
       const wd = extras.workingDays;
       const toggleDay = (d) => setExtras('workingDays', w=>({...w, [d]:!w[d]}));
@@ -700,14 +754,14 @@ function AdminOverviewDetail({ item, setTab }: any){
         <div>
           <div className="flex flex-wrap gap-2 mb-4">
             {['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=>(
-              <button key={d} onClick={()=>toggleDay(d)} className={`w-12 py-2 rounded-lg text-xs font-medium border ${wd[d]?'bg-brand-500 border-brand-500 text-white':'border-slate-200 text-slate-400 hover:bg-slate-50'}`}>{d}</button>
+              <button key={d} disabled={!canEdit} onClick={()=>toggleDay(d)} className={`w-12 py-2 rounded-lg text-xs font-medium border disabled:cursor-not-allowed ${wd[d]?'bg-brand-500 border-brand-500 text-white':'border-slate-200 text-slate-400 hover:bg-slate-50'}`}>{d}</button>
             ))}
           </div>
           <div className="flex items-center gap-2 text-sm">
             <span className="text-slate-500">Working hours</span>
-            <input type="time" value={wd.start} onChange={e=>setTime('start',e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"/>
+            <input type="time" value={wd.start} disabled={!canEdit} onChange={e=>setTime('start',e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"/>
             <span className="text-slate-400">to</span>
-            <input type="time" value={wd.end} onChange={e=>setTime('end',e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm"/>
+            <input type="time" value={wd.end} disabled={!canEdit} onChange={e=>setTime('end',e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400"/>
           </div>
         </div>
       );
@@ -725,18 +779,18 @@ function AdminOverviewDetail({ item, setTab }: any){
         </div>
       );
     case 'Project Templates': case 'Phase Templates': case 'Deliverable Templates': case 'Email Templates':
-      return <SimpleListEditor list={extras.templates[item]} placeholder={`Add ${item.toLowerCase().slice(0,-1)}…`} onChange={v=>setExtras('templates', t=>({...t,[item]:v}))}/>;
+      return <SimpleListEditor list={extras.templates[item]} placeholder={`Add ${item.toLowerCase().slice(0,-1)}…`} onChange={v=>setExtras('templates', t=>({...t,[item]:v}))} canEdit={canEdit}/>;
     case 'Status Master':
-      return <SimpleListEditor list={settings.itemStatuses} placeholder="e.g. Blocked" onChange={v=>setSettings(s=>({...s,itemStatuses:v}))}/>;
+      return <SimpleListEditor list={settings.itemStatuses} placeholder="e.g. Blocked" onChange={v=>canEdit && setSettings(s=>({...s,itemStatuses:v}))} canEdit={canEdit}/>;
     case 'Priority Master':
-      return <SimpleListEditor list={settings.priorityLevels} placeholder="e.g. Critical" onChange={v=>setSettings(s=>({...s,priorityLevels:v}))}/>;
+      return <SimpleListEditor list={settings.priorityLevels} placeholder="e.g. Critical" onChange={v=>canEdit && setSettings(s=>({...s,priorityLevels:v}))} canEdit={canEdit}/>;
     case 'Function Master':
-      return <SimpleListEditor list={settings.functions} placeholder="e.g. Legal" onChange={v=>setSettings(s=>({...s,functions:v}))}/>;
+      return <SimpleListEditor list={settings.functions} placeholder="e.g. Legal" onChange={v=>canEdit && setSettings(s=>({...s,functions:v}))} canEdit={canEdit}/>;
     case 'Backup':
       return (
         <div>
           <div className="text-sm text-slate-500 mb-3">Last backup: <b className="text-slate-700">{extras.lastBackup}</b></div>
-          <button onClick={()=>setExtras('lastBackup', ()=>new Date().toISOString().slice(0,16).replace('T',' '))} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 inline-flex items-center gap-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/> Run Backup Now</button>
+          {canEdit && <button onClick={()=>setExtras('lastBackup', ()=>new Date().toISOString().slice(0,16).replace('T',' '))} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 inline-flex items-center gap-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/> Run Backup Now</button>}
         </div>
       );
     case 'Integrations':
@@ -745,8 +799,8 @@ function AdminOverviewDetail({ item, setTab }: any){
           {extras.integrations.map((it,i)=>(
             <div key={it.name} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
               <div><div className="text-sm font-medium text-slate-700">{it.name}</div><div className="text-xs text-slate-400">{it.desc}</div></div>
-              <button onClick={()=>setExtras('integrations', arr=>arr.map((x,idx)=>idx===i?{...x,connected:!x.connected}:x))}
-                className={`text-xs rounded-lg px-3 py-1.5 whitespace-nowrap ${it.connected?'bg-emerald-100 text-emerald-700 hover:bg-emerald-200':'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
+              <button disabled={!canEdit} onClick={()=>setExtras('integrations', arr=>arr.map((x,idx)=>idx===i?{...x,connected:!x.connected}:x))}
+                className={`text-xs rounded-lg px-3 py-1.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60 ${it.connected?'bg-emerald-100 text-emerald-700 hover:bg-emerald-200':'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
                 {it.connected?'Connected':'Connect'}
               </button>
             </div>

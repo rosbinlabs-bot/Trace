@@ -35,9 +35,37 @@ const loadTheme = (): 'light' | 'dark' => {
   }
 };
 
+// A module capability of 'None' hides the sidebar item AND hard-blocks the route -- the same
+// approach the pre-existing client route table already used, just generalized to every module via
+// S.NAV_MODULE + S.capabilityFor instead of a role==='client' special case. Redirects to /dashboard,
+// which is always reachable (NAV_MODULE.dashboard is null), so there's always somewhere safe to land.
+function Gate({ module, admin, email, children }: { module: string | null; admin: any; email: string; children: React.ReactNode }) {
+  if (!module) return <>{children}</>;
+  if (!S.capAtLeast(S.capabilityFor(module, email, admin), 'View')) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+// Same capability check as Gate, but for a Client-type account there's no other route to bounce to
+// (their whole route table is just these two screens) -- so instead of redirecting, it swaps in a
+// plain lockout message when an admin has set the Client column's Client Portal capability to None.
+function ClientGate({ admin, email, children }: { admin: any; email: string; children: React.ReactNode }) {
+  if (!S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'View')) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-slate-100 p-6">
+        <div className="max-w-md bg-white border border-slate-200 rounded-xl p-5 text-sm text-center">
+          <div className="font-semibold text-slate-800 mb-1">Portal access is currently disabled</div>
+          <div className="text-slate-500">Your project team has turned off Client Portal access for this account. Contact them if you believe this is a mistake.</div>
+        </div>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any; onSignOut: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = React.useContext(S.RoleContext);
+  const { admin } = React.useContext(S.AdminDataContext);
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -58,8 +86,13 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   const active = location.pathname.split('/')[1] || 'dashboard';
   // Clients get a hard-restricted sidebar (just Client Portal + Project Structure) and, below, a
   // matching restricted route table -- the nav swap alone wouldn't stop someone from typing another
-  // URL directly, so both have to agree.
-  const navGroups = role === 'client' ? S.CLIENT_NAV : S.NAV;
+  // URL directly, so both have to agree. Everyone else's sidebar is the full S.NAV list filtered down
+  // to whatever S.NAV_MODULE says their capabilityFor() that module allows -- an item whose module
+  // resolves to 'None' (e.g. Administration for an Officer-level Associate) simply isn't shown, and
+  // the matching <Gate> below blocks the route itself so it can't be reached by typing the URL either.
+  const navGroups = role === 'client' ? S.CLIENT_NAV : S.NAV
+    .map((g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) }))
+    .filter((g: any) => g.items.length > 0);
   const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
 
   return (
@@ -154,34 +187,37 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                 // Hard restriction: a client account can reach exactly these two paths, no matter
                 // what URL they type -- everything else (including "/") bounces to /portal. This is
                 // the actual security boundary for navigation; the sidebar swap above is just the UI
-                // reflection of it.
+                // reflection of it. Within that, ClientGate further checks the account's actual Client
+                // Portal capability (configurable in Roles & Permissions -> Capability Matrix -> Client
+                // column) -- if an admin has set it to None, there's nowhere else in this route table to
+                // send them, so it shows a lockout message in place of the screen rather than redirecting.
                 <>
                   <Route path="/" element={<Navigate to="/portal" replace />} />
-                  <Route path="/portal" element={<Portal />} />
-                  <Route path="/structure" element={<ProjectStructure />} />
+                  <Route path="/portal" element={<ClientGate admin={admin} email={email}><Portal /></ClientGate>} />
+                  <Route path="/structure" element={<ClientGate admin={admin} email={email}><ProjectStructure /></ClientGate>} />
                   <Route path="*" element={<Navigate to="/portal" replace />} />
                 </>
               ) : (
                 <>
                   <Route path="/" element={<Navigate to="/dashboard" replace />} />
                   <Route path="/dashboard" element={<Dashboard />} />
-                  <Route path="/projects" element={<ProjectMaster />} />
-                  <Route path="/structure" element={<ProjectStructure />} />
-                  <Route path="/phases" element={<Phases />} />
-                  <Route path="/deliverables" element={<Deliverables />} />
-                  <Route path="/implementation" element={<Implementation />} />
-                  <Route path="/gantt" element={<Gantt />} />
+                  <Route path="/projects" element={<Gate module={S.NAV_MODULE.projects} admin={admin} email={email}><ProjectMaster /></Gate>} />
+                  <Route path="/structure" element={<Gate module={S.NAV_MODULE.structure} admin={admin} email={email}><ProjectStructure /></Gate>} />
+                  <Route path="/phases" element={<Gate module={S.NAV_MODULE.phases} admin={admin} email={email}><Phases /></Gate>} />
+                  <Route path="/deliverables" element={<Gate module={S.NAV_MODULE.deliverables} admin={admin} email={email}><Deliverables /></Gate>} />
+                  <Route path="/implementation" element={<Gate module={S.NAV_MODULE.implementation} admin={admin} email={email}><Implementation /></Gate>} />
+                  <Route path="/gantt" element={<Gate module={S.NAV_MODULE.gantt} admin={admin} email={email}><Gantt /></Gate>} />
                   <Route path="/calendar" element={<CalendarScreen />} />
-                  <Route path="/approvals" element={<Approvals />} />
-                  <Route path="/documents" element={<Documents />} />
-                  <Route path="/doclibrary" element={<DocumentLibrary />} />
-                  <Route path="/risks" element={<Risks />} />
-                  <Route path="/issues" element={<Issues />} />
-                  <Route path="/changes" element={<Changes />} />
-                  <Route path="/team" element={<Team />} />
-                  <Route path="/portal" element={<Portal />} />
-                  <Route path="/reports" element={<Reports />} />
-                  <Route path="/admin" element={<Administration />} />
+                  <Route path="/approvals" element={<Gate module={S.NAV_MODULE.approvals} admin={admin} email={email}><Approvals /></Gate>} />
+                  <Route path="/documents" element={<Gate module={S.NAV_MODULE.documents} admin={admin} email={email}><Documents /></Gate>} />
+                  <Route path="/doclibrary" element={<Gate module={S.NAV_MODULE.doclibrary} admin={admin} email={email}><DocumentLibrary /></Gate>} />
+                  <Route path="/risks" element={<Gate module={S.NAV_MODULE.risks} admin={admin} email={email}><Risks /></Gate>} />
+                  <Route path="/issues" element={<Gate module={S.NAV_MODULE.issues} admin={admin} email={email}><Issues /></Gate>} />
+                  <Route path="/changes" element={<Gate module={S.NAV_MODULE.changes} admin={admin} email={email}><Changes /></Gate>} />
+                  <Route path="/team" element={<Gate module={S.NAV_MODULE.team} admin={admin} email={email}><Team /></Gate>} />
+                  <Route path="/portal" element={<Gate module={S.NAV_MODULE.portal} admin={admin} email={email}><Portal /></Gate>} />
+                  <Route path="/reports" element={<Gate module={S.NAV_MODULE.reports} admin={admin} email={email}><Reports /></Gate>} />
+                  <Route path="/admin" element={<Gate module={S.NAV_MODULE.admin} admin={admin} email={email}><Administration /></Gate>} />
                   <Route path="*" element={<Navigate to="/dashboard" replace />} />
                 </>
               )}

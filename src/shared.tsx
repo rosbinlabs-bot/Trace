@@ -185,18 +185,39 @@ export const DEFAULT_DESIGNATION_LEVEL: any = {
 export const PERMISSION_MODULES = ['Project Master','Phase Management','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
 export const CAPABILITY_COLOR: any = { 'None':'bg-slate-100 text-slate-400','View':'bg-blue-100 text-blue-700','Edit':'bg-amber-100 text-amber-700','Approve':'bg-violet-100 text-violet-700','Full':'bg-emerald-100 text-emerald-700' };
+// Client is NOT one of the four staff PERMISSION_LEVELS (it isn't reachable via any DESIGNATIONS ->
+// designationLevel assignment — see deriveRole, which checks u.type==='Client' before ever looking at
+// designation). It's still a real column in the capability MATRIX though, so an admin can configure
+// exactly what a Client-type login can do — by default just Edit on Client Portal (their own sign-off/
+// remark actions in Portal.tsx) and None everywhere else. MATRIX_COLUMNS is what the Capability Matrix
+// table in Roles & Permissions iterates; PERMISSION_LEVELS stays the 4 staff levels only, so the
+// Designation -> Permission Level table above it is unaffected.
+export const MATRIX_COLUMNS = [...PERMISSION_LEVELS, 'Client'];
 export const DEFAULT_PERMISSION_MATRIX: any = {
-  'Project Master':          { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full' },
-  'Phase Management':        { Officer:'Edit', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full' },
-  'Deliverables':            { Officer:'Edit', Manager:'Approve', Admin:'Approve', 'Super Admin':'Full' },
-  'Financials & Billing':    { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full' },
-  'Risk / Issue / Change':   { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full' },
-  'Team Management':         { Officer:'View', Manager:'View', Admin:'Edit', 'Super Admin':'Full' },
-  'Reports':                 { Officer:'View', Manager:'View', Admin:'View', 'Super Admin':'Full' },
-  'Documents':               { Officer:'Edit', Manager:'Edit', Admin:'Edit', 'Super Admin':'Full' },
-  'Client Portal':           { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full' },
-  'Administration':          { Officer:'None', Manager:'None', Admin:'View', 'Super Admin':'Full' },
+  'Project Master':          { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
+  'Phase Management':        { Officer:'Edit', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
+  'Deliverables':            { Officer:'Edit', Manager:'Approve', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
+  'Financials & Billing':    { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
+  'Risk / Issue / Change':   { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
+  'Team Management':         { Officer:'View', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
+  'Reports':                 { Officer:'View', Manager:'View', Admin:'View', 'Super Admin':'Full', Client:'None' },
+  'Documents':               { Officer:'Edit', Manager:'Edit', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
+  'Client Portal':           { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'Edit' },
+  'Administration':          { Officer:'None', Manager:'None', Admin:'View', 'Super Admin':'Full', Client:'None' },
 };
+// Every module a per-account capability lookup needs, resolved from the SAME records Administration
+// -> Users / -> Roles & Permissions edit: a Client-type login (see deriveRole) is looked up by the
+// fixed 'Client' matrix column; everyone else by their designation's permission level. Missing/
+// inactive accounts and unmapped designations resolve to 'None', never a guess.
+export const capabilityFor = (module: string, email: string, admin: any): string => {
+  const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
+  if (!u || u.status!=='Active') return 'None';
+  const col = u.type==='Client' ? 'Client' : (admin?.designationLevel?.[u.designation] || null);
+  if (!col) return 'None';
+  return (admin?.matrix?.[module]||{})[col] || 'None';
+};
+export const CAP_RANK: any = { 'None':0, 'View':1, 'Edit':2, 'Approve':3, 'Full':4 };
+export const capAtLeast = (cap: string, min: string) => (CAP_RANK[cap] ?? 0) >= (CAP_RANK[min] ?? 0);
 
 // Real staff accounts are added from Administration -> Users; nothing is pre-populated.
 export const USERS_SEED: any = [];
@@ -403,6 +424,32 @@ export const CLIENT_NAV = [
     { id:'structure', label:'Project Structure' },
   ]},
 ];
+
+// Which capability-matrix MODULE governs each staff nav item/route — App.tsx (Shell) uses this to
+// hide sidebar items and hard-gate the matching route when the signed-in account's capabilityFor()
+// that module is 'None', exactly the same way the Client route table already hard-gates client
+// accounts. `null` means "always visible to any active staff account" (Dashboard as the universal
+// landing page, Calendar as a general scheduling view not tied to one module's data).
+export const NAV_MODULE: any = {
+  dashboard: null,
+  projects: 'Project Master',
+  structure: 'Phase Management',
+  phases: 'Phase Management',
+  deliverables: 'Deliverables',
+  implementation: 'Deliverables',
+  gantt: 'Phase Management',
+  calendar: null,
+  approvals: 'Deliverables',
+  documents: 'Documents',
+  doclibrary: 'Documents',
+  risks: 'Risk / Issue / Change',
+  issues: 'Risk / Issue / Change',
+  changes: 'Risk / Issue / Change',
+  team: 'Team Management',
+  portal: 'Client Portal',
+  reports: 'Reports',
+  admin: 'Administration',
+};
 
 /* ============================ MODULE SCREENS ============================ */
 
