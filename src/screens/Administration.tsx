@@ -417,98 +417,152 @@ function UsersPanel(){
         </S.Card>
       )}
 
-      <S.Card className="overflow-hidden">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {admin.users.map((u:any)=>{
-              const isEditing = editingId===u.id;
-              const isClient = u.type==='Client';
-              return (
-              <tr key={u.id} className={u.status==='Suspended'?'bg-slate-50/60 opacity-70':u.status==='Pending Approval'?'bg-amber-50/40':isEditing?'bg-brand-50/30':''}>
-                <S.Td className="font-medium whitespace-nowrap">
-                  {isEditing
-                    ? <input autoFocus value={editDraft.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[8rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                    : u.name}
-                </S.Td>
-                <S.Td className="text-slate-500 whitespace-nowrap">
-                  {isEditing
-                    ? <input type="email" value={editDraft.email} onChange={e=>setEditDraft(d=>({...d,email:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[10rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                    : u.email}
-                </S.Td>
-                <S.Td>
-                  {isClient ? (
-                    <div className="flex items-center gap-1.5">
-                      <S.Badge cls="bg-violet-50 text-violet-700">Client</S.Badge>
+      {(() => {
+        // Actions cell is identical for both Team and Client rows — shared here so the two tables
+        // below don't have to duplicate the edit/reset/suspend/remove logic.
+        const ActionsCell = ({u}:any) => {
+          const isEditing = editingId===u.id;
+          return isEditing ? (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              <button onClick={()=>saveEdit(u)} disabled={busy===u.id} className="text-xs text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Saving…':'Save'}</button>
+              <button onClick={cancelEdit} disabled={busy===u.id} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1 whitespace-nowrap">
+              {canEditUsers && u.status==='Pending Approval' && (
+                <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
+              )}
+              {canEditUsers && (
+                <>
+                  <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                    <S.Icon name="edit" className="w-3.5 h-3.5"/>
+                  </button>
+                  <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                    <S.Icon name="lock" className="w-3.5 h-3.5"/>
+                  </button>
+                  <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
+                    <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
+                  </button>
+                  {confirmRemove===u.id ? (
+                    <span className="inline-flex items-center gap-1">
+                      <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
+                      <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
+                    </span>
+                  ) : (
+                    <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                  )}
+                </>
+              )}
+              {!canEditUsers && <span className="text-xs text-slate-300">—</span>}
+            </div>
+          );
+        };
+        const NameEmailCells = ({u}:any) => {
+          const isEditing = editingId===u.id;
+          return (<>
+            <S.Td className="font-medium whitespace-nowrap">
+              {isEditing
+                ? <input autoFocus value={editDraft.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[8rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                : u.name}
+            </S.Td>
+            <S.Td className="text-slate-500 whitespace-nowrap">
+              {isEditing
+                ? <input type="email" value={editDraft.email} onChange={e=>setEditDraft(d=>({...d,email:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[10rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                : u.email}
+            </S.Td>
+          </>);
+        };
+        const StatusCell = ({u}:any) => (
+          u.status==='Active' ? <S.Badge cls="bg-emerald-100 text-emerald-700">Active</S.Badge>
+            : u.status==='Pending Approval' ? <S.Badge cls="bg-amber-100 text-amber-700">Pending Approval</S.Badge>
+            : <S.Badge cls="bg-slate-200 text-slate-600">Deactivated</S.Badge>
+        );
+        const rowCls = (u:any, isEditing:boolean) => u.status==='Suspended'?'bg-slate-50/60 opacity-70':u.status==='Pending Approval'?'bg-amber-50/40':isEditing?'bg-brand-50/30':'';
+
+        const teamUsers = admin.users.filter((u:any)=>u.type!=='Client');
+        const clientUsers = admin.users.filter((u:any)=>u.type==='Client');
+
+        return (<>
+          {/* Team — internal staff with a designation and derived permission level */}
+          <div className="flex items-center gap-2 mb-2 mt-1">
+            <S.Icon name="team" className="w-4 h-4 text-brand-600"/>
+            <span className="text-sm font-semibold text-slate-700">Team</span>
+            <S.Badge cls="bg-brand-50 text-brand-700">{teamUsers.length}</S.Badge>
+          </div>
+          <S.Card className="overflow-hidden mb-6">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {teamUsers.map((u:any)=>{
+                  const isEditing = editingId===u.id;
+                  return (
+                  <tr key={u.id} className={rowCls(u, isEditing)}>
+                    <NameEmailCells u={u}/>
+                    <S.Td>
+                      {canEditUsers ? (
+                        <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+                          {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
+                        </select>
+                      ) : u.designation}
+                    </S.Td>
+                    <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge></S.Td>
+                    <S.Td><StatusCell u={u}/></S.Td>
+                    <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
+                    <S.Td><ActionsCell u={u}/></S.Td>
+                  </tr>
+                  );
+                })}
+                {teamUsers.length===0 && (
+                  <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </S.Card>
+
+          {/* Clients — external logins hard-restricted to one project's Client Portal + Structure */}
+          <div className="flex items-center gap-2 mb-2">
+            <S.Icon name="building" className="w-4 h-4 text-violet-600"/>
+            <span className="text-sm font-semibold text-slate-700">Clients</span>
+            <S.Badge cls="bg-violet-50 text-violet-700">{clientUsers.length}</S.Badge>
+          </div>
+          <S.Card className="overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-50 border-b border-slate-200">
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {clientUsers.map((u:any)=>{
+                  const isEditing = editingId===u.id;
+                  return (
+                  <tr key={u.id} className={rowCls(u, isEditing)}>
+                    <NameEmailCells u={u}/>
+                    <S.Td>
                       {canEditUsers ? (
                         <select value={u.project||''} onChange={e=>setClientProject(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-1.5 py-1 text-xs max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-violet-500">
                           <option value="">— no project —</option>
                           {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
                         </select>
                       ) : (
-                        <span className="text-xs text-slate-500 truncate max-w-[9rem]">{projects.find((p:any)=>p.id===u.project)?.name || 'No project'}</span>
+                        <span className="text-xs text-slate-500 truncate max-w-[9rem] inline-block">{projects.find((p:any)=>p.id===u.project)?.name || 'No project'}</span>
                       )}
-                    </div>
-                  ) : canEditUsers ? (
-                    <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
-                      {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
-                    </select>
-                  ) : u.designation}
-                </S.Td>
-                <S.Td>{isClient ? <S.Badge cls="bg-slate-100 text-slate-500">Restricted</S.Badge> : <S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge>}</S.Td>
-                <S.Td>
-                  {u.status==='Active' ? <S.Badge cls="bg-emerald-100 text-emerald-700">Active</S.Badge>
-                    : u.status==='Pending Approval' ? <S.Badge cls="bg-amber-100 text-amber-700">Pending Approval</S.Badge>
-                    : <S.Badge cls="bg-slate-200 text-slate-600">Deactivated</S.Badge>}
-                </S.Td>
-                <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
-                <S.Td>
-                  {isEditing ? (
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      <button onClick={()=>saveEdit(u)} disabled={busy===u.id} className="text-xs text-white bg-brand-500 hover:bg-brand-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Saving…':'Save'}</button>
-                      <button onClick={cancelEdit} disabled={busy===u.id} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1 whitespace-nowrap">
-                      {canEditUsers && u.status==='Pending Approval' && (
-                        <button onClick={()=>approveUser(u)} title="Approve this sign-up" disabled={busy===u.id} className="text-xs text-white bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 rounded px-2 py-1 inline-flex items-center gap-1"><S.Icon name="checkcircle" className="w-3.5 h-3.5"/> Approve</button>
-                      )}
-                      {canEditUsers && (
-                        <>
-                          <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
-                            <S.Icon name="edit" className="w-3.5 h-3.5"/>
-                          </button>
-                          <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
-                            <S.Icon name="lock" className="w-3.5 h-3.5"/>
-                          </button>
-                          <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
-                            <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
-                          </button>
-                          {confirmRemove===u.id ? (
-                            <span className="inline-flex items-center gap-1">
-                              <button onClick={()=>removeUser(u)} disabled={busy===u.id} className="text-xs text-white bg-red-500 hover:bg-red-600 disabled:opacity-50 rounded px-2 py-1">{busy===u.id?'Removing…':'Confirm'}</button>
-                              <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
-                            </span>
-                          ) : (
-                            <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
-                          )}
-                        </>
-                      )}
-                      {!canEditUsers && <span className="text-xs text-slate-300">—</span>}
-                    </div>
-                  )}
-                </S.Td>
-              </tr>
-              );
-            })}
-            {admin.users.length===0 && (
-              <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No users yet — click "Add User" above.</td></tr>
-            )}
-          </tbody>
-        </table>
-      </S.Card>
+                    </S.Td>
+                    <S.Td><S.Badge cls="bg-slate-100 text-slate-500">Restricted</S.Badge></S.Td>
+                    <S.Td><StatusCell u={u}/></S.Td>
+                    <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
+                    <S.Td><ActionsCell u={u}/></S.Td>
+                  </tr>
+                  );
+                })}
+                {clientUsers.length===0 && (
+                  <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No clients yet — click "Add User" above and choose Add Client.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </S.Card>
+        </>);
+      })()}
     </div>
   );
 }
