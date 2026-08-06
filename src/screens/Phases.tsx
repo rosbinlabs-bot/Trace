@@ -110,16 +110,6 @@ export default function Phases(){
 
   const isTagged = (item, role) => (item.assignees||[]).some(nm=>{ const r=roster.find(x=>x.name===nm); return r && r.group===role; });
 
-  // notifications: items / phases awaiting the current actor's action
-  const allMs = phases.flatMap(p=>p.milestones);
-  const allSt = allMs.flatMap(m=>m.subtasks||[]);
-  const allItems = [...allMs, ...allSt];
-  const pmQueue = allItems.filter(i=>i.review==='PM Verification');
-  const headQueue = allItems.filter(i=>i.review==='Head Review' || (i.review==='Implemented Review' && !i.headApprovedImpl));
-  const phasesAwaitingHead = phases.filter(ph=>S.phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold);
-  const assigneeQueue = (role) => allItems.filter(i => !S.isApproved(i) && !i.review && isTagged(i, role));
-  const notifFor = (role) => assigneeQueue(role).length + (role==='Project Manager'?pmQueue.length:0) + (role==='Project Head'?(headQueue.length+phasesAwaitingHead.length):0);
-
   const inpFor = (lvl) => `border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none ${S.LEVEL[lvl].focus}`;
   const pickableStatuses = (level, ms) => {
     // "Implemented" is reached only via the dedicated escalation button below, never picked here.
@@ -164,22 +154,26 @@ export default function Phases(){
     'Completed':'bg-emerald-100 text-emerald-700','Implemented':'bg-violet-100 text-violet-700','Dropped':'bg-red-100 text-red-700','Terminated':'bg-red-100 text-red-700'
   }[s] || 'bg-slate-100 text-slate-400');
 
-  // "Needs your action" — every phase/milestone/sub task the CURRENT actor can act on right now,
-  // in one place, instead of making them scan the whole tree to find it.
+  // "Needs your action" — only phase/milestone/sub task items the CURRENT actor can act on AND that
+  // are actually urgent (overdue, or due within the next 2 days). Previously this listed every
+  // untouched/awaiting-review item regardless of deadline, which buried the handful that actually
+  // needed attention today under everything due next month too.
+  const daysUntil = (d) => d ? Math.floor((new Date(d).getTime() - new Date(S.TODAY_ISO).getTime())/86400000) : null;
+  const isUrgent = (d) => { const n = daysUntil(d); return n!==null && n<=2; }; // overdue (negative) or due within 2 days
   const myActionItems = [];
   if(actor!=='Strategic Lead'){
     phases.forEach(ph=>{
       ph.milestones.forEach(ms=>{
-        if(!S.isApproved(ms) && !ms.review && isTagged(ms, actor)) myActionItems.push({ ph, ms, label:`Update status — ${ms.name}` });
-        if(actor==='Project Head' && ms.review==='Head Review') myActionItems.push({ ph, ms, label:`Approve milestone — ${ms.name}` });
-        if(actor==='Project Head' && ms.review==='Implemented Review' && !ms.headApprovedImpl) myActionItems.push({ ph, ms, label:`Approve Implemented — ${ms.name}` });
+        if(!S.isApproved(ms) && !ms.review && isTagged(ms, actor) && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Update status — ${ms.name}` });
+        if(actor==='Project Head' && ms.review==='Head Review' && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve milestone — ${ms.name}` });
+        if(actor==='Project Head' && ms.review==='Implemented Review' && !ms.headApprovedImpl && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve Implemented — ${ms.name}` });
         (ms.subtasks||[]).forEach(s=>{
-          if(!S.isApproved(s) && !s.review && isTagged(s, actor)) myActionItems.push({ ph, ms, st:s, label:`Update status — ${s.name}` });
-          if(actor==='Project Manager' && s.review==='PM Verification') myActionItems.push({ ph, ms, st:s, label:`Approve sub task — ${s.name}` });
-          if(actor==='Project Head' && s.review==='Implemented Review' && !s.headApprovedImpl) myActionItems.push({ ph, ms, st:s, label:`Approve Implemented — ${s.name}` });
+          if(!S.isApproved(s) && !s.review && isTagged(s, actor) && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Update status — ${s.name}` });
+          if(actor==='Project Manager' && s.review==='PM Verification' && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve sub task — ${s.name}` });
+          if(actor==='Project Head' && s.review==='Implemented Review' && !s.headApprovedImpl && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve Implemented — ${s.name}` });
         });
       });
-      if(actor==='Project Head' && S.phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold) myActionItems.push({ ph, label:`Confirm phase complete — ${ph.name}` });
+      if(actor==='Project Head' && S.phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold && isUrgent(ph.end)) myActionItems.push({ ph, label:`Confirm phase complete — ${ph.name}` });
     });
   }
   const jumpTo = (a) => { setSelectedPhaseId(a.ph.id); setSelectedMsId(a.ms ? a.ms.id : null); setActionOpen(false); };
@@ -196,7 +190,6 @@ export default function Phases(){
               {ACTOR_TIERS.map(a=>(
                 <button key={a} onClick={()=>setActor(a)} className={`relative px-2.5 py-1 rounded-md font-medium transition-colors ${actor===a?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>
                   {a}
-                  {notifFor(a)>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] px-1 rounded-full flex items-center justify-center">{notifFor(a)}</span>}
                 </button>
               ))}
             </div>
@@ -205,7 +198,6 @@ export default function Phases(){
             // to act with a higher tier's approval rights than the account actually holds.
             <span className="relative text-xs font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1">
               {actor}
-              {notifFor(actor)>0 && <span className="ml-1.5 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] px-1 rounded-full inline-flex items-center justify-center align-middle">{notifFor(actor)}</span>}
             </span>
           )}
         </div>
