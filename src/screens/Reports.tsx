@@ -135,7 +135,7 @@ export default function Reports(){
         return (
           <div>
             <div className="grid grid-cols-3 gap-3 mb-4">
-              <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Open Risks</div><div className="text-xl font-bold text-red-600">{risks.filter(r=>r.status==='Open'||r.status==='In Progress').length}</div></S.Card>
+              <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Open Risks</div><div className="text-xl font-bold text-red-600">{risks.filter((r: any)=>r.status==='Open'||r.status==='In Progress').length}</div></S.Card>
               <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Open Issues</div><div className="text-xl font-bold text-amber-600">{issues.filter(i=>i.status==='Open'||i.status==='In Progress').length}</div></S.Card>
               <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Pending Change Requests</div><div className="text-xl font-bold text-blue-600">{changes.filter(c=>c.status==='Pending').length}</div></S.Card>
             </div>
@@ -144,9 +144,9 @@ export default function Reports(){
               <tr key={r.id}>
                 <S.Td className="font-mono text-xs">{r.id}</S.Td><S.Td>{r.project}</S.Td><S.Td>{r.desc}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(r.impact==='High'?'At Risk':'In Progress')}>{r.impact}</S.Badge></S.Td>
-                <S.Td>{r.owner}</S.Td><S.Td><S.Badge cls={S.statusColor(r.status)}>{r.status}</S.Badge></S.Td>
+                <S.Td>{r.supportBy}</S.Td><S.Td><S.Badge cls={S.statusColor(r.status)}>{r.status}</S.Badge></S.Td>
               </tr>
-            )), ['ID','Project','Description','Impact','Owner','Status'])}
+            )), ['ID','Project','Description','Impact','Supporting By','Status'])}
             <div className="text-xs text-slate-400 mt-4 mb-1.5 uppercase tracking-wide">Issues</div>
             {miniTable(issues.map(i=>(
               <tr key={i.id}>

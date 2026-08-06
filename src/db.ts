@@ -52,7 +52,11 @@ export const projectFromDb = (r: any) => ({
   specialRequest: r.special_request, paymentReceipts: r.payment_receipts || [],
   _key: r.id,
 });
-export const riskFromDb = (r: any) => ({ id: r.id, project: r.project, desc: r.description, owner: r.owner, prob: r.prob, impact: r.impact, mitigation: r.mitigation, target: r.target, status: r.status });
+// supportBy (was "owner") is who's tagged to address/resolve the risk -- only they (or Admin) can
+// change status/mitigation or add a remark, see Risks.tsx. addedBy/addedAt record who logged it and
+// when, shown read-only in the detail modal. remarks/docs mirror Phase Management's sub task shape
+// (`{id,text,by,at}` / `{id,n,path,size,uploadedAt,uploadedBy}`).
+export const riskFromDb = (r: any) => ({ id: r.id, project: r.project, desc: r.description, supportBy: r.support_by, addedBy: r.added_by, addedAt: r.added_at, prob: r.prob, impact: r.impact, mitigation: r.mitigation, target: r.target, status: r.status, remarks: r.remarks || [], docs: r.docs || [] });
 export const issueFromDb = (r: any) => ({ id: r.id, project: r.project, raisedBy: r.raised_by, assignee: r.assignee, severity: r.severity, priority: r.priority, root: r.root, due: r.due, status: r.status });
 export const changeFromDb = (r: any) => ({ id: r.id, desc: r.description, reason: r.reason, impact: r.impact, budget: r.budget, timeline: r.timeline, status: r.status, date: r.request_date });
 export const eventFromDb = (r: any) => ({ id: r.id, date: r.event_date, type: r.type, title: r.title, project: r.project, tags: r.tags || [], status: r.status });
@@ -87,7 +91,7 @@ const projectToDb = (p: any) => ({
   visits_total: p.visitsTotal || 0, confirmed: !!p.confirmed, extension: p.extension || null,
   special_request: p.specialRequest || null, payment_receipts: p.paymentReceipts || [],
 });
-const riskToDb = (r: any) => ({ tenant_id: TENANT_ID, id: r.id, project: r.project, description: r.desc, owner: r.owner, prob: r.prob, impact: r.impact, mitigation: r.mitigation, target: r.target || null, status: r.status });
+const riskToDb = (r: any) => ({ tenant_id: TENANT_ID, id: r.id, project: r.project, description: r.desc, support_by: r.supportBy || null, added_by: r.addedBy || null, added_at: r.addedAt || null, prob: r.prob, impact: r.impact, mitigation: r.mitigation, target: r.target || null, status: r.status, remarks: r.remarks || [], docs: r.docs || [] });
 const issueToDb = (i: any) => ({ tenant_id: TENANT_ID, id: i.id, project: i.project, raised_by: i.raisedBy, assignee: i.assignee, severity: i.severity, priority: i.priority, root: i.root, due: i.due || null, status: i.status });
 const changeToDb = (c: any) => ({ tenant_id: TENANT_ID, id: c.id, description: c.desc, reason: c.reason, impact: c.impact, budget: c.budget, timeline: c.timeline, status: c.status, request_date: c.date || null });
 const eventToDb = (e: any) => ({ tenant_id: TENANT_ID, id: e.id, event_date: e.date || null, type: e.type, title: e.title, project: e.project, tags: e.tags || [], status: e.status });
@@ -213,6 +217,15 @@ export async function uploadPhaseDoc(id: string, file: File) {
 }
 export const getPhaseDocDownloadUrl = (path: string) => getBucketDownloadUrl('phase-docs', path);
 export const deletePhaseDocFile = (path: string) => deleteFromBucket('phase-docs', path);
+
+// Risk Management: attachments on a risk entry (evidence, mitigation plans, etc.), same
+// private/tenant-scoped bucket pattern as phase-docs.
+export async function uploadRiskDoc(id: string, file: File) {
+  const r = await uploadToBucket('risk-docs', id, file);
+  return { id, path: r.path, name: r.name, size: r.size };
+}
+export const getRiskDocDownloadUrl = (path: string) => getBucketDownloadUrl('risk-docs', path);
+export const deleteRiskDocFile = (path: string) => deleteFromBucket('risk-docs', path);
 export const syncDeliverables = (prev: any[], next: any[]) => syncArray('deliverables', prev, next, deliverableToDb);
 export const syncTeam = (prev: any[], next: any[]) => syncArray('team', prev, next, teamToDb, 'name');
 export const syncInvoices = (prev: any[], next: any[]) => syncArray('invoices', prev, next, invoiceToDb);
