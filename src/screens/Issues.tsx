@@ -4,9 +4,12 @@ import * as S from '../shared';
 export default function Issues(){
   const { issues, setIssues } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  // Only Admin/Super Admin can permanently delete an issue entry.
+  const { role } = React.useContext(S.RoleContext);
+  const canDelete = role==='admin';
   const mut = (id, patch) => setIssues(is => is.map(i => i.id===id ? {...i, ...patch} : i));
   const addIssue = () => setIssues(is => [...is, { id:S.uid('IS'), project:projects[0]?.name||'', raisedBy:'', assignee:'', severity:'Medium', root:'New issue', due:'', status:'Open' }]);
-  const removeIssue = (id) => setIssues(is => is.filter(i=>i.id!==id));
+  const removeIssue = (id) => { if(!canDelete) return; setIssues(is => is.filter(i=>i.id!==id)); };
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -27,7 +30,7 @@ export default function Issues(){
                 <S.Td className="min-w-[180px]"><input className={S.gInp} value={i.root} onChange={e=>mut(i.id,{root:e.target.value})}/></S.Td>
                 <S.Td><input type="date" className={S.gInp} value={i.due} onChange={e=>mut(i.id,{due:e.target.value})}/></S.Td>
                 <S.Td><select className={`${S.gInp} inline-block w-auto`} value={i.status} onChange={e=>mut(i.id,{status:e.target.value})}>{['Open','In Progress','Resolved','Closed'].map(o=><option key={o}>{o}</option>)}</select></S.Td>
-                <S.Td><button onClick={()=>removeIssue(i.id)} className="text-red-400 hover:text-red-600">✕</button></S.Td>
+                <S.Td>{canDelete && <button onClick={()=>removeIssue(i.id)} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
               </tr>
             ))}
             {issues.length===0 && <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No issues logged. Click “+ Add Issue”.</td></tr>}

@@ -3,9 +3,12 @@ import * as S from '../shared';
 
 export default function Changes(){
   const { changes, setChanges } = React.useContext(S.GovernanceDataContext);
+  // Only Admin/Super Admin can permanently delete a change request entry.
+  const { role } = React.useContext(S.RoleContext);
+  const canDelete = role==='admin';
   const mut = (id, patch) => setChanges(cs => cs.map(c => c.id===id ? {...c, ...patch} : c));
   const addChange = () => setChanges(cs => [...cs, { id:S.uid('CR'), desc:'New change request', reason:'', impact:'Medium', budget:'', timeline:'', date:S.TODAY_ISO, status:'Pending' }]);
-  const removeChange = (id) => setChanges(cs => cs.filter(c=>c.id!==id));
+  const removeChange = (id) => { if(!canDelete) return; setChanges(cs => cs.filter(c=>c.id!==id)); };
   return (
     <div>
       <div className="flex justify-between items-center mb-4">
@@ -26,7 +29,7 @@ export default function Changes(){
                 <S.Td><input className={S.gInp} value={c.timeline} onChange={e=>mut(c.id,{timeline:e.target.value})} placeholder="+0 days"/></S.Td>
                 <S.Td><input type="date" className={S.gInp} value={c.date} onChange={e=>mut(c.id,{date:e.target.value})}/></S.Td>
                 <S.Td><select className={`${S.gInp} inline-block w-auto`} value={c.status} onChange={e=>mut(c.id,{status:e.target.value})}>{['Pending','Approved','Rejected','Implemented'].map(o=><option key={o}>{o}</option>)}</select></S.Td>
-                <S.Td><button onClick={()=>removeChange(c.id)} className="text-red-400 hover:text-red-600">✕</button></S.Td>
+                <S.Td>{canDelete && <button onClick={()=>removeChange(c.id)} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
               </tr>
             ))}
             {changes.length===0 && <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No change requests yet. Click “+ Add Change Request”.</td></tr>}

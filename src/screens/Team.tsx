@@ -24,6 +24,9 @@ export default function Team(){
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
+  // Only Admin/Super Admin can permanently remove a team member's roster entry.
+  const { role } = React.useContext(S.RoleContext);
+  const canDelete = role==='admin';
   // Department Master (Administration -> Project Settings -> Masters -> Department Master) is the
   // single source of truth for department names now, so two people can't add the same department
   // spelled two different ways ("Delivery" vs "delivery"). If a member already has a dept value from
@@ -62,7 +65,7 @@ export default function Team(){
     setTeam(ts => [...ts, { ...draft, name, util:Number(draft.util)||0 }]);
     setDraft(blankDraft); setAdding(false);
   };
-  const removeMember = (name) => { setTeam(ts => ts.filter(m=>m.name!==name)); setConfirmRemove(null); };
+  const removeMember = (name) => { if(!canDelete) return; setTeam(ts => ts.filter(m=>m.name!==name)); setConfirmRemove(null); };
   const patchMember = (name, key, val) => setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m));
 
   // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
@@ -199,7 +202,7 @@ export default function Team(){
                   </S.Td>
                   <S.Td>{m.util>90 ? <S.Badge cls="bg-red-100 text-red-700">Overloaded</S.Badge> : <S.Badge cls="bg-emerald-100 text-emerald-700">Healthy</S.Badge>}</S.Td>
                   <S.Td>
-                    {confirmRemove===m.name ? (
+                    {!canDelete ? null : confirmRemove===m.name ? (
                       <span className="inline-flex items-center gap-1 whitespace-nowrap">
                         <button onClick={()=>removeMember(m.name)} className="text-xs text-white bg-red-500 hover:bg-red-600 rounded px-2 py-1">Confirm</button>
                         <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-500 hover:bg-slate-100 rounded px-2 py-1">Cancel</button>

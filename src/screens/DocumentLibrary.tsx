@@ -9,6 +9,9 @@ export default function DocumentLibrary(){
   const [filterFn, setFilterFn] = useState('All');
   const [filterIndustry, setFilterIndustry] = useState('All');
   const [search, setSearch] = useState('');
+  // Only Admin/Super Admin can permanently delete a library document.
+  const { role } = React.useContext(S.RoleContext);
+  const canDelete = role==='admin';
 
   const addDoc = () => {
     if(!draft.name.trim()) return;
@@ -16,7 +19,7 @@ export default function DocumentLibrary(){
     setDraft({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'' });
     setAdding(false);
   };
-  const removeDoc = (id) => setDocs(ds => ds.filter(d=>d.id!==id));
+  const removeDoc = (id) => { if(!canDelete) return; setDocs(ds => ds.filter(d=>d.id!==id)); };
 
   const filtered = docs.filter(d=>
     (filterFn==='All' || d.function===filterFn) &&
@@ -81,7 +84,7 @@ export default function DocumentLibrary(){
                   <S.Td>{d.usedIn||'—'}</S.Td>
                   <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{d.function}</S.Badge></S.Td>
                   <S.Td className="text-slate-400 whitespace-nowrap">{d.addedOn}</S.Td>
-                  <S.Td><button onClick={()=>removeDoc(d.id)} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button></S.Td>
+                  <S.Td>{canDelete && <button onClick={()=>removeDoc(d.id)} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}</S.Td>
                 </tr>
               ))}
             </tbody>
