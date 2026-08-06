@@ -16,6 +16,13 @@ export default function DocumentLibrary(){
   // Only Admin/Super Admin can permanently delete a library document.
   const { role } = React.useContext(S.RoleContext);
   const canDelete = role==='admin';
+  // Anyone can upload, but a Super Admin (not just Admin -- a stricter gate than canDelete above) has
+  // to approve it before it counts as an approved library document. A Super Admin's own upload is
+  // auto-approved -- making them approve their own upload would just be a pointless extra click, they
+  // already hold the highest authority in the tenant.
+  const { email } = React.useContext(S.CurrentUserContext);
+  const { admin } = React.useContext(S.AdminDataContext);
+  const iAmSuperAdmin = S.isSuperAdmin(email, admin);
 
   const addDoc = async () => {
     if(!draft.name.trim() || !draft.file){ setErr(!draft.file ? 'Attach a file to upload.' : 'Name of the document is required.'); return; }
@@ -28,12 +35,14 @@ export default function DocumentLibrary(){
       setDocs(ds => [...ds, {
         id, name:draft.name.trim(), industry:draft.industry, usedIn:draft.usedIn.trim(), function:draft.function,
         addedOn:S.TODAY_ISO, filePath, fileName, fileSize, uploadedAt:new Date().toISOString(),
+        status: iAmSuperAdmin ? 'Approved' : 'Pending Approval', uploadedBy: email,
       }]);
       setDraft({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'', file:null });
       setAdding(false);
     } catch(e:any) { setErr(e.message || 'Could not upload that file.'); }
     setBusy(false);
   };
+  const approveDoc = (id:string) => { if(!iAmSuperAdmin) return; setDocs(ds => ds.map(x=>x.id===id?{...x,status:'Approved'}:x)); };
   const removeDoc = (d:any) => {
     if(!canDelete) return;
     setDocs(ds => ds.filter(x=>x.id!==d.id));
@@ -62,10 +71,17 @@ export default function DocumentLibrary(){
     (filterIndustry==='All' || d.industry===filterIndustry) &&
     (!search.trim() || (d.name+' '+d.usedIn).toLowerCase().includes(search.trim().toLowerCase()))
   );
+  const pendingCount = docs.filter(d=>d.status==='Pending Approval').length;
 
   return (
     <div>
-      <S.SectionTitle sub="A standalone repository of reusable documents — templates, playbooks and reference material, independent of any single project's attachments">Document Library</S.SectionTitle>
+      <S.SectionTitle sub="A standalone repository of reusable documents — templates, playbooks and reference material, independent of any single project's attachments. Anyone can upload; a Super Admin approves it before it's marked Approved.">Document Library</S.SectionTitle>
+
+      {iAmSuperAdmin && pendingCount>0 && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+          {pendingCount} document{pendingCount>1?'s':''} awaiting your approval — look for the amber-highlighted rows below.
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search by name or used in…"
@@ -119,17 +135,27 @@ export default function DocumentLibrary(){
           <div className="p-6 text-center text-sm text-slate-400">{docs.length===0 ? 'No documents in the library yet — add one above.' : 'No documents match this filter.'}</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Name of the Document</S.Th><S.Th>Industry</S.Th><S.Th>Used In</S.Th><S.Th>Function</S.Th><S.Th>Uploaded</S.Th><S.Th></S.Th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Name of the Document</S.Th><S.Th>Industry</S.Th><S.Th>Used In</S.Th><S.Th>Function</S.Th><S.Th>Status</S.Th><S.Th>Uploaded</S.Th><S.Th></S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {filtered.map(d=>(
-                <tr key={d.id} className="hover:bg-slate-50">
+              {filtered.map(d=>{ const pending = d.status==='Pending Approval'; return (
+                <tr key={d.id} className={`hover:bg-slate-50 ${pending?'bg-amber-50/30':''}`}>
                   <S.Td className="font-medium"><span className="inline-flex items-center gap-1.5"><S.Icon name="library" className="w-3.5 h-3.5 shrink-0 text-brand-500"/>{d.name}</span></S.Td>
                   <S.Td>{d.industry||'—'}</S.Td>
                   <S.Td>{d.usedIn||'—'}</S.Td>
                   <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{d.function}</S.Badge></S.Td>
+                  <S.Td>
+                    <span title={d.uploadedBy ? `Uploaded by ${d.uploadedBy}` : ''}>
+                      <S.Badge cls={pending ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}>{d.status||'Approved'}</S.Badge>
+                    </span>
+                  </S.Td>
                   <S.Td className="text-slate-400 whitespace-nowrap">{formatUploadedAt(d.uploadedAt)}</S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2 whitespace-nowrap">
+                      {pending && iAmSuperAdmin && (
+                        <button onClick={()=>approveDoc(d.id)} title="Approve" className="text-emerald-500 hover:text-emerald-700">
+                          <S.Icon name="checkcircle" className="w-3.5 h-3.5"/>
+                        </button>
+                      )}
                       {d.filePath && (
                         <button onClick={()=>downloadDoc(d)} disabled={downloadingId===d.id} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
                           <S.Icon name={downloadingId===d.id?'refresh':'download'} className="w-3.5 h-3.5"/>
@@ -139,7 +165,7 @@ export default function DocumentLibrary(){
                     </div>
                   </S.Td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         )}
