@@ -1,14 +1,32 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
 
+// The four "acting as" tiers Phase Management's approval workflow understands, in the same order
+// they're offered in the header switcher.
+const ACTOR_TIERS = ['Associate','Project Manager','Project Head','Strategic Lead'];
+
 export default function Phases(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  const { role } = React.useContext(S.RoleContext);
+  const { profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
-  const [actor, setActor] = useState('Associate'); // Associate | Project Manager | Project Head | Strategic Lead
+  // "Acting as" used to be a free toggle ANY signed-in account could flip to any of the four tiers --
+  // which is how an Associate could switch to "Strategic Lead" and get past every approval gate below
+  // that reads `actor`. It's now derived from the signed-in account's real designation and locked
+  // there for everyone except Admin/Super Admin (role==='admin'), who legitimately need to review the
+  // board from every tier's perspective. BD has no tier of its own in this workflow, so it falls back
+  // to the base Associate tier rather than granting it a level it was never meant to have.
+  const myActorTier = ACTOR_TIERS.includes(myProfile?.designation) ? myProfile.designation : 'Associate';
+  const canSwitchActor = role==='admin';
+  const [actor, setActorState] = useState(myActorTier); // Associate | Project Manager | Project Head | Strategic Lead
+  const setActor = (a) => { if(canSwitchActor) setActorState(a); }; // no-op for anyone locked to their own tier
+  // Only Admin/Super Admin may delete a phase, milestone or sub task -- every other actor tier used
+  // to be able to click these buttons with no check at all (the Associate-deletes-a-phase bug).
+  const canDelete = role==='admin';
 
   const ITEM_STATUS_OPTS = (settings.itemStatuses && settings.itemStatuses.length) ? settings.itemStatuses : S.DEFAULT_PROJECT_SETTINGS.itemStatuses;
 
@@ -32,11 +50,11 @@ export default function Phases(){
 
   // Owner isn't something a user needs to fill in — it defaults to this project's Project Manager.
   const addPhase = () => setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:projMeta.pm||'', start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]);
-  const removePhase = (id) => setPhases(ps => ps.filter(p=>p.id!==id));
+  const removePhase = (id) => { if(!canDelete) return; setPhases(ps => ps.filter(p=>p.id!==id)); };
   const addMs = (phId) => mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]}));
-  const removeMs = (phId, msId) => mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)}));
+  const removeMs = (phId, msId) => { if(!canDelete) return; mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)})); };
   const addSt = (phId, msId) => mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]}));
-  const removeSt = (phId, msId, stId) => mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)}));
+  const removeSt = (phId, msId, stId) => { if(!canDelete) return; mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)})); };
 
   // ---- status changes: Not Started / In Progress / On Hold apply immediately; Completed queues review ----
   const setMsStatus = (phId, msId, val) => {
@@ -173,14 +191,23 @@ export default function Phases(){
         <S.SectionTitle sub="Per-project phases → milestones → sub tasks. Project Manager approves Sub Tasks, Project Head approves Milestones & Phases, Client Owner signs off on Implemented items in the Client Portal.">Phase Management</S.SectionTitle>
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">Acting as:</span>
-          <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 text-xs">
-            {['Associate','Project Manager','Project Head','Strategic Lead'].map(a=>(
-              <button key={a} onClick={()=>setActor(a)} className={`relative px-2.5 py-1 rounded-md font-medium transition-colors ${actor===a?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>
-                {a}
-                {notifFor(a)>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] px-1 rounded-full flex items-center justify-center">{notifFor(a)}</span>}
-              </button>
-            ))}
-          </div>
+          {canSwitchActor ? (
+            <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 text-xs">
+              {ACTOR_TIERS.map(a=>(
+                <button key={a} onClick={()=>setActor(a)} className={`relative px-2.5 py-1 rounded-md font-medium transition-colors ${actor===a?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>
+                  {a}
+                  {notifFor(a)>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] px-1 rounded-full flex items-center justify-center">{notifFor(a)}</span>}
+                </button>
+              ))}
+            </div>
+          ) : (
+            // Locked to the signed-in account's real designation -- no switcher, so there's no way
+            // to act with a higher tier's approval rights than the account actually holds.
+            <span className="relative text-xs font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1">
+              {actor}
+              {notifFor(actor)>0 && <span className="ml-1.5 bg-red-500 text-white text-[9px] min-w-[15px] h-[15px] px-1 rounded-full inline-flex items-center justify-center align-middle">{notifFor(actor)}</span>}
+            </span>
+          )}
         </div>
       </div>
 
@@ -328,7 +355,7 @@ export default function Phases(){
                       <label className="text-[10px] text-slate-400">Documents</label>
                       <S.DocsChips docs={ms.docs} disabled={msDis} onAttach={files=>attachMsDocs(ph.id,ms.id,files)} onRemove={i=>removeMsDoc(ph.id,ms.id,i)}/>
                     </div>
-                    <button onClick={()=>removeMs(ph.id,ms.id)} disabled={msDis} className={`text-xs whitespace-nowrap ml-auto ${msDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕ Remove</button>
+                    {canDelete && <button onClick={()=>removeMs(ph.id,ms.id)} disabled={msDis} className={`text-xs whitespace-nowrap ml-auto ${msDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕ Remove</button>}
                   </div>
                   <div className="mt-2.5">
                     <label className="text-[10px] text-slate-400 block mb-1">Assignees</label>
@@ -364,7 +391,7 @@ export default function Phases(){
                         onHeadApproveImpl={()=>headApproveImplSt(ph.id,ms.id,s.id)}
                         onCancelImpl={()=>cancelImplSt(ph.id,ms.id,s.id)}/>
                       <S.DocsChips docs={s.docs} disabled={genDis} onAttach={files=>attachStDocs(ph.id,ms.id,s.id,files)} onRemove={i=>removeStDoc(ph.id,ms.id,s.id,i)}/>
-                      <button onClick={()=>removeSt(ph.id,ms.id,s.id)} disabled={genDis} className={`${genDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕</button>
+                      {canDelete && <button onClick={()=>removeSt(ph.id,ms.id,s.id)} disabled={genDis} className={`${genDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕</button>}
                     </div>
                   );})}
                   {(!ms.subtasks||ms.subtasks.length===0) && <div className="text-xs text-slate-400 px-2 py-2">No sub tasks yet.</div>}
@@ -424,7 +451,7 @@ export default function Phases(){
                       ? <button onClick={()=>confirmPhaseComplete(ph)} className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white whitespace-nowrap">Confirm completion</button>
                       : <span className="text-xs text-amber-600 whitespace-nowrap py-1.5">Awaiting Head confirmation</span>
                   )}
-                  <button onClick={()=>removePhase(ph.id)} className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap ml-auto">✕ Remove phase</button>
+                  {canDelete && <button onClick={()=>removePhase(ph.id)} className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap ml-auto">✕ Remove phase</button>}
                 </div>
                 {ph.headConfirmedComplete && <div className="text-[11px] text-emerald-600 mt-2 flex items-center gap-1"><S.Icon name="lock" className="w-3 h-3"/> Phase complete — milestones locked</div>}
               </div>
