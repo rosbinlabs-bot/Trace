@@ -1,25 +1,61 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
 
 export default function DocumentLibrary(){
   const { docs, setDocs } = React.useContext(S.LibraryDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'' });
+  const [draft, setDraft] = useState<any>({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'', file:null });
   const [filterFn, setFilterFn] = useState('All');
   const [filterIndustry, setFilterIndustry] = useState('All');
   const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState(false); // true while a file is uploading on Add
+  const [downloadingId, setDownloadingId] = useState<string|null>(null);
+  const [err, setErr] = useState('');
   // Only Admin/Super Admin can permanently delete a library document.
   const { role } = React.useContext(S.RoleContext);
   const canDelete = role==='admin';
 
-  const addDoc = () => {
-    if(!draft.name.trim()) return;
-    setDocs(ds => [...ds, { id:S.uid('LIB'), name:draft.name.trim(), industry:draft.industry, usedIn:draft.usedIn.trim(), function:draft.function, addedOn:S.TODAY_ISO }]);
-    setDraft({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'' });
-    setAdding(false);
+  const addDoc = async () => {
+    if(!draft.name.trim() || !draft.file){ setErr(!draft.file ? 'Attach a file to upload.' : 'Name of the document is required.'); return; }
+    setErr(''); setBusy(true);
+    try {
+      const id = S.uid('LIB');
+      // Real file upload (Supabase Storage, tenant-scoped) -- everything else in this record is
+      // metadata, but this is what makes the entry actually downloadable rather than just a label.
+      const { filePath, fileName, fileSize } = await db.uploadLibraryDoc(id, draft.file);
+      setDocs(ds => [...ds, {
+        id, name:draft.name.trim(), industry:draft.industry, usedIn:draft.usedIn.trim(), function:draft.function,
+        addedOn:S.TODAY_ISO, filePath, fileName, fileSize, uploadedAt:new Date().toISOString(),
+      }]);
+      setDraft({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'', file:null });
+      setAdding(false);
+    } catch(e:any) { setErr(e.message || 'Could not upload that file.'); }
+    setBusy(false);
   };
-  const removeDoc = (id) => { if(!canDelete) return; setDocs(ds => ds.filter(d=>d.id!==id)); };
+  const removeDoc = (d:any) => {
+    if(!canDelete) return;
+    setDocs(ds => ds.filter(x=>x.id!==d.id));
+    // Best-effort storage cleanup -- the library_docs row is what the app actually reads, so a
+    // failure here (e.g. flaky network) shouldn't block or roll back the row deletion above.
+    if(d.filePath) db.deleteLibraryDocFile(d.filePath).catch((e)=>console.error('Storage cleanup failed:', e));
+  };
+  const downloadDoc = async (d:any) => {
+    if(!d.filePath) return;
+    setErr(''); setDownloadingId(d.id);
+    try {
+      const url = await db.getLibraryDocDownloadUrl(d.filePath);
+      window.open(url, '_blank');
+    } catch(e:any) { setErr(e.message || 'Could not generate a download link.'); }
+    setDownloadingId(null);
+  };
+  // "Aug 6, 2026, 3:45 PM" -- the timestamp requested to show upload period, not just the date.
+  const formatUploadedAt = (iso:string) => {
+    if(!iso) return '—';
+    try { return new Date(iso).toLocaleString('en-US', { dateStyle:'medium', timeStyle:'short' }); }
+    catch(e){ return iso; }
+  };
 
   const filtered = docs.filter(d=>
     (filterFn==='All' || d.function===filterFn) &&
@@ -47,6 +83,8 @@ export default function DocumentLibrary(){
         </button>
       </div>
 
+      {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</div>}
+
       {adding && (
         <S.Card className="p-3 mb-4 border-2 border-dashed border-brand-300 bg-brand-50/30">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
@@ -63,9 +101,15 @@ export default function DocumentLibrary(){
                 {settings.functions.map(f=><option key={f}>{f}</option>)}
               </select></div>
           </div>
+          <div className="mt-2">
+            <label className="text-[10px] text-slate-400 block mb-1">Attach File <span className="text-slate-300">— required, this is what makes the entry downloadable</span></label>
+            <input type="file" onChange={e=>setDraft(d=>({...d,file:e.target.files?.[0]||null}))}
+              className="text-xs text-slate-600 file:mr-2 file:text-xs file:border-0 file:rounded-lg file:px-2.5 file:py-1.5 file:bg-brand-100 file:text-brand-700 hover:file:bg-brand-200 file:cursor-pointer cursor-pointer"/>
+            {draft.file && <span className="text-[11px] text-slate-400 ml-2">{draft.file.name} · {(draft.file.size/1024).toFixed(0)} KB</span>}
+          </div>
           <div className="flex gap-1.5 mt-2.5 justify-end">
-            <button onClick={()=>setAdding(false)} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-1.5 hover:bg-slate-50">Cancel</button>
-            <button onClick={addDoc} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5">Add</button>
+            <button onClick={()=>{setAdding(false);setErr('');}} disabled={busy} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
+            <button onClick={addDoc} disabled={busy} className="text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-1.5">{busy?'Uploading…':'Add'}</button>
           </div>
         </S.Card>
       )}
@@ -75,7 +119,7 @@ export default function DocumentLibrary(){
           <div className="p-6 text-center text-sm text-slate-400">{docs.length===0 ? 'No documents in the library yet — add one above.' : 'No documents match this filter.'}</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Name of the Document</S.Th><S.Th>Industry</S.Th><S.Th>Used In</S.Th><S.Th>Function</S.Th><S.Th>Added On</S.Th><S.Th></S.Th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Name of the Document</S.Th><S.Th>Industry</S.Th><S.Th>Used In</S.Th><S.Th>Function</S.Th><S.Th>Uploaded</S.Th><S.Th></S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(d=>(
                 <tr key={d.id} className="hover:bg-slate-50">
@@ -83,8 +127,17 @@ export default function DocumentLibrary(){
                   <S.Td>{d.industry||'—'}</S.Td>
                   <S.Td>{d.usedIn||'—'}</S.Td>
                   <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{d.function}</S.Badge></S.Td>
-                  <S.Td className="text-slate-400 whitespace-nowrap">{d.addedOn}</S.Td>
-                  <S.Td>{canDelete && <button onClick={()=>removeDoc(d.id)} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}</S.Td>
+                  <S.Td className="text-slate-400 whitespace-nowrap">{formatUploadedAt(d.uploadedAt)}</S.Td>
+                  <S.Td>
+                    <div className="flex items-center gap-2 whitespace-nowrap">
+                      {d.filePath && (
+                        <button onClick={()=>downloadDoc(d)} disabled={downloadingId===d.id} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
+                          <S.Icon name={downloadingId===d.id?'refresh':'download'} className="w-3.5 h-3.5"/>
+                        </button>
+                      )}
+                      {canDelete && <button onClick={()=>removeDoc(d)} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
+                    </div>
+                  </S.Td>
                 </tr>
               ))}
             </tbody>

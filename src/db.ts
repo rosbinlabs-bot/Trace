@@ -41,7 +41,7 @@ export const riskFromDb = (r: any) => ({ id: r.id, project: r.project, desc: r.d
 export const issueFromDb = (r: any) => ({ id: r.id, project: r.project, raisedBy: r.raised_by, assignee: r.assignee, severity: r.severity, priority: r.priority, root: r.root, due: r.due, status: r.status });
 export const changeFromDb = (r: any) => ({ id: r.id, desc: r.description, reason: r.reason, impact: r.impact, budget: r.budget, timeline: r.timeline, status: r.status, date: r.request_date });
 export const eventFromDb = (r: any) => ({ id: r.id, date: r.event_date, type: r.type, title: r.title, project: r.project, tags: r.tags || [], status: r.status });
-export const docFromDb = (r: any) => ({ id: r.id, name: r.name, industry: r.industry, usedIn: r.used_in, function: r.function, addedOn: r.added_on });
+export const docFromDb = (r: any) => ({ id: r.id, name: r.name, industry: r.industry, usedIn: r.used_in, function: r.function, addedOn: r.added_on, filePath: r.file_path, fileName: r.file_name, fileSize: r.file_size, uploadedAt: r.uploaded_at });
 export const deliverableFromDb = (r: any) => ({ id: r.id, name: r.name, project: r.project, dept: r.dept, owner: r.owner, reviewer: r.reviewer, approver: r.approver, priority: r.priority, hours: r.hours, budget: r.budget, start: r.start_date, due: r.due_date, status: r.status, revision: r.revision, clientApproval: r.client_approval, internalApproval: r.internal_approval });
 const deliverableToDb = (d: any) => ({ tenant_id: TENANT_ID, id: d.id, name: d.name, project: d.project, dept: d.dept, owner: d.owner, reviewer: d.reviewer, approver: d.approver, priority: d.priority, hours: d.hours || 0, budget: d.budget || 0, start_date: d.start || null, due_date: d.due || null, status: d.status, revision: d.revision, client_approval: d.clientApproval, internal_approval: d.internalApproval });
 export const teamFromDb = (r: any) => ({ name: r.name, role: r.role, dept: r.dept, util: r.util, avail: r.avail, capacity: r.capacity });
@@ -68,7 +68,7 @@ const riskToDb = (r: any) => ({ tenant_id: TENANT_ID, id: r.id, project: r.proje
 const issueToDb = (i: any) => ({ tenant_id: TENANT_ID, id: i.id, project: i.project, raised_by: i.raisedBy, assignee: i.assignee, severity: i.severity, priority: i.priority, root: i.root, due: i.due || null, status: i.status });
 const changeToDb = (c: any) => ({ tenant_id: TENANT_ID, id: c.id, description: c.desc, reason: c.reason, impact: c.impact, budget: c.budget, timeline: c.timeline, status: c.status, request_date: c.date || null });
 const eventToDb = (e: any) => ({ tenant_id: TENANT_ID, id: e.id, event_date: e.date || null, type: e.type, title: e.title, project: e.project, tags: e.tags || [], status: e.status });
-const docToDb = (d: any) => ({ tenant_id: TENANT_ID, id: d.id, name: d.name, industry: d.industry, used_in: d.usedIn, function: d.function, added_on: d.addedOn || null });
+const docToDb = (d: any) => ({ tenant_id: TENANT_ID, id: d.id, name: d.name, industry: d.industry, used_in: d.usedIn, function: d.function, added_on: d.addedOn || null, file_path: d.filePath || null, file_name: d.fileName || null, file_size: d.fileSize || null, uploaded_at: d.uploadedAt || null });
 
 /* ============================ initial load ============================ */
 export async function loadAll() {
@@ -148,6 +148,33 @@ export const syncIssues = (prev: any[], next: any[]) => syncArray('issues', prev
 export const syncChanges = (prev: any[], next: any[]) => syncArray('change_requests', prev, next, changeToDb);
 export const syncEvents = (prev: any[], next: any[]) => syncArray('calendar_events', prev, next, eventToDb);
 export const syncDocs = (prev: any[], next: any[]) => syncArray('library_docs', prev, next, docToDb);
+
+/* ============================ Document Library: file storage ============================ */
+// The 'library-docs' Supabase Storage bucket is private (not public) -- every object lives under a
+// <tenant_id>/... path, and storage.objects RLS policies only let a signed-in user read/write/delete
+// objects under their own tenant's folder (mirrors every other table's tenant_id RLS). Downloads go
+// through a short-lived signed URL rather than a public link, so a document is never reachable by
+// anyone outside the tenant even if the link leaked.
+export async function uploadLibraryDoc(docId: string, file: File) {
+  if (!TENANT_ID) throw new Error('No tenant context to upload into.');
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `${TENANT_ID}/${docId}-${safeName}`;
+  const { error } = await supabase.storage.from('library-docs').upload(path, file, { upsert: true });
+  if (error) throw error;
+  return { filePath: path, fileName: file.name, fileSize: file.size };
+}
+
+export async function getLibraryDocDownloadUrl(filePath: string) {
+  const { data, error } = await supabase.storage.from('library-docs').createSignedUrl(filePath, 60);
+  if (error) throw error;
+  return data.signedUrl as string;
+}
+
+export async function deleteLibraryDocFile(filePath: string) {
+  if (!filePath) return;
+  const { error } = await supabase.storage.from('library-docs').remove([filePath]);
+  if (error) throw error;
+}
 export const syncDeliverables = (prev: any[], next: any[]) => syncArray('deliverables', prev, next, deliverableToDb);
 export const syncTeam = (prev: any[], next: any[]) => syncArray('team', prev, next, teamToDb, 'name');
 export const syncInvoices = (prev: any[], next: any[]) => syncArray('invoices', prev, next, invoiceToDb);

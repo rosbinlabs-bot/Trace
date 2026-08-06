@@ -436,6 +436,7 @@ export const ICON_PATHS = {
   trash: '<path d="M4 7h16"/><path d="M9 7V4.5A1.5 1.5 0 0 1 10.5 3h3A1.5 1.5 0 0 1 15 4.5V7"/><path d="M6 7l1 13a2 2 0 0 0 2 1.8h6a2 2 0 0 0 2-1.8l1-13"/><path d="M10 11v6M14 11v6"/>',
   alert: '<path d="M12 4 2 20h20L12 4Z"/><path d="M12 10v4M12 17v.4"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14-4M4 6v4h4"/><path d="M4 13a8 8 0 0 0 14 4M20 18v-4h-4"/>',
+  download: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/>',
   rocket: '<path d="M12 2c3 1.5 5 4.8 5 9 0 2-.5 3.7-1.3 5L12 20l-3.7-4c-.8-1.3-1.3-3-1.3-5 0-4.2 2-7.5 5-9Z"/><circle cx="12" cy="10" r="1.8"/><path d="M8 17l-2.5 2.5M16 17l2.5 2.5"/>',
   checkcircle: '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/>',
   note: '<path d="M6 3h9l5 5v13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1Z"/><path d="M8 12h8M8 16h5M8 8h3"/>',
