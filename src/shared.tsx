@@ -576,8 +576,42 @@ export const NotificationFeedList = ({ notifications, emptyText }: any) => {
 // instead of just deep-linking to the Dashboard. Closes on outside click.
 export function NotificationBell(){
   const { notifications } = React.useContext(PhaseDataContext);
+  const { email } = React.useContext(CurrentUserContext);
   const [open, setOpen] = useState(false);
+  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
   const ref = React.useRef(null);
+
+  // Per-user (not per-tab) via localStorage, keyed by email -- so the red badge stays cleared across
+  // reloads and sign-ins once you've opened the bell, not just for the current session.
+  const storageKey = `rosbinTrace.notifRead.v1.${(email || '').toLowerCase()}`;
+  React.useEffect(() => {
+    try {
+      const raw = typeof localStorage !== 'undefined' && localStorage.getItem(storageKey);
+      setReadIds(raw ? new Set(JSON.parse(raw)) : new Set());
+    } catch (e) { setReadIds(new Set()); }
+  }, [storageKey]);
+
+  const unreadCount = notifications.filter((n: any) => !readIds.has(n.id)).length;
+
+  // Opening the bell means "I've seen everything currently in this list" -- mark every notification
+  // loaded right now as read and persist it, so the badge disappears immediately and stays gone
+  // (a notification that arrives AFTER this point still shows up as unread, as expected).
+  const markAllRead = () => {
+    if (notifications.length === 0) return;
+    const next = new Set(readIds);
+    notifications.forEach((n: any) => next.add(n.id));
+    setReadIds(next);
+    try { typeof localStorage !== 'undefined' && localStorage.setItem(storageKey, JSON.stringify([...next])); } catch (e) {}
+  };
+
+  const toggleOpen = () => {
+    setOpen((o) => {
+      const next = !o;
+      if (next) markAllRead();
+      return next;
+    });
+  };
+
   React.useEffect(() => {
     const onDocClick = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
     document.addEventListener('mousedown', onDocClick);
@@ -585,15 +619,14 @@ export function NotificationBell(){
   }, []);
   return (
     <div className="relative" ref={ref}>
-      <button onClick={()=>setOpen(o=>!o)} title="Notifications" className="relative text-slate-400 hover:text-slate-600">
+      <button onClick={toggleOpen} title="Notifications" className="relative text-slate-400 hover:text-slate-600">
         <Icon name="notifications" className="w-[18px] h-[18px]"/>
-        {notifications.length>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">{notifications.length}</span>}
+        {unreadCount>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">{unreadCount}</span>}
       </button>
       {open && (
         <div className="absolute right-0 top-full mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-lg z-50 p-3">
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="font-semibold text-slate-800 text-sm">Notifications</span>
-            {notifications.length>0 && <Badge cls="bg-blue-100 text-blue-700">{notifications.length}</Badge>}
           </div>
           <div className="max-h-96 overflow-y-auto">
             <NotificationFeedList notifications={notifications} emptyText="No notifications yet — approvals, completions and calendar reminders will show up here."/>
