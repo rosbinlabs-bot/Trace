@@ -13,11 +13,14 @@ export default function Phases(){
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const projMeta = projects.find(p=>p.id===activeProj) || {};
-  // A Guest teammate (see S.deriveRole) reaches this screen only through App.tsx's hard-restricted
-  // Guest route table, scoped to their one tagged project — but every control on this screen still
-  // re-checks readOnly itself, same defense-in-depth reasoning as every other capability check in
-  // this app. Guest can view everything and download attachments; nothing else.
-  const readOnly = role==='guest';
+  // Per-PROJECT, not per-account: someone can be a full level-based team member on one project and
+  // only a Guest Teammate (Project Master -> Guest Teammates, project.guests) on another they aren't
+  // otherwise on — so whether this screen is editable depends on the currently selected project, not
+  // just who's signed in. Admin/Super Admin always gets full edit rights everywhere; everyone else
+  // needs to actually be on THIS project's Team to edit anything here — a Guest (or anyone not tagged
+  // at all, which shouldn't normally be reachable since staffVisibleProjects already filters the
+  // project tabs) can view and download attachments only.
+  const readOnly = role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
   // "Acting as" is scoped to THIS project's actual team now — only the hierarchy levels really
   // present in Project Master's team list show up as tabs, instead of a fixed global list of four
   // (see S.projectLevelNumsPresent). It's derived from the signed-in account's own level on this

@@ -74,7 +74,7 @@ export const CurrentUserContext = React.createContext<any>({ email:'', profile:n
 // and its use in App.tsx) rather than picked manually — there used to be a demo "acting as" switcher
 // here before real login existed.
 export const RoleContext = React.createContext<any>({ role:'consultant', setRole:()=>{} });
-export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant', client:'Client', guest:'Guest' };
+export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant', client:'Client' };
 // Maps a signed-in email to one of the RoleContext values above, using the same admin_data.users /
 // designationLevel records Administration -> Users and -> Roles & Permissions edit. A Client-type
 // account (added via Administration -> Users -> "Add Client", see Administration.tsx) is checked
@@ -96,11 +96,6 @@ export const deriveRole = (email: string, admin: any) => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return 'consultant';
   if (u.type==='Client') return 'client';
-  // Guest teammate (added from Project Master -> Guest Teammates, see ProjectMaster.tsx): a
-  // hard-restricted read-only account, tagged to exactly one project, that can view Phase Management
-  // and download sub task attachments there -- nothing else. No designation/hierarchy level, since
-  // it never enters the approval chain.
-  if (u.type==='Guest') return 'guest';
   const level = effectivePermissionLevel(u, admin);
   if (level==='Super Admin') return 'admin';
   if (u.designation==='Strategic Lead') return 'strategicLead';
@@ -112,16 +107,22 @@ export const deriveRole = (email: string, admin: any) => {
 // Project-level visibility for staff (App.tsx -> ProjectsDataContext, mirrors the Client-role
 // filtering right below it). role==='admin' is Admin/Super Admin permission level (see deriveRole
 // above -- it already collapses both onto 'admin', which is exactly the "sees everything" tier) and
-// keeps full org-wide visibility; everyone else (Manager/Officer -- PM, Associate, BD, and anyone
-// whose Project Head/Strategic Lead designation was custom-downgraded off Admin/Super Admin) only
-// sees projects where they're personally named as Strategic Lead, Project Head, PM or Associate.
-// A brand-new project with nobody assigned yet is invisible to a restricted account until someone
-// tags them on it -- expected, not a bug: there's nothing project-specific to show them yet.
+// keeps full org-wide visibility; everyone else only sees projects where they're on the project's
+// Team (p.team, full level-based participant) OR its Guest Teammates (p.guests, an existing teammate
+// given read-only Phase-Management-only access to a project they aren't otherwise on — see
+// ProjectMaster.tsx's "Guest Teammates" card and Phases.tsx's per-project readOnly check). A
+// brand-new project with nobody assigned yet is invisible to a restricted account until someone tags
+// them on it -- expected, not a bug: there's nothing project-specific to show them yet.
 export const staffVisibleProjects = (projects: any[], role: string, profile: any) => {
   if (role==='admin') return projects;
   if (!profile) return [];
-  return projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===profile.name));
+  return projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===profile.name) || (p.guests||[]).includes(profile.name));
 };
+// Is `name` a full participant (level-based, editable) on this project, vs. only a read-only Guest
+// Teammate (or not on it at all)? Phases.tsx uses this to decide per-project whether the signed-in
+// account gets edit controls or a view-only board -- the same person can be a full team member on one
+// project and only a guest on another, so this has to be checked per project, not per account/role.
+export const isOnProjectTeam = (project: any, name: string): boolean => (project?.team||[]).some((t:any)=>t.name===name);
 
 // Every Guest teammate/assignee roster entry a project's screens need: name + hierarchy level, plus a
 // display label combining the two (e.g. "L2 · Project Head") via designationForLevel. Replaces three
@@ -591,15 +592,6 @@ export const CLIENT_NAV = [
   ]},
 ];
 
-// Guest teammate (see deriveRole above) — one screen only: Phase Management, read-only, scoped to
-// their single tagged project (App.tsx filters ProjectsDataContext the same way it does for Client).
-// App.tsx's Shell swaps to this list and hard-restricts the route table to just /phases, same pattern
-// as CLIENT_NAV so there's no way to reach anything else by typing a URL either.
-export const GUEST_NAV = [
-  { group:'Guest', items:[
-    { id:'phases', label:'Phase Management' },
-  ]},
-];
 
 // Which capability-matrix MODULE governs each staff nav item/route — App.tsx (Shell) uses this to
 // hide sidebar items and hard-gate the matching route when the signed-in account's capabilityFor()

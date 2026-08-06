@@ -6,16 +6,27 @@ export default function Calendar(){
   const { events: calEvents, setEvents: setCalEvents } = React.useContext(S.CalendarDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { team } = React.useContext(S.TeamDataContext);
+  const { profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Risks and Issues carry their own target/due dates and are just as much "items applicable to this
   // user" as a milestone deadline -- pulled in here alongside phase/milestone/sub task deadlines so
   // the calendar is a complete picture of everything on this person's plate, not just Phase Management
-  // deadlines. Both contexts are already scoped to the signed-in user's visible projects upstream
-  // (App.tsx), so nothing extra to filter here.
+  // deadlines.
   const { risks, issues } = React.useContext(S.GovernanceDataContext);
+  // This is a personal schedule, not a portfolio view -- even for Admin/Super Admin (who otherwise see
+  // every project everywhere else in the app), the Calendar only shows projects the signed-in person
+  // is actually tagged to (Project Master -> Project Team or Guest Teammates). A project they're not
+  // on isn't part of "their" schedule, so it's left out here entirely.
+  const myTaggedProjects = projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===myProfile?.name) || (p.guests||[]).includes(myProfile?.name));
+  const myTaggedProjectNames = new Set(myTaggedProjects.map((p:any)=>p.name));
   const [projFilter, setProjFilter] = useState('All');
-  // Every visible project's name -- this is what drives the per-project color coding below (was
-  // per-client; deadlines/events already store the project NAME, not id, so this needs no lookup map).
-  const distinctProjectNames: string[] = Array.from(new Set(projects.map((p:any)=>p.name).filter(Boolean))).sort() as string[];
+  // Every one of MY tagged projects' names, each assigned a distinct, non-repeating color by stable
+  // sorted position in the palette (was a hash of the name, which could put two different projects on
+  // the same color) -- as long as there are no more tagged projects than palette colors, every color
+  // here is unique.
+  const distinctProjectNames: string[] = Array.from(new Set(myTaggedProjects.map((p:any)=>p.name).filter(Boolean))).sort() as string[];
+  const projectColor: Record<string, any> = {};
+  distinctProjectNames.forEach((name, i) => { projectColor[name] = S.CLIENT_COLOR_PALETTE[i % S.CLIENT_COLOR_PALETTE.length]; });
+  const colorForProject = (name: string) => projectColor[name] || { text:'text-slate-500', dot:'bg-slate-400', chip:'bg-slate-100 text-slate-600' };
   // Plain year/month integers — never round-tripped through toISOString(), which converts to UTC
   // and can silently roll the date back a day (and a whole month, at the 1st) in +offset timezones.
   const [year, setYear] = useState(Number(S.TODAY_ISO.slice(0,4)));
@@ -33,15 +44,15 @@ export default function Calendar(){
     setMonth(m); setYear(y);
   };
 
-  const projFilterName = projFilter==='All' ? null : (projects.find(p=>p.id===projFilter)||{}).name;
+  const projFilterName = projFilter==='All' ? null : (myTaggedProjects.find((p:any)=>p.id===projFilter)||{}).name;
 
   // Read-only deadline/activity markers, pulled live from Phase Management, plus Risks and Issues
   // (target/due dates) so "activities, tasks etc" applicable to this user show up here too, not just
   // phase/milestone/sub task deadlines. Colored per-project below (project name is already carried
-  // on every entry).
+  // on every entry). Scoped to myTaggedProjects only -- see above.
   const deadlineMap: any = {};
   const addDeadline = (dateStr, label, project, kind) => { if(dateStr) (deadlineMap[dateStr] = deadlineMap[dateStr]||[]).push({label, project, kind}); };
-  projects.forEach(p=>{
+  myTaggedProjects.forEach((p:any)=>{
     if(projFilter!=='All' && p.id!==projFilter) return;
     (tree[p.id]||[]).forEach(ph=>{
       addDeadline(ph.end, ph.name, p.name, 'phase');
@@ -52,17 +63,22 @@ export default function Calendar(){
     });
   });
   (risks||[]).forEach(r=>{
-    if(projFilter!=='All' && r.project!==(projects.find(p=>p.id===projFilter)||{}).name) return;
+    if(!myTaggedProjectNames.has(r.project)) return;
+    if(projFilter!=='All' && r.project!==projFilterName) return;
     addDeadline(r.target, `Risk: ${r.desc||r.id}`, r.project, 'risk');
   });
   (issues||[]).forEach(i=>{
-    if(projFilter!=='All' && i.project!==(projects.find(p=>p.id===projFilter)||{}).name) return;
+    if(!myTaggedProjectNames.has(i.project)) return;
+    if(projFilter!=='All' && i.project!==projFilterName) return;
     addDeadline(i.due, `Issue: ${i.root||i.id}`, i.project, 'issue');
   });
 
-  // User-created calendar events, filtered by the project dropdown (events with no project always show).
+  // User-created calendar events, filtered by the project dropdown (events with no project always
+  // show; events tied to a project the signed-in person isn't tagged to are left out entirely, same
+  // reasoning as the deadlines above).
   const eventsByDate: any = {};
   calEvents
+    .filter(ev => !ev.project || myTaggedProjectNames.has(ev.project))
     .filter(ev => !projFilterName || !ev.project || ev.project===projFilterName)
     .forEach(ev => { (eventsByDate[ev.date] = eventsByDate[ev.date]||[]).push(ev); });
 
@@ -100,7 +116,7 @@ export default function Calendar(){
         <div className="flex items-center gap-2">
           <select value={projFilter} onChange={e=>setProjFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
             <option value="All">All Projects</option>
-            {projects.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+            {myTaggedProjects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
             <button onClick={()=>shiftMonth(-1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white">‹</button>
@@ -141,7 +157,7 @@ export default function Calendar(){
                       // since that's still useful at a glance. A project-less "General" event falls
                       // back to the plain type color, since there's no project to color it by.
                       const typeColor = S.EVENT_TYPE_COLOR[ev.type]||S.EVENT_TYPE_COLOR.Meeting;
-                      const projColor = ev.project ? S.colorForClient(ev.project) : null;
+                      const projColor = ev.project ? colorForProject(ev.project) : null;
                       const chipCls = projColor ? projColor.chip : typeColor.chip;
                       const cancelled=ev.status==='Cancelled'; const done=ev.status==='Completed'; return (
                       <div key={ev.id} onClick={e=>{e.stopPropagation(); openEdit(ev);}}
@@ -152,7 +168,7 @@ export default function Calendar(){
                       </div>
                     );})}
                     {dayDeadlines.slice(0,2).map((e,j)=>{
-                      const projColor = e.project ? S.colorForClient(e.project) : null;
+                      const projColor = e.project ? colorForProject(e.project) : null;
                       return (
                       <div key={j} className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${projColor ? projColor.chip : 'bg-slate-50 text-slate-500'}`} title={`${e.label} · ${e.project}`}>
                         <S.Icon name={e.kind==='phase'?'pin':e.kind==='milestone'?'phases':e.kind==='risk'?'risks':e.kind==='issue'?'issues':'subtasks'} className="w-2.5 h-2.5 shrink-0"/>
@@ -168,16 +184,15 @@ export default function Calendar(){
         </div>
       </S.Card>
 
-      {/* Project legend — every project visible to this account, in the same color as its
-          events/deadlines on the calendar to the left (S.colorForClient, keyed by project name now),
-          so e.g. a project shown in red here means that project's items are the red ones on the grid. */}
+      {/* Project legend — every project I'm tagged to, each with its own distinct color (colorForProject
+          above), matching its events/deadlines on the calendar to the left. */}
       <S.Card className="p-4 w-44 shrink-0">
         <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Project</div>
         {distinctProjectNames.length===0 ? (
-          <div className="text-xs text-slate-400">No projects yet.</div>
+          <div className="text-xs text-slate-400">You're not tagged to any projects yet.</div>
         ) : (
           <div className="space-y-1.5">
-            {distinctProjectNames.map(n=>{ const pc = S.colorForClient(n); return (
+            {distinctProjectNames.map(n=>{ const pc = colorForProject(n); return (
               <div key={n} className="flex items-center gap-1.5 text-xs">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${pc.dot}`}></span>
                 <span className={`truncate font-medium ${pc.text}`} title={n}>{n}</span>
@@ -227,7 +242,7 @@ export default function Calendar(){
                 <label className="text-xs text-slate-400 block mb-1">Project (optional)</label>
                 <select className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none" value={editingEvent.project||''} onChange={e=>setEditingEvent(ev=>({...ev,project:e.target.value}))}>
                   <option value="">General — not project specific</option>
-                  {projects.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+                  {myTaggedProjects.map((p:any)=><option key={p.id} value={p.name}>{p.name}</option>)}
                 </select>
               </div>
               <div>

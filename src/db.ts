@@ -41,6 +41,9 @@ export const projectFromDb = (r: any) => ({
   // Dynamic hierarchy-level team list (Project Master -> Project Team) -- see synthesizeTeamFromLegacy
   // above for pre-existing projects that predate this column.
   team: (r.team && r.team.length) ? r.team : synthesizeTeamFromLegacy(r),
+  // Guest Teammates (Project Master -> Guest Teammates) -- names of existing teammates given
+  // read-only, Phase-Management-only access to this project without being on its approval-chain team.
+  guests: r.guests || [],
   clients: r.clients || [], clientLocation: r.client_location, clientWebsite: r.client_website,
   clientSoftware: r.client_software || [], status: r.status, priority: r.priority, billing: r.billing,
   billingDueDate: r.billing_due_date, completion: r.completion, risk: r.risk, sla: r.sla,
@@ -76,7 +79,7 @@ const projectToDb = (p: any) => ({
   id: p.id, name: p.name, client: p.client, category: p.category, industry: p.industry,
   no_of_sbu: p.noOfSbu || null, consulting_category: p.consultingCategory, engagement: p.engagement,
   start_date: p.start || null, end_date: p.end || null, monthly_fee: p.monthlyFee || 0,
-  ...legacyRolesFromTeam(p.team || []), team: p.team || [],
+  ...legacyRolesFromTeam(p.team || []), team: p.team || [], guests: p.guests || [],
   clients: p.clients || [], client_location: p.clientLocation, client_website: p.clientWebsite,
   client_software: p.clientSoftware || [], status: p.status, priority: p.priority, billing: p.billing,
   billing_due_date: p.billingDueDate || null, completion: p.completion || 0, risk: p.risk, sla: p.sla,

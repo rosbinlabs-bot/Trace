@@ -1,14 +1,5 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
-import * as db from '../db';
-
-// Same default-password rule as Administration -> Users -> Add Teammate/Client (first 4 letters of
-// the name, lowercased, + "1234") -- duplicated here in ProjectMaster rather than importing a private
-// helper from Administration.tsx, since Guest teammates are added from this screen instead.
-const defaultGuestPassword = (name: string) => {
-  const letters = (name || '').replace(/[^a-zA-Z]/g, '').toLowerCase();
-  return (letters.slice(0, 4) || 'user') + '1234';
-};
 
 export default function ProjectMaster(){
   const { role } = React.useContext(S.RoleContext);
@@ -31,7 +22,7 @@ export default function ProjectMaster(){
 
   const openExisting = (p) => { setForm({ ...p }); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
   const openNew = () => {
-    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, team:[], clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
+    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, team:[], guests:[], clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
     setIsNew(true); setExtChooser(false); setReqMenuOpen(false);
   };
   const close = () => { setForm(null); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
@@ -95,34 +86,23 @@ export default function ProjectMaster(){
   const setTeamMemberLevel = (i:number, level:string) => setTeamList(teamList.map((t:any,j:number)=> j===i?{...t, level}:t));
   const removeTeamMember = (i:number) => setTeamList(teamList.filter((_:any,j:number)=>j!==i));
 
-  // ---- Guest Teammates — a read-only login (Administration -> Users, type:'Guest') tagged to this
-  // one project: can view Phase Management and download sub task attachments there, nothing else (see
-  // S.deriveRole / App.tsx's Guest route table). Added straight from here rather than Administration,
-  // since a Guest only ever makes sense in the context of the specific project they're being let into.
-  const [guestDraft, setGuestDraft] = useState({ name:'', email:'', password:defaultGuestPassword('') });
-  const [guestPwTouched, setGuestPwTouched] = useState(false);
-  const [guestBusy, setGuestBusy] = useState(false);
-  const [guestErr, setGuestErr] = useState('');
-  const setGuestDraftName = (name:string) => setGuestDraft(d=>({...d, name, password: guestPwTouched? d.password : defaultGuestPassword(name)}));
-  const projectGuests = (admin.users||[]).filter((u:any)=>u.type==='Guest' && u.project===form?.id);
-  const addGuest = async () => {
-    const name = guestDraft.name.trim(), guestEmail = guestDraft.email.trim();
-    if(!name || !guestEmail || !guestDraft.password || guestDraft.password.length<8){ setGuestErr('Name, email and an 8+ character password are required.'); return; }
-    if((admin.users||[]).some((u:any)=>u.email.toLowerCase()===guestEmail.toLowerCase())){ setGuestErr('A user with that email already exists.'); return; }
-    setGuestErr(''); setGuestBusy(true);
-    try {
-      await db.createUserAccount(guestEmail, guestDraft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email:guestEmail, type:'Guest', project:form.id, status:'Active', joined:S.TODAY_ISO }]);
-      setGuestDraft({ name:'', email:'', password:defaultGuestPassword('') }); setGuestPwTouched(false);
-    } catch(e:any) { setGuestErr(e.message || 'Could not create the guest login.'); }
-    setGuestBusy(false);
-  };
-  const removeGuest = async (u:any) => {
-    setGuestErr(''); setGuestBusy(true);
-    try { await db.deleteUserAccount(u.email); patchAdmin('users', (us:any[])=>us.filter(x=>x.id!==u.id)); }
-    catch(e:any) { setGuestErr(e.message || 'Could not remove that guest.'); }
-    setGuestBusy(false);
-  };
+  // ---- Guest Teammates — tags an EXISTING teammate (already has a normal login elsewhere in the
+  // app) with read-only, Phase-Management-only access to THIS project, without adding them to the
+  // approval-chain Project Team above. No new account, no email/password -- just picking a name from
+  // a dropdown of teammates not already tagged to this project (either as full Team or as a Guest
+  // here already). Staged into the form like every other field, saved with the rest of the project.
+  const guestList: string[] = form?.guests || [];
+  const setGuestList = (list:string[]) => setF('guests', list);
+  const addGuestRow = () => setGuestList([...guestList, '']);
+  const setGuestName = (i:number, name:string) => setGuestList(guestList.map((g,j)=> j===i?name:g));
+  const removeGuestRow = (i:number) => setGuestList(guestList.filter((_,j)=>j!==i));
+  // Candidates for row `i`: active teammates (not Client-type) who aren't on this project's Team, and
+  // aren't already picked in a DIFFERENT guest row -- but the row's own current pick stays selectable
+  // in its own dropdown so it doesn't disappear out from under you while editing.
+  const guestCandidatesFor = (i:number) => (admin.users||[]).filter((u:any)=>
+    u.type!=='Client' && u.status==='Active' &&
+    !teamList.some((t:any)=>t.name===u.name) &&
+    !guestList.some((g,j)=>j!==i && g===u.name));
 
   // ---- client member helpers (multiple persons, one designated owner) ----
   const clients = form?.clients || [];
@@ -335,37 +315,32 @@ export default function ProjectMaster(){
               </div>
             </div>
 
-            {/* Guest Teammates — read-only, view-Phase-Management-and-download-attachments-only logins
-                scoped to exactly this project (see S.deriveRole / App.tsx's Guest route table). */}
+            {/* Guest Teammates — pick from existing teammates not already tagged to this project
+                (as Team or as a Guest here already); no other details needed, they already have a
+                login. Grants read-only Phase Management + attachment download for this project only. */}
             <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
               <div className="flex justify-between items-center mb-2">
                 <div><span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Guest Teammates</span>
                   <span className="ml-2 text-[11px] text-slate-400">Can view Phase Management and download sub task attachments for this project only — no other access.</span></div>
+                {canEdit && <button onClick={addGuestRow} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap">+ Add guest</button>}
               </div>
-              {guestErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">{guestErr}</div>}
-              <div className="space-y-2 mb-2">
-                {projectGuests.map((u:any)=>(
-                  <div key={u.id} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 text-sm">
-                    <span className="flex-1 min-w-0 truncate font-medium text-slate-700">{u.name}</span>
-                    <span className="flex-1 min-w-0 truncate text-slate-400">{u.email}</span>
-                    <S.Badge cls={u.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}>{u.status}</S.Badge>
-                    {canEdit && <button onClick={()=>removeGuest(u)} disabled={guestBusy} className="text-xs text-red-400 hover:text-red-600 shrink-0 disabled:opacity-50">✕</button>}
-                  </div>
-                ))}
-                {projectGuests.length===0 && <div className="text-xs text-slate-400">No guest teammates yet.</div>}
+              <div className="space-y-2">
+                {guestList.map((g,i)=>{
+                  const candidates = guestCandidatesFor(i);
+                  return (
+                    <div key={i} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                      <select value={g} disabled={!canEdit} onChange={e=>setGuestName(i,e.target.value)}
+                        className={`flex-1 border rounded-lg px-2 py-1 text-sm ${canEdit?'border-slate-200 bg-white':'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                        <option value="">— Select teammate —</option>
+                        {g && !candidates.some((u:any)=>u.name===g) && <option value={g}>{g}</option>}
+                        {candidates.map((u:any)=><option key={u.id} value={u.name}>{u.name}</option>)}
+                      </select>
+                      {canEdit && <button onClick={()=>removeGuestRow(i)} className="text-xs text-red-400 hover:text-red-600 shrink-0">✕</button>}
+                    </div>
+                  );
+                })}
+                {guestList.length===0 && <div className="text-xs text-slate-400">No guest teammates yet{canEdit?' — pick a teammate not already on this project.':''}.</div>}
               </div>
-              {canEdit && !isNew && (
-                <div className="flex flex-wrap items-end gap-2">
-                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
-                    <input value={guestDraft.name} onChange={e=>setGuestDraftName(e.target.value)} placeholder="Guest name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
-                    <input value={guestDraft.email} onChange={e=>setGuestDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
-                    <input value={guestDraft.password} onChange={e=>{setGuestPwTouched(true); setGuestDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-                  <button onClick={addGuest} disabled={guestBusy} className="text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{guestBusy?'Adding…':'+ Add Guest'}</button>
-                </div>
-              )}
-              {isNew && canEdit && <div className="text-[11px] text-slate-400">Save the project first, then add guest teammates here.</div>}
             </div>
 
             {/* Client members — multiple persons, one owner has status rights */}
