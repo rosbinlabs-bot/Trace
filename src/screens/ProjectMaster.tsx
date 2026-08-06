@@ -78,6 +78,17 @@ export default function ProjectMaster(){
   const setClient = (i,k,v) => setForm(f => ({...f, clients:(f.clients||[]).map((c,j)=> j===i?{...c,[k]:v}:c)}));
   const setOwner = (i) => setForm(f => ({...f, clients:(f.clients||[]).map((c,j)=>({...c, owner:j===i}))}));
   const removeClient = (i) => setForm(f => ({...f, clients:(f.clients||[]).filter((_,j)=>j!==i)}));
+  // Client-type logins (Administration -> Users -> Add Client) already tagged to this project --
+  // picking one from the dropdown below autofills a new client member row's Name/Email instead of
+  // typing them by hand. Designation/Phone aren't part of a login record, so those stay manual.
+  // Already-added emails are filtered out so the same login can't be picked twice.
+  const availableClientLogins = (admin.users||[]).filter((u:any) =>
+    u.type==='Client' && u.project===form?.id && !clients.some((c:any)=>c.email && u.email && c.email.toLowerCase()===u.email.toLowerCase()));
+  const addClientFromLogin = (userId: string) => {
+    const u = (admin.users||[]).find((x:any)=>x.id===userId);
+    if(!u) return;
+    setForm(f => ({...f, clients:[...(f.clients||[]), { name:u.name, designation:'', phone:'', email:u.email, owner:(f.clients||[]).length===0 }]}));
+  };
 
   // ---- ERPs & software used by the client (manual, multi-entry tag list) ----
   const [softwareInput, setSoftwareInput] = useState('');
@@ -263,7 +274,18 @@ export default function ProjectMaster(){
               <div className="flex justify-between items-center mb-2">
                 <div><span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Client Members</span>
                   <span className="ml-2 text-[11px] text-slate-400">The owner (●) is the only client with rights to change status where applicable.</span></div>
-                {canEdit && <button onClick={addClient} className="text-xs text-brand-600 hover:text-brand-700">+ Add client member</button>}
+                {canEdit && (
+                  <div className="flex items-center gap-2">
+                    <select value="" disabled={availableClientLogins.length===0}
+                      onChange={e=>{ if(e.target.value) addClientFromLogin(e.target.value); }}
+                      title={availableClientLogins.length===0 ? 'No Client-type logins tagged to this project yet — add one in Administration → Users → Add Client' : 'Pick a Client login to autofill Name & Email'}
+                      className="text-xs border border-slate-200 rounded-lg px-2 py-1 bg-white disabled:bg-slate-100 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                      <option value="">{availableClientLogins.length===0 ? 'No client logins for this project' : '+ Add from Client login…'}</option>
+                      {availableClientLogins.map((u:any)=><option key={u.id} value={u.id}>{u.name} ({u.email})</option>)}
+                    </select>
+                    <button onClick={addClient} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap">+ Add client member</button>
+                  </div>
+                )}
               </div>
               <div className="space-y-2">
                 {clients.map((c,i)=>(
