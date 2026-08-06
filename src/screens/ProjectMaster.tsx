@@ -194,14 +194,14 @@ export default function ProjectMaster(){
       <S.Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>
-            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Project Members</S.Th><S.Th>Monthly Fee</S.Th><S.Th>Total Collection / Total Value</S.Th><S.Th>Billing Due</S.Th><S.Th>Status</S.Th><S.Th>Lock</S.Th><S.Th>Days to Closure</S.Th>
+            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Consulting Category</S.Th><S.Th>Project Members</S.Th><S.Th>Monthly Fee</S.Th><S.Th>Total Collection / Total Value</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const dueSoon = S.billingDueSoon(p); return (
+            {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const collected = S.projInvoicedRevenue(p, invoices); return (
               <tr key={p._key} className="hover:bg-slate-50 cursor-pointer align-top" onClick={()=>openExisting(p)}>
                 <S.Td className="font-mono text-xs">{p.id||'—'}</S.Td>
                 <S.Td className="font-medium">{p.name}</S.Td>
-                <S.Td>{p.client}</S.Td>
+                <S.Td>{p.consultingCategory||'—'}</S.Td>
                 <S.Td>
                   <div className="text-xs leading-relaxed min-w-[200px]">
                     {(p.team||[]).length ? (p.team||[]).slice().sort((a:any,b:any)=>S.levelNum(a.level)-S.levelNum(b.level)).map((t:any,i:number)=>(
@@ -212,17 +212,8 @@ export default function ProjectMaster(){
                   </div>
                 </S.Td>
                 <S.Td className="whitespace-nowrap">{S.inLakh(p.monthlyFee)}/mo</S.Td>
-                <S.Td className="font-medium whitespace-nowrap">{S.inLakh(S.projTargetRevenue(p))}</S.Td>
-                <S.Td>
-                  {p.billingDueDate ? (
-                    <div className={`text-xs font-medium whitespace-nowrap inline-flex items-center gap-1 ${dueSoon ? (S.daysLeft(p.billingDueDate)<0?'text-red-600':'text-amber-600') : 'text-slate-500'}`} title={p.billingDueDate}>
-                      {dueSoon && <S.Icon name="financials" className="w-3 h-3"/>}
-                      {S.daysLeft(p.billingDueDate)<0 ? `${Math.abs(S.daysLeft(p.billingDueDate))}d overdue` : S.daysLeft(p.billingDueDate)===0 ? 'Due today' : `in ${S.daysLeft(p.billingDueDate)}d`}
-                    </div>
-                  ) : <span className="text-slate-300 text-xs">—</span>}
-                </S.Td>
+                <S.Td className="font-medium whitespace-nowrap" title={`Collected ₹${S.fmt(collected)} of a ₹${S.fmt(S.projTargetRevenue(p))} target`}>{S.inLakh(collected)} / {S.inLakh(S.projTargetRevenue(p))}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
-                <S.Td>{p.confirmed ? <span title="Confirmed — admin-only edits"><S.Icon name="lock" className="w-3.5 h-3.5 text-slate-400"/></span> : <span className="text-slate-300" title="Draft — editable"><S.Icon name="edit" className="w-3.5 h-3.5"/></span>}</S.Td>
                 <S.Td>
                   {S.needsExtension(p)
                     ? <span className="inline-flex items-center gap-1 text-red-600 font-medium whitespace-nowrap" title="End date passed while still In Progress"><S.Icon name="alert" className="w-3.5 h-3.5"/> Extension needed</span>
@@ -453,10 +444,11 @@ export default function ProjectMaster(){
             </div>
 
             {/* Revenue auto-calc */}
-            <div className="mt-4 grid grid-cols-3 gap-3">
+            <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
               <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Total Project Months</div><div className="text-lg font-bold text-slate-800">{months.toFixed(1)}</div></S.Card>
               <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Monthly Fee</div><div className="text-lg font-bold text-slate-800">{S.fmt(form.monthlyFee)}</div></S.Card>
-              <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Collection / Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
+              <S.Card className="p-3 bg-emerald-50"><div className="text-xs text-emerald-600">Total Collection (actual)</div><div className="text-lg font-bold text-emerald-700">₹{S.fmt(S.projInvoicedRevenue(form, invoices))}</div></S.Card>
+              <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
             </div>
 
             {/* Payment Receipts — Due Date / Amount / Receipt Status / Remarks; editable until the
