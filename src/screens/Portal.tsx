@@ -4,11 +4,23 @@ import * as S from '../shared';
 export default function Portal(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const [activeProj, setActiveProj] = useState(projects[0].id);
+  const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const [openPhase, setOpenPhase] = useState({});
   const [openMs, setOpenMs] = useState({});
   const [remarkDraft, setRemarkDraft] = useState({});
   const [expandedApproval, setExpandedApproval] = useState(null);
+
+  // Reached with no projects when a Client-type account's tagged project has since been removed (or
+  // was never set) -- ProjectsDataContext is filtered to just their one project for that role (see
+  // App.tsx), so an empty list here specifically means "nothing assigned", not "no projects exist".
+  if (projects.length === 0) {
+    return (
+      <div>
+        <S.SectionTitle sub="Client-facing view — approvals pending your sign-off, plus a simple phase / milestone / sub task timeline">Client Portal</S.SectionTitle>
+        <S.Card className="p-8 text-center text-sm text-slate-400">No project has been assigned to this account yet — contact your project team.</S.Card>
+      </div>
+    );
+  }
 
   const phases = tree[activeProj] || [];
   const projMeta = projects.find(p=>p.id===activeProj) || {};

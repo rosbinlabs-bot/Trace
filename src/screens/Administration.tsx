@@ -189,11 +189,17 @@ const defaultPasswordFor = (name: string) => {
 
 function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext); // 'admin' covers both Admin and Super Admin permission levels (see deriveRole in shared.tsx)
   const canEditUsers = role === 'admin';
-  const [adding, setAdding] = useState(false);
+  // addMode drives the two-step "+ Add User" flow: null (closed) -> 'menu' (choose Teammate vs
+  // Client) -> 'teammate' or 'client' (the actual form). Teammate keeps the original single-step
+  // form/behavior untouched; Client is new (see addClient below).
+  const [addMode, setAddMode] = useState<null|'menu'|'teammate'|'client'>(null);
   const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') });
   const [pwTouched, setPwTouched] = useState(false); // true once the admin manually edits the password field, so we stop overwriting it as the name changes
+  const [clientDraft, setClientDraft] = useState<any>({ name:'', email:'', projectId:'', password: defaultPasswordFor('') });
+  const [clientPwTouched, setClientPwTouched] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [resetFor, setResetFor] = useState<any>(null); // { user, password }
   const [editingId, setEditingId] = useState<string|null>(null); // id of the user row currently being edited (Name/Email)
@@ -202,6 +208,7 @@ function UsersPanel(){
   const [err, setErr] = useState('');
 
   const setDraftName = (name: string) => setDraft(d => ({ ...d, name, password: pwTouched ? d.password : defaultPasswordFor(name) }));
+  const setClientDraftName = (name: string) => setClientDraft(d => ({ ...d, name, password: clientPwTouched ? d.password : defaultPasswordFor(name) }));
 
   const addUser = async () => {
     setErr('');
@@ -212,11 +219,29 @@ function UsersPanel(){
     try {
       await db.createUserAccount(email, draft.password, name);
       patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, status:'Active', joined: S.TODAY_ISO }]);
-      setDraft({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') }); setPwTouched(false); setAdding(false);
+      setDraft({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') }); setPwTouched(false); setAddMode(null);
+    } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
+    setBusy(null);
+  };
+  // A Client-type login is hard-restricted (see deriveRole/CLIENT_NAV in shared.tsx and the route
+  // table in App.tsx's Shell) to the Client Portal + Project Structure for exactly ONE tagged
+  // project — no designation/permission level, since it never touches the staff permission ladder.
+  const addClient = async () => {
+    setErr('');
+    const name = clientDraft.name.trim(), email = clientDraft.email.trim();
+    if(!name || !email || !clientDraft.projectId) { setErr('Name, email and a project are required.'); return; }
+    if(!clientDraft.password || clientDraft.password.length<8) { setErr('An 8+ character password is required.'); return; }
+    if(admin.users.some((u:any)=>u.email.toLowerCase()===email.toLowerCase())) { setErr('A user with that email already exists.'); return; }
+    setBusy('adding');
+    try {
+      await db.createUserAccount(email, clientDraft.password, name);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO }]);
+      setClientDraft({ name:'', email:'', projectId:'', password: defaultPasswordFor('') }); setClientPwTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
   const setDesignation = (id, designation) => patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u));
+  const setClientProject = (id, projectId) => patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u));
   const approveUser = (u:any) => patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x));
   const toggleSuspend = async (u:any) => {
     setErr(''); setBusy(u.id);
@@ -264,13 +289,33 @@ function UsersPanel(){
     <div>
       <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
         <div className="text-sm text-slate-500 max-w-2xl">Everyone who can sign in, their designation and derived permission level. Deactivate blocks sign-in but keeps the record; Remove deletes the login entirely. Only Admin/Super Admin accounts can manage users.</div>
-        <button onClick={()=>setAdding(a=>!a)} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add User</button>
+        <button onClick={()=>setAddMode(m=>m?null:'menu')} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add User</button>
       </div>
 
       {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</div>}
 
-      {adding && (
+      {addMode==='menu' && (
         <S.Card className="p-3 mb-3 border-2 border-dashed border-brand-300 bg-brand-50/30">
+          <div className="text-xs text-slate-500 mb-2">What kind of user are you adding?</div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <button onClick={()=>setAddMode('teammate')} className="text-left border border-slate-200 hover:border-brand-400 bg-white rounded-lg px-3 py-2.5 transition-colors">
+              <div className="text-sm font-medium text-slate-800 inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5 text-brand-500"/> Add Teammate</div>
+              <div className="text-xs text-slate-400 mt-0.5">Internal staff — designation, permission level and full app access.</div>
+            </button>
+            <button onClick={()=>setAddMode('client')} className="text-left border border-slate-200 hover:border-brand-400 bg-white rounded-lg px-3 py-2.5 transition-colors">
+              <div className="text-sm font-medium text-slate-800 inline-flex items-center gap-1.5"><S.Icon name="building" className="w-3.5 h-3.5 text-brand-500"/> Add Client</div>
+              <div className="text-xs text-slate-400 mt-0.5">External client, tagged to one project — Client Portal + Project Structure only, nothing else.</div>
+            </button>
+          </div>
+        </S.Card>
+      )}
+
+      {addMode==='teammate' && (
+        <S.Card className="p-3 mb-3 border-2 border-dashed border-brand-300 bg-brand-50/30">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-medium text-slate-600 inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5 text-brand-500"/> Add Teammate</div>
+            <button onClick={()=>setAddMode('menu')} className="text-[11px] text-slate-400 hover:text-slate-600">Change type</button>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
               <input value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
@@ -287,10 +332,40 @@ function UsersPanel(){
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addUser} disabled={busy==='adding'} className="flex-1 text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
-              <button onClick={()=>{setAdding(false);setErr('');}} className="flex-1 text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50">Cancel</button>
+              <button onClick={()=>{setAddMode(null);setErr('');}} className="flex-1 text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50">Cancel</button>
             </div>
           </div>
           <div className="text-[11px] text-slate-400 mt-2">They can sign in immediately with this email/password, and should change it after their first login.</div>
+        </S.Card>
+      )}
+
+      {addMode==='client' && (
+        <S.Card className="p-3 mb-3 border-2 border-dashed border-violet-300 bg-violet-50/30">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-xs font-medium text-slate-600 inline-flex items-center gap-1.5"><S.Icon name="building" className="w-3.5 h-3.5 text-violet-500"/> Add Client</div>
+            <button onClick={()=>setAddMode('menu')} className="text-[11px] text-slate-400 hover:text-slate-600">Change type</button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
+              <input value={clientDraft.name} onChange={e=>setClientDraftName(e.target.value)} placeholder="Client contact name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
+              <input value={clientDraft.email} onChange={e=>setClientDraft(d=>({...d,email:e.target.value}))} placeholder="name@clientcompany.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Project</label>
+              <select value={clientDraft.projectId} onChange={e=>setClientDraft(d=>({...d,projectId:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+                <option value="">Select project…</option>
+                {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
+              <div className="flex gap-1">
+                <input value={clientDraft.password} onChange={e=>{setClientPwTouched(true); setClientDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-violet-500"/>
+                <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+              </div></div>
+            <div className="flex gap-1.5">
+              <button onClick={addClient} disabled={busy==='adding'} className="flex-1 text-xs bg-violet-500 hover:bg-violet-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
+              <button onClick={()=>{setAddMode(null);setErr('');}} className="flex-1 text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50">Cancel</button>
+            </div>
+          </div>
+          <div className="text-[11px] text-slate-400 mt-2">This login is hard-restricted to the Client Portal and Project Structure for the selected project only — no other screen, and no edit access anywhere in the app.</div>
         </S.Card>
       )}
 
@@ -317,6 +392,7 @@ function UsersPanel(){
           <tbody className="divide-y divide-slate-100">
             {admin.users.map((u:any)=>{
               const isEditing = editingId===u.id;
+              const isClient = u.type==='Client';
               return (
               <tr key={u.id} className={u.status==='Suspended'?'bg-slate-50/60 opacity-70':u.status==='Pending Approval'?'bg-amber-50/40':isEditing?'bg-brand-50/30':''}>
                 <S.Td className="font-medium whitespace-nowrap">
@@ -330,13 +406,25 @@ function UsersPanel(){
                     : u.email}
                 </S.Td>
                 <S.Td>
-                  {canEditUsers ? (
+                  {isClient ? (
+                    <div className="flex items-center gap-1.5">
+                      <S.Badge cls="bg-violet-50 text-violet-700">Client</S.Badge>
+                      {canEditUsers ? (
+                        <select value={u.project||''} onChange={e=>setClientProject(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-1.5 py-1 text-xs max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-violet-500">
+                          <option value="">— no project —</option>
+                          {projects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
+                        </select>
+                      ) : (
+                        <span className="text-xs text-slate-500 truncate max-w-[9rem]">{projects.find((p:any)=>p.id===u.project)?.name || 'No project'}</span>
+                      )}
+                    </div>
+                  ) : canEditUsers ? (
                     <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
                       {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
                     </select>
                   ) : u.designation}
                 </S.Td>
-                <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge></S.Td>
+                <S.Td>{isClient ? <S.Badge cls="bg-slate-100 text-slate-500">Restricted</S.Badge> : <S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge>}</S.Td>
                 <S.Td>
                   {u.status==='Active' ? <S.Badge cls="bg-emerald-100 text-emerald-700">Active</S.Badge>
                     : u.status==='Pending Approval' ? <S.Badge cls="bg-amber-100 text-amber-700">Pending Approval</S.Badge>

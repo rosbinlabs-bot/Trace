@@ -46,5 +46,3 @@ split into a proper module structure:
   shapes) to keep the port faithful to the original JS without a full type-modeling pass. Tightening
   types incrementally (starting with the core `Project`/`Phase`/`Milestone` shapes) is a natural
   next step.
-
-

@@ -58,18 +58,22 @@ export const CurrentUserContext = React.createContext<any>({ email:'', profile:n
 // and its use in App.tsx) rather than picked manually — there used to be a demo "acting as" switcher
 // here before real login existed.
 export const RoleContext = React.createContext<any>({ role:'consultant', setRole:()=>{} });
-export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant' };
-// Maps a signed-in email to one of the four RoleContext values above, using the same
-// admin_data.users / designationLevel records Administration -> Users and -> Roles & Permissions
-// edit. Permission level is checked FIRST: anyone whose designation carries Super Admin level
-// (Strategic Lead by default — this is the tenant owner) gets full 'admin' rights, including editing
-// confirmed projects in Project Master, regardless of designation label. Only once that's ruled out
-// do Strategic Lead / Project Head get matched by designation name (so their badge stays meaningful
-// even at a lower permission level); Admin-level anyone else also gets 'admin'; everyone else is a
-// base 'consultant'.
+export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant', client:'Client' };
+// Maps a signed-in email to one of the RoleContext values above, using the same admin_data.users /
+// designationLevel records Administration -> Users and -> Roles & Permissions edit. A Client-type
+// account (added via Administration -> Users -> "Add Client", see Administration.tsx) is checked
+// FIRST and always resolves to 'client' regardless of its `designation` field (fixed to 'Client',
+// which deliberately isn't one of DESIGNATIONS/designationLevel) -- this is a hard-restricted role,
+// not a point on the staff permission ladder. For everyone else, permission level is checked first:
+// anyone whose designation carries Super Admin level (Strategic Lead by default — this is the tenant
+// owner) gets full 'admin' rights, including editing confirmed projects in Project Master, regardless
+// of designation label. Only once that's ruled out do Strategic Lead / Project Head get matched by
+// designation name (so their badge stays meaningful even at a lower permission level); Admin-level
+// anyone else also gets 'admin'; everyone else is a base 'consultant'.
 export const deriveRole = (email: string, admin: any) => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return 'consultant';
+  if (u.type==='Client') return 'client';
   const level = admin?.designationLevel?.[u.designation];
   if (level==='Super Admin') return 'admin';
   if (u.designation==='Strategic Lead') return 'strategicLead';
@@ -387,6 +391,16 @@ export const NAV = [
   { group:'System', items:[
     { id:'reports', label:'Reports' },
     { id:'admin', label:'Administration' },
+  ]},
+];
+
+// Sidebar/route nav for a Client-type account (see deriveRole above) — deliberately just these two
+// items. App.tsx (Shell) swaps to this list instead of NAV, and its route table restricts a client
+// to exactly these paths, so there's no way to reach anything else by URL either.
+export const CLIENT_NAV = [
+  { group:'Client', items:[
+    { id:'portal', label:'Client Portal' },
+    { id:'structure', label:'Project Structure' },
   ]},
 ];
 

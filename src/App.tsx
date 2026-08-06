@@ -56,7 +56,11 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
 
   const location = useLocation();
   const active = location.pathname.split('/')[1] || 'dashboard';
-  const activeLabel = S.NAV.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
+  // Clients get a hard-restricted sidebar (just Client Portal + Project Structure) and, below, a
+  // matching restricted route table -- the nav swap alone wouldn't stop someone from typing another
+  // URL directly, so both have to agree.
+  const navGroups = role === 'client' ? S.CLIENT_NAV : S.NAV;
+  const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
 
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
@@ -75,7 +79,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
             )}
           </div>
           <nav className="flex-1 overflow-y-auto nav-scroll py-2">
-            {S.NAV.map((group: any) => (
+            {navGroups.map((group: any) => (
               <div key={group.group} className="mb-1">
                 {!collapsed && (
                   <div className="px-4 pt-2 pb-1 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
@@ -146,26 +150,41 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
           </header>
           <main className="flex-1 overflow-y-auto p-5 bg-slate-100">
             <Routes>
-              <Route path="/" element={<Navigate to="/dashboard" replace />} />
-              <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/projects" element={<ProjectMaster />} />
-              <Route path="/structure" element={<ProjectStructure />} />
-              <Route path="/phases" element={<Phases />} />
-              <Route path="/deliverables" element={<Deliverables />} />
-              <Route path="/implementation" element={<Implementation />} />
-              <Route path="/gantt" element={<Gantt />} />
-              <Route path="/calendar" element={<CalendarScreen />} />
-              <Route path="/approvals" element={<Approvals />} />
-              <Route path="/documents" element={<Documents />} />
-              <Route path="/doclibrary" element={<DocumentLibrary />} />
-              <Route path="/risks" element={<Risks />} />
-              <Route path="/issues" element={<Issues />} />
-              <Route path="/changes" element={<Changes />} />
-              <Route path="/team" element={<Team />} />
-              <Route path="/portal" element={<Portal />} />
-              <Route path="/reports" element={<Reports />} />
-              <Route path="/admin" element={<Administration />} />
-              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              {role === 'client' ? (
+                // Hard restriction: a client account can reach exactly these two paths, no matter
+                // what URL they type -- everything else (including "/") bounces to /portal. This is
+                // the actual security boundary for navigation; the sidebar swap above is just the UI
+                // reflection of it.
+                <>
+                  <Route path="/" element={<Navigate to="/portal" replace />} />
+                  <Route path="/portal" element={<Portal />} />
+                  <Route path="/structure" element={<ProjectStructure />} />
+                  <Route path="*" element={<Navigate to="/portal" replace />} />
+                </>
+              ) : (
+                <>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/projects" element={<ProjectMaster />} />
+                  <Route path="/structure" element={<ProjectStructure />} />
+                  <Route path="/phases" element={<Phases />} />
+                  <Route path="/deliverables" element={<Deliverables />} />
+                  <Route path="/implementation" element={<Implementation />} />
+                  <Route path="/gantt" element={<Gantt />} />
+                  <Route path="/calendar" element={<CalendarScreen />} />
+                  <Route path="/approvals" element={<Approvals />} />
+                  <Route path="/documents" element={<Documents />} />
+                  <Route path="/doclibrary" element={<DocumentLibrary />} />
+                  <Route path="/risks" element={<Risks />} />
+                  <Route path="/issues" element={<Issues />} />
+                  <Route path="/changes" element={<Changes />} />
+                  <Route path="/team" element={<Team />} />
+                  <Route path="/portal" element={<Portal />} />
+                  <Route path="/reports" element={<Reports />} />
+                  <Route path="/admin" element={<Administration />} />
+                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                </>
+              )}
             </Routes>
           </main>
         </div>
@@ -434,6 +453,15 @@ export default function App() {
   const myEmail = session?.user?.email || '';
   const myProfile = (admin.users || []).find((u: any) => (u.email || '').toLowerCase() === myEmail.toLowerCase());
   const role = S.deriveRole(myEmail, admin);
+  // A Client-type account only ever sees the one project it was tagged to (Administration -> Users ->
+  // "Add Client"). Filtering the shared ProjectsDataContext down to that single project here means
+  // Portal/ProjectStructure -- the only two screens a client's routes can even reach (see Shell above)
+  // -- don't need any client-specific logic of their own; they just render whatever's in `projects`.
+  const visibleProjects = role === 'client' ? projects.filter((p: any) => p.id === myProfile?.project) : projects;
+  // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
+  // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
+  // see activity/approval notifications from every OTHER project in the tenant too.
+  const visibleNotifications = role === 'client' ? notifications.filter((n: any) => n.projectId === myProfile?.project) : notifications;
 
   if (session === undefined) return <LoadingScreen />;
   if (!session) return <Login />;
@@ -450,9 +478,9 @@ export default function App() {
     <BrowserRouter>
       <S.AdminDataContext.Provider value={{ admin, patchAdmin }}>
         <S.SettingsContext.Provider value={{ settings, setSettings }}>
-          <S.ProjectsDataContext.Provider value={{ projects, setProjects }}>
+          <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team, setTeam }}>
-              <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications, addNotification }}>
+              <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
                 <S.GovernanceDataContext.Provider value={{ risks, setRisks, issues, setIssues, changes, setChanges }}>
                   <S.CalendarDataContext.Provider value={{ events: calendarEvents, setEvents: setCalendarEvents }}>
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>

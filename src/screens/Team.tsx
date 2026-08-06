@@ -23,7 +23,7 @@ export default function Team(){
   // selecting one pre-fills their designation as a starting Role; everything else (department,
   // utilization, availability, capacity) is left blank/default and can be edited inline in the
   // table right after adding.
-  const availableUsers = (admin.users||[]).filter((u:any) => !team.some(m=>m.name===u.name));
+  const availableUsers = (admin.users||[]).filter((u:any) => u.type!=='Client' && !team.some(m=>m.name===u.name));
   const pickUser = (name) => {
     const u = availableUsers.find((x:any)=>x.name===name);
     setDraft(d => ({ ...d, name: name||'', role: u ? u.designation : d.role }));
