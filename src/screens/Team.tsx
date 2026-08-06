@@ -1,10 +1,29 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
 
+// Benchmark vs actual for one Team Productivity metric — green + filled bar once the actual meets
+// or exceeds the benchmark (or, for a not-yet-benchmarked metric, once there's any actual at all),
+// amber otherwise. Kept outside Team() since it doesn't need anything from that closure.
+const MetricCell = ({ actual, benchmark, fmt }: any) => {
+  const met = benchmark>0 ? actual>=benchmark : actual>0;
+  const pct = benchmark>0 ? Math.min(100, Math.round(actual/benchmark*100)) : (actual>0?100:0);
+  return (
+    <div className="min-w-[92px]">
+      <div className="flex items-baseline gap-1">
+        <span className={`text-sm font-semibold ${met?'text-emerald-600':'text-slate-700'}`}>{fmt?fmt(actual):actual}</span>
+        <span className="text-xs text-slate-400">/ {fmt?fmt(benchmark):benchmark}</span>
+      </div>
+      <div className="h-1 bg-slate-100 rounded-full mt-1 overflow-hidden"><div className={`h-full ${met?'bg-emerald-500':'bg-amber-400'}`} style={{width:pct+'%'}}></div></div>
+    </div>
+  );
+};
+
 export default function Team(){
   const { team, setTeam } = React.useContext(S.TeamDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
+  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { invoices } = React.useContext(S.InvoicesDataContext);
   // Department Master (Administration -> Project Settings -> Masters -> Department Master) is the
   // single source of truth for department names now, so two people can't add the same department
   // spelled two different ways ("Delivery" vs "delivery"). If a member already has a dept value from
@@ -45,6 +64,33 @@ export default function Team(){
   };
   const removeMember = (name) => { setTeam(ts => ts.filter(m=>m.name!==name)); setConfirmRemove(null); };
   const patchMember = (name, key, val) => setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m));
+
+  // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
+  // teammate's Users id); every actual below is derived live from Project Master + Billing Tracker,
+  // the same way the rest of the app computes its numbers — nothing here is typed in by hand. A
+  // member is "on" a project if they fill any of its four named roles (Strategic Lead / Project
+  // Head / PM / Associate); a Premium-tier project counts as TWO projects toward the "No. of
+  // Projects" actual (S.projectWeight), everything else counts it once.
+  const usersByName: any = {};
+  (admin.users||[]).forEach((u:any)=>{ usersByName[u.name]=u; });
+  const CATEGORY_TIERS = (settings.categories && settings.categories.length) ? settings.categories : S.DEFAULT_PROJECT_SETTINGS.categories;
+  const projectsFor = (name:string) => projects.filter((p:any)=>name && [p.pm,p.projectHead,p.strategicLead,p.associate].includes(name));
+  const productivityFor = (m:any) => {
+    const mine = projectsFor(m.name);
+    const actualProjects = mine.reduce((a:number,p:any)=>a+S.projectWeight(p, CATEGORY_TIERS), 0);
+    const colleagues = new Set();
+    mine.forEach((p:any)=>{ [p.pm,p.projectHead,p.strategicLead,p.associate].forEach((nm:string)=>{ if(nm && nm!==m.name) colleagues.add(nm); }); });
+    const actualBilling = mine.reduce((a:number,p:any)=>a+S.projInvoicedRevenue(p, invoices), 0);
+    const actualVisits = mine.length ? Math.round((mine.reduce((a:number,p:any)=>a+(Number(p.visitsMonth)||0),0)/mine.length)*10)/10 : 0;
+    const u = usersByName[m.name];
+    const bench = { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((u && (admin.productivity||{})[u.id]) || {}) };
+    return {
+      projects: { benchmark:bench.projects, actual:actualProjects },
+      teamSize: { benchmark:bench.teamSize, actual:colleagues.size },
+      billingTarget: { benchmark:bench.billingTarget, actual:actualBilling },
+      onsiteVisits: { benchmark:bench.onsiteVisits, actual:actualVisits },
+    };
+  };
 
   return (
     <div>
@@ -194,6 +240,42 @@ export default function Team(){
           </div>
         ))
       )}
+
+      {/* Team Productivity — benchmarks set in Administration -> Team Productivity, actuals computed
+          live from Project Master + Billing Tracker (see productivityFor above). */}
+      <S.Card className="overflow-hidden mt-5">
+        <div className="px-4 pt-3 pb-2">
+          <div className="font-semibold text-slate-800">Team Productivity — Benchmarks vs Actuals</div>
+          <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — projects, team size and billing come from Project Master and Billing Tracker; a Premium-tier project counts as two projects.</div>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr><S.Th>Name</S.Th><S.Th>No. of Projects</S.Th><S.Th>Team Size</S.Th><S.Th>Billing Target</S.Th><S.Th>On Site Visits / Project</S.Th></tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {team.map(m=>{
+              const p = productivityFor(m);
+              return (
+                <tr key={m.name} className="hover:bg-slate-50">
+                  <S.Td>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-semibold shrink-0">{initials(m.name)}</div>
+                      <span className="font-medium text-slate-800 whitespace-nowrap">{m.name}</span>
+                    </div>
+                  </S.Td>
+                  <S.Td><MetricCell actual={p.projects.actual} benchmark={p.projects.benchmark}/></S.Td>
+                  <S.Td><MetricCell actual={p.teamSize.actual} benchmark={p.teamSize.benchmark}/></S.Td>
+                  <S.Td><MetricCell actual={p.billingTarget.actual} benchmark={p.billingTarget.benchmark} fmt={S.inLakh}/></S.Td>
+                  <S.Td><MetricCell actual={p.onsiteVisits.actual} benchmark={p.onsiteVisits.benchmark}/></S.Td>
+                </tr>
+              );
+            })}
+            {team.length===0 && (
+              <tr><td colSpan={5} className="text-center text-sm text-slate-400 py-8">Add team members above to see productivity benchmarks.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </S.Card>
     </div>
   );
 }

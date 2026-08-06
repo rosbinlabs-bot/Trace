@@ -567,6 +567,61 @@ function UsersPanel(){
   );
 }
 
+// Team Productivity Settings — per-teammate benchmarks that Team Management measures live actuals
+// against (No. of Projects, Team Size, Billing Target, On Site Visits Per Project). Keyed by the
+// teammate's Administration -> Users id rather than name, so a later name edit doesn't orphan their
+// benchmark. Uses the same uncontrolled-input + onBlur pattern as Team Management's inline row
+// editors, for the same reason (no re-render/focus loss on every keystroke).
+function ProductivityPanel(){
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
+  const teammates = (admin.users||[]).filter((u:any)=>u.type!=='Client');
+  const benchFor = (userId:string) => ({ ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((admin.productivity||{})[userId]||{}) });
+  const setBench = (userId:string, key:string, val:string) => {
+    if(!canEdit) return;
+    const num = Number(val)||0;
+    patchAdmin('productivity', (prod:any) => ({ ...(prod||{}), [userId]: { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((prod||{})[userId]||{}), [key]: num } }));
+  };
+  return (
+    <div>
+      <div className="text-sm text-slate-500 mb-4 max-w-2xl">Per-teammate targets that Team Management measures live actuals against — projects, team size, billing and onsite visits are all pulled from Project Master and Billing Tracker, not entered by hand. A Premium-tier project counts as <b>two</b> projects toward the "No. of Projects" actual.</div>
+      {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">You have view-only access here — ask a Super Admin for Edit access on Administration to change benchmarks.</div>}
+      <S.Card className="overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-slate-50 border-b border-slate-200">
+            <tr><S.Th>Teammate</S.Th><S.Th>Designation</S.Th>{S.PRODUCTIVITY_METRICS.map((m:any)=><S.Th key={m.key}>{m.label}</S.Th>)}</tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {teammates.map((u:any)=>{
+              const b = benchFor(u.id);
+              return (
+                <tr key={u.id} className="hover:bg-slate-50">
+                  <S.Td className="font-medium whitespace-nowrap">{u.name}</S.Td>
+                  <S.Td className="text-slate-500 whitespace-nowrap">{u.designation||'—'}</S.Td>
+                  {S.PRODUCTIVITY_METRICS.map((m:any)=>(
+                    <S.Td key={m.key}>
+                      <div className="flex items-center gap-1">
+                        {m.unit && <span className="text-xs text-slate-400">{m.unit}</span>}
+                        <input type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={b[m.key]} disabled={!canEdit}
+                          onBlur={e=>setBench(u.id, m.key, e.target.value.replace(/[^0-9]/g,''))}
+                          className="w-20 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white disabled:cursor-not-allowed"/>
+                      </div>
+                    </S.Td>
+                  ))}
+                </tr>
+              );
+            })}
+            {teammates.length===0 && (
+              <tr><td colSpan={2+S.PRODUCTIVITY_METRICS.length} className="text-center text-sm text-slate-400 py-8">No teammates yet — add them in the Users tab.</td></tr>
+            )}
+          </tbody>
+        </table>
+      </S.Card>
+    </div>
+  );
+}
+
 // Defined ONCE at module scope, not inside CompanyPanel's render body — an inline component
 // definition gets a fresh function identity every keystroke, which makes React unmount+remount the
 // underlying <input> and drop focus after every character (same bug class documented for
@@ -885,6 +940,7 @@ export default function Admin(){
     ['billing','Billing'],
     ['roles','Roles & Permissions'],
     ['users','Users'],
+    ['productivity','Team Productivity'],
     ['notifications','Notifications'],
     ['projectSettings','Project Settings'],
   ];
@@ -932,6 +988,7 @@ export default function Admin(){
       {tab==='billing' && <BillingPanel/>}
       {tab==='roles' && <RolesPermissionsPanel/>}
       {tab==='users' && <UsersPanel/>}
+      {tab==='productivity' && <ProductivityPanel/>}
       {tab==='notifications' && <NotificationsPanel/>}
       {tab==='projectSettings' && <ProjectSettingsPanel/>}
     </div>

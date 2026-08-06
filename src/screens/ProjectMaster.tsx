@@ -261,7 +261,7 @@ export default function ProjectMaster(){
               <S.DateF label="Billing Due Date" value={form.billingDueDate} canEdit={canEdit} onChange={v=>setF('billingDueDate',v)} />
               <S.NumF label="Monthly Fee (₹)" value={form.monthlyFee} canEdit={canEdit} onChange={v=>setF('monthlyFee',v)} />
               <S.ReadF label="Completion %">{form.completion}%</S.ReadF>
-              <S.ReadF label="Visits This Month">{form.visitsMonth}</S.ReadF>
+              <S.NumF label="Onsite Visits (per Month)" value={form.visitsMonth} canEdit={canEdit} onChange={v=>setF('visitsMonth',v)} />
               <S.ReadF label="Total Visits (till date)">{form.visitsTotal}</S.ReadF>
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Months Remaining</label>

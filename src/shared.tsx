@@ -36,6 +36,22 @@ export const projAchievedRevenue = (p) => Math.min(projTargetRevenue(p), Math.ro
 // project simply has no confirmed receipts yet, since that's the true billed-to-date figure.
 export const projInvoicedRevenue = (p, invoices) => (invoices||[]).filter(i=>i.project===p.id && i.status==='Received').reduce((sum,i)=>sum+(Number(i.amount)||0), 0);
 
+// Category tiers are org-configurable (Project Master's Category field, master list at
+// settings.categories — code + label, e.g. { code:'A', label:'Premium' }), so "is this project
+// Premium" has to look the label up rather than assume code 'A' is always Premium. Falls back to
+// code==='A' only if the tier list has been edited away from including a Premium label at all, so
+// this still does something sane on a freshly customized tier list.
+export const isPremiumProject = (p, categories) => {
+  const tiers = (categories && categories.length) ? categories : DEFAULT_PROJECT_SETTINGS.categories;
+  const tier = tiers.find((t:any)=>t.code===p.category);
+  if (tier) return (tier.label||'').trim().toLowerCase()==='premium';
+  return p.category==='A';
+};
+// Team Productivity (Administration -> Team Productivity, Team Management's benchmark-vs-actual
+// table): a Premium project counts as TWO projects toward a teammate's "No. of Projects" actual —
+// everything else (team size, billing, onsite visits) still reads off the project as one project.
+export const projectWeight = (p, categories) => isPremiumProject(p, categories) ? 2 : 1;
+
 // Live projects list, lifted to App level (same reasoning as PhaseDataContext etc. below) so that
 // edits/adds made in Project Master are immediately visible everywhere else that reads project
 // data (Dashboard, Gantt, Portal, Deliverables, Calendar, Risks, Issues, Changes, Reports, Phases,
@@ -267,6 +283,17 @@ export const DEFAULT_ADMIN_EXTRAS: any = {
   auditLogs: [],
 };
 
+// Team Productivity Settings (Administration -> Team Productivity): per-teammate benchmarks, keyed
+// by their Administration -> Users record id (stable even if the person's name is later edited).
+// Missing keys/fields all default to 0 via PRODUCTIVITY_METRICS below, not undefined, so a teammate
+// with no benchmark set yet just shows "— of 0" instead of breaking the Team Management table.
+export const PRODUCTIVITY_METRICS = [
+  { key:'projects',    label:'No. of Projects',            unit:'' },
+  { key:'teamSize',     label:'Team Size',                  unit:'' },
+  { key:'billingTarget', label:'Billing Target',            unit:'₹' },
+  { key:'onsiteVisits', label:'On Site Visits Per Project', unit:'' },
+];
+export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { projects:0, teamSize:0, billingTarget:0, onsiteVisits:0 };
 export const DEFAULT_ADMIN_DATA: any = {
   designationLevel: DEFAULT_DESIGNATION_LEVEL,
   matrix: DEFAULT_PERMISSION_MATRIX,
@@ -275,6 +302,7 @@ export const DEFAULT_ADMIN_DATA: any = {
   billing: DEFAULT_BILLING_INFO,
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
   extras: DEFAULT_ADMIN_EXTRAS,
+  productivity: {},
 };
 // Single context for the whole Administration area — the live object is loaded from Supabase
 // (db.loadAll -> App.tsx), with DEFAULT_ADMIN_DATA used only to fill in any key that has no row yet.
