@@ -10,6 +10,9 @@ export default function Dashboard(){
   const { admin } = React.useContext(S.AdminDataContext);
   const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(a.billingDueDate)-S.daysLeft(b.billingDueDate));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
+  // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
+  // of records behind its number, so a number is never a dead end.
+  const [openKpi, setOpenKpi] = React.useState<string|null>(null);
   const insights = S.computeInsights({ tree, risks, issues, changes, projects, team });
 
   // Flatten every phase/milestone/sub task across every project into one list, each entry keeping
@@ -114,10 +117,10 @@ export default function Dashboard(){
     const name = roster.find((r:any)=>r.level===level)?.name || `Anyone at ${level}`;
     return { name, level };
   };
-  const bottlenecks = [...pendingReviewEntries]
+  const allBottlenecks = [...pendingReviewEntries]
     .map(e=>({ ...e, days:daysPending(e.item), approver:approverFor(e) }))
-    .sort((a,b)=>(b.days??-1)-(a.days??-1))
-    .slice(0,5);
+    .sort((a,b)=>(b.days??-1)-(a.days??-1));
+  const bottlenecks = allBottlenecks.slice(0,5);
   const oldestPending = bottlenecks[0];
 
   // ---- collections aging — real, from Billing Tracker invoices (dueDate/amount/status), not
@@ -268,7 +271,7 @@ export default function Dashboard(){
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
         {kpis.map(k=>(
-          <S.Card key={k.label} className="p-4">
+          <S.Card key={k.label} className="p-4 cursor-pointer hover:border-brand-300 hover:shadow-sm transition-shadow" onClick={()=>setOpenKpi(k.label)}>
             <div className="text-xs text-slate-500">{k.label}</div>
             <div className={`text-2xl font-bold mt-1 ${k.tone}`}>{k.value}</div>
             <div className="text-xs text-slate-400 mt-1">{k.sub}</div>
@@ -276,13 +279,97 @@ export default function Dashboard(){
         ))}
       </div>
 
+      {/* KPI detail pop-up — every tile above opens the live list of records behind its number, so
+          a stat is never a dead end. Content is picked per label from data already computed above. */}
+      {openKpi && (
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setOpenKpi(null)}>
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
+            <div className="flex justify-between items-center mb-3">
+              <div className="font-semibold text-slate-800">{openKpi}</div>
+              <button className="text-slate-400 hover:text-slate-600" onClick={()=>setOpenKpi(null)}>✕</button>
+            </div>
+            <div className="space-y-1.5">
+              {openKpi==='Active Projects' && (activeProjectsList.length ? activeProjectsList.map((p:any)=>(
+                <div key={p.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-slate-700 truncate">{p.name}</span>
+                  <span className="text-xs text-slate-500 whitespace-nowrap">{projectManagerFor(p)} · {projCompletionPct(p)}% complete</span>
+                </div>
+              )) : <div className="text-sm text-slate-400">No active projects.</div>)}
+
+              {openKpi==='Portfolio Health' && ([...trackedProjects].sort((a:any,b:any)=>{ const order:any={red:0,amber:1,green:2}; return order[projectHealth(a)]-order[projectHealth(b)]; }).map((p:any)=>{
+                const h = projectHealth(p);
+                const dot = h==='red'?'text-red-600':h==='amber'?'text-amber-600':'text-emerald-600';
+                return (
+                  <div key={p.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="text-slate-700 truncate">{p.name}</span>
+                    <span className={`text-xs whitespace-nowrap capitalize ${dot}`}>● {h}</span>
+                  </div>
+                );
+              }))}
+              {openKpi==='Portfolio Health' && trackedProjects.length===0 && <div className="text-sm text-slate-400">No tracked projects.</div>}
+
+              {openKpi==='Revenue Collected' && projects.map((p:any)=>{
+                const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
+                const pct = target ? Math.round(100*achieved/target) : 0;
+                return (
+                  <div key={p.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="text-slate-700 truncate">{p.name}</span>
+                    <span className="text-xs text-slate-500 whitespace-nowrap">{S.inLakh(achieved)} / {S.inLakh(target)} · {pct}%</span>
+                  </div>
+                );
+              })}
+              {openKpi==='Revenue Collected' && projects.length===0 && <div className="text-sm text-slate-400">No projects yet.</div>}
+
+              {openKpi==='On-Time Delivery' && (doneWithDeadline.length ? doneWithDeadline.map((e,i)=>{
+                const onTime = e.item.actualDate<=e.item.deadline;
+                return (
+                  <div key={i} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                    <span className="text-slate-700 truncate">{e.item.name} <span className="text-slate-400">— {e.project}</span></span>
+                    <span className={`text-xs whitespace-nowrap ${onTime?'text-emerald-600':'text-red-600'}`}>{onTime?'On time':'Late'} · {e.item.actualDate}</span>
+                  </div>
+                );
+              }) : <div className="text-sm text-slate-400">Nothing completed with a deadline yet.</div>)}
+
+              {openKpi==='Utilization' && ([...team].sort((a:any,b:any)=>b.util-a.util).map((m:any)=>(
+                <div key={m.name} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-slate-700 truncate">{m.name} <span className="text-slate-400">— {m.dept||'—'}</span></span>
+                  <span className={`text-xs whitespace-nowrap font-medium ${m.util>=100?'text-red-600':m.util>80?'text-amber-600':'text-emerald-600'}`}>{m.util}%</span>
+                </div>
+              )))}
+              {openKpi==='Utilization' && team.length===0 && <div className="text-sm text-slate-400">No team members yet.</div>}
+
+              {openKpi==='High-Impact Risks' && (highImpactOpenRisks.length ? highImpactOpenRisks.map((r:any)=>(
+                <div key={r.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-slate-700 truncate">{r.desc} <span className="text-slate-400">— {r.project}</span></span>
+                  <span className={`text-xs whitespace-nowrap ${r.supportBy?'text-slate-500':'text-red-600 font-medium'}`}>{r.supportBy||'Unassigned'}</span>
+                </div>
+              )) : <div className="text-sm text-slate-400">No open High-impact risks.</div>)}
+
+              {openKpi==='Risk Coverage' && (openRisks.length ? openRisks.map((r:any)=>(
+                <div key={r.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-slate-700 truncate">{r.desc} <span className="text-slate-400">— {r.project}</span></span>
+                  <span className={`text-xs whitespace-nowrap ${r.supportBy?'text-slate-500':'text-red-600 font-medium'}`}>{r.supportBy||'Unassigned'}</span>
+                </div>
+              )) : <div className="text-sm text-slate-400">No open risks.</div>)}
+
+              {openKpi==='Approvals Pending' && (allBottlenecks.length ? allBottlenecks.map((b,i)=>(
+                <div key={i} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                  <span className="text-slate-700 truncate">{(b.item as any).name} <span className="text-slate-400">— {b.project}</span></span>
+                  <span className="text-xs text-slate-500 whitespace-nowrap">{b.approver.name} · {b.days!==null?`${b.days}d`:'pending'}</span>
+                </div>
+              )) : <div className="text-sm text-slate-400">No approvals waiting right now.</div>)}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Project health matrix — every active/on-hold project scannable in one table: who leads it,
           how healthy it is, how far along, how much is collected, and what's due next. */}
       <S.Card className="p-4 mb-4 overflow-hidden">
         <div className="font-semibold text-slate-800 mb-3">Project Health Matrix</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Project Manager</S.Th><S.Th>Pending Approvals</S.Th><S.Th>Health</S.Th><S.Th>Complete</S.Th><S.Th>Collected</S.Th><S.Th>Risk</S.Th><S.Th>Team</S.Th><S.Th>Next Milestone</S.Th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Project</S.Th><S.Th>Project Manager</S.Th><S.Th>Pending Approvals</S.Th><S.Th>Health</S.Th><S.Th>Complete</S.Th><S.Th>Collected</S.Th><S.Th>Risk</S.Th><S.Th>Team</S.Th><S.Th>Next Milestone</S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {[...trackedProjects].sort((a:any,b:any)=>{ const order:any={red:0,amber:1,green:2}; return order[projectHealth(a)]-order[projectHealth(b)]; }).map((p:any)=>{
                 const health = projectHealth(p);
@@ -294,22 +381,22 @@ export default function Dashboard(){
                 const nm = nextMilestoneFor(p);
                 const nmOverdue = nm && S.isOverdue(nm);
                 const pendingCount = pendingReviewEntries.filter(e=>e.project===p.name).length;
+                const nmLabel = nm ? `${nm.name} — ${nm.deadline}${nmOverdue?' (overdue)':''}` : '—';
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50">
-                    <S.Td className="font-medium">{p.name}</S.Td>
-                    <S.Td className="text-slate-500">{p.client||'—'}</S.Td>
-                    <S.Td>{projectManagerFor(p)}</S.Td>
+                  <tr key={p.id} className="hover:bg-slate-50 whitespace-nowrap">
+                    <S.Td className="font-medium max-w-[160px] truncate" title={p.name}>{p.name}</S.Td>
+                    <S.Td className="max-w-[130px] truncate" title={projectManagerFor(p)}>{projectManagerFor(p)}</S.Td>
                     <S.Td>{pendingCount>0 ? <span className="text-amber-600 font-medium">{pendingCount}</span> : <span className="text-slate-400">0</span>}</S.Td>
                     <S.Td><span className={healthDot}>●</span> <span className="capitalize">{health}</span></S.Td>
                     <S.Td>{projCompletionPct(p)}%</S.Td>
                     <S.Td>{collectedPct}%</S.Td>
                     <S.Td><span className={S.priorityColor(worstRisk==='None'?'':worstRisk)}>{worstRisk}</span></S.Td>
                     <S.Td>{(p.team||[]).length}</S.Td>
-                    <S.Td className={nmOverdue?'text-red-600':''}>{nm ? `${nm.name} — ${nm.deadline}${nmOverdue?' (overdue)':''}` : '—'}</S.Td>
+                    <S.Td className={`max-w-[220px] truncate ${nmOverdue?'text-red-600':''}`} title={nmLabel}>{nmLabel}</S.Td>
                   </tr>
                 );
               })}
-              {trackedProjects.length===0 && <tr><td colSpan={10} className="text-center text-sm text-slate-400 py-8">No active projects.</td></tr>}
+              {trackedProjects.length===0 && <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No active projects.</td></tr>}
             </tbody>
           </table>
         </div>
