@@ -218,6 +218,12 @@ function UsersPanel(){
   // Super Admin can grant Admin-level staff Edit (or Full) on Administration if they want them to
   // manage users too.
   const canEditUsers = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
+  // Custom permission-level override — bypasses the standard designation -> level mapping for one
+  // specific account (e.g. an Associate, normally Officer level, manually bumped to Admin). This is
+  // deliberately a harder gate than canEditUsers: it's the one control in the app that can hand out
+  // Super Admin rights outright, so only an actual Super Admin (not just anyone with Edit on
+  // Administration) may touch it.
+  const iAmSuperAdmin = S.isSuperAdmin(email, admin);
   // addMode drives the two-step "+ Add User" flow: null (closed) -> 'menu' (choose Teammate vs
   // Client) -> 'teammate' or 'client' (the actual form). Teammate keeps the original single-step
   // form/behavior untouched; Client is new (see addClient below).
@@ -271,6 +277,9 @@ function UsersPanel(){
   };
   const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); };
   const setHierarchyLevel = (id, level) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,level}:u)); };
+  // '' clears the override (back to the standard designation -> level mapping); any PERMISSION_LEVELS
+  // value pins that account to that level regardless of designation.
+  const setPermissionOverride = (id, level) => { if(!iAmSuperAdmin) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,permissionOverride:level||null}:u)); };
   const setClientProject = (id, projectId) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u)); };
   const approveUser = (u:any) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x)); };
   const toggleSuspend = async (u:any) => {
@@ -513,7 +522,18 @@ function UsersPanel(){
                         </select>
                       ) : u.designation}
                     </S.Td>
-                    <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge></S.Td>
+                    <S.Td>
+                      {/* Standard result (from designation) always shown; a Super Admin can additionally
+                          pin this account to a specific level regardless of designation via the small
+                          "Custom" selector underneath — bypassing the standard rule entirely. */}
+                      <S.Badge cls={u.permissionOverride ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700'}>{admin.designationLevel[u.designation]||'—'}{u.permissionOverride && ` → ${u.permissionOverride}`}</S.Badge>
+                      {iAmSuperAdmin && (
+                        <select value={u.permissionOverride||''} onChange={e=>setPermissionOverride(u.id, e.target.value)} title="Custom override — bypasses the standard designation-based rule for this account only" className="block mt-1 border border-amber-200 bg-amber-50/40 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-amber-400">
+                          <option value="">Custom: none (use default)</option>
+                          {S.PERMISSION_LEVELS.map(l=><option key={l} value={l}>Custom: {l}</option>)}
+                        </select>
+                      )}
+                    </S.Td>
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.level||''} onChange={e=>setHierarchyLevel(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">

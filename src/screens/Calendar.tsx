@@ -6,7 +6,18 @@ export default function Calendar(){
   const { events: calEvents, setEvents: setCalEvents } = React.useContext(S.CalendarDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { team } = React.useContext(S.TeamDataContext);
+  // Risks and Issues carry their own target/due dates and are just as much "items applicable to this
+  // user" as a milestone deadline -- pulled in here alongside phase/milestone/sub task deadlines so
+  // the calendar is a complete picture of everything on this person's plate, not just Phase Management
+  // deadlines. Both contexts are already scoped to the signed-in user's visible projects upstream
+  // (App.tsx), so nothing extra to filter here.
+  const { risks, issues } = React.useContext(S.GovernanceDataContext);
   const [projFilter, setProjFilter] = useState('All');
+  // Every project's client, looked up by project name (deadlines/events store the project NAME, not
+  // id) -- this is what drives the per-client color coding below.
+  const clientByProjectName: any = {};
+  projects.forEach(p=>{ clientByProjectName[p.name] = p.client; });
+  const distinctClients: string[] = Array.from(new Set(projects.map((p:any)=>p.client).filter(Boolean))).sort() as string[];
   // Plain year/month integers — never round-tripped through toISOString(), which converts to UTC
   // and can silently roll the date back a day (and a whole month, at the 1st) in +offset timezones.
   const [year, setYear] = useState(Number(S.TODAY_ISO.slice(0,4)));
@@ -26,9 +37,12 @@ export default function Calendar(){
 
   const projFilterName = projFilter==='All' ? null : (projects.find(p=>p.id===projFilter)||{}).name;
 
-  // Read-only deadline markers, pulled live from Phase Management (unchanged from before).
+  // Read-only deadline/activity markers, pulled live from Phase Management, plus Risks and Issues
+  // (target/due dates) so "activities, tasks etc" applicable to this user show up here too, not just
+  // phase/milestone/sub task deadlines. Each carries its client (via the owning project) for the
+  // per-client color coding below.
   const deadlineMap: any = {};
-  const addDeadline = (dateStr, label, project, kind) => { if(dateStr) (deadlineMap[dateStr] = deadlineMap[dateStr]||[]).push({label, project, kind}); };
+  const addDeadline = (dateStr, label, project, kind) => { if(dateStr) (deadlineMap[dateStr] = deadlineMap[dateStr]||[]).push({label, project, kind, client: clientByProjectName[project]}); };
   projects.forEach(p=>{
     if(projFilter!=='All' && p.id!==projFilter) return;
     (tree[p.id]||[]).forEach(ph=>{
@@ -38,6 +52,14 @@ export default function Calendar(){
         (ms.subtasks||[]).forEach(s=> addDeadline(s.deadline, s.name, p.name, 'subtask'));
       });
     });
+  });
+  (risks||[]).forEach(r=>{
+    if(projFilter!=='All' && r.project!==(projects.find(p=>p.id===projFilter)||{}).name) return;
+    addDeadline(r.target, `Risk: ${r.desc||r.id}`, r.project, 'risk');
+  });
+  (issues||[]).forEach(i=>{
+    if(projFilter!=='All' && i.project!==(projects.find(p=>p.id===projFilter)||{}).name) return;
+    addDeadline(i.due, `Issue: ${i.root||i.id}`, i.project, 'issue');
   });
 
   // User-created calendar events, filtered by the project dropdown (events with no project always show).
@@ -96,7 +118,8 @@ export default function Calendar(){
         <span className="flex items-center gap-1 text-slate-400">· click a date to add an event, or click an event to edit it</span>
       </div>
 
-      <S.Card className="p-5">
+      <div className="flex gap-4 items-start">
+      <S.Card className="p-5 flex-1 min-w-0">
         <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=><div key={d}>{d}</div>)}</div>
         <div className="grid grid-cols-7 gap-1">
           {Array.from({length: totalCells}).map((_,i)=>{
@@ -113,20 +136,31 @@ export default function Calendar(){
                 {inMonth && <>
                   <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}</div>
                   <div className="space-y-0.5 mt-1">
-                    {dayCalEvents.map(ev=>{ const c=S.EVENT_TYPE_COLOR[ev.type]||S.EVENT_TYPE_COLOR.Meeting; const cancelled=ev.status==='Cancelled'; const done=ev.status==='Completed'; return (
+                    {dayCalEvents.map(ev=>{
+                      // Chip background/text is colored per-CLIENT (via the event's project) when one
+                      // is set, so the same client's events read as the same color everywhere on the
+                      // calendar and in the legend on the right; the small dot stays type-colored
+                      // (Meeting/Task/Visit) since that's still useful at a glance. A project-less
+                      // "General" event falls back to the plain type color, since there's no client.
+                      const typeColor = S.EVENT_TYPE_COLOR[ev.type]||S.EVENT_TYPE_COLOR.Meeting;
+                      const clientColor = ev.project ? S.colorForClient(clientByProjectName[ev.project]) : null;
+                      const chipCls = clientColor ? clientColor.chip : typeColor.chip;
+                      const cancelled=ev.status==='Cancelled'; const done=ev.status==='Completed'; return (
                       <div key={ev.id} onClick={e=>{e.stopPropagation(); openEdit(ev);}}
                         title={`${ev.type}: ${ev.title}${ev.project?` · ${ev.project}`:''} · ${ev.status}`}
-                        className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${c.chip} ${cancelled?'opacity-50 line-through':''}`}>
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${c.dot}`}></span>
+                        className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${chipCls} ${cancelled?'opacity-50 line-through':''}`}>
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeColor.dot}`}></span>
                         {done && '✓ '}{ev.title}
                       </div>
                     );})}
-                    {dayDeadlines.slice(0,2).map((e,j)=>(
-                      <div key={j} className="bg-slate-50 text-slate-500 rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1" title={`${e.label} · ${e.project}`}>
-                        <S.Icon name={e.kind==='phase'?'pin':e.kind==='milestone'?'phases':'subtasks'} className="w-2.5 h-2.5 shrink-0"/>
+                    {dayDeadlines.slice(0,2).map((e,j)=>{
+                      const clientColor = e.client ? S.colorForClient(e.client) : null;
+                      return (
+                      <div key={j} className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${clientColor ? clientColor.chip : 'bg-slate-50 text-slate-500'}`} title={`${e.label} · ${e.project}`}>
+                        <S.Icon name={e.kind==='phase'?'pin':e.kind==='milestone'?'phases':e.kind==='risk'?'risks':e.kind==='issue'?'issues':'subtasks'} className="w-2.5 h-2.5 shrink-0"/>
                         <span className="truncate">{e.label}</span>
                       </div>
-                    ))}
+                    );})}
                     {dayDeadlines.length>2 && <div className="text-[10px] text-slate-400">+{dayDeadlines.length-2} more</div>}
                   </div>
                 </>}
@@ -135,6 +169,26 @@ export default function Calendar(){
           })}
         </div>
       </S.Card>
+
+      {/* Client legend — every client with a project visible to this account, in the same color as
+          their events/deadlines on the calendar to the left (S.colorForClient), so e.g. a client
+          shown in red here means that client's items are the red ones on the grid. */}
+      <S.Card className="p-4 w-44 shrink-0">
+        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Clients</div>
+        {distinctClients.length===0 ? (
+          <div className="text-xs text-slate-400">No clients yet.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {distinctClients.map(c=>{ const cc = S.colorForClient(c); return (
+              <div key={c} className="flex items-center gap-1.5 text-xs">
+                <span className={`w-2 h-2 rounded-full shrink-0 ${cc.dot}`}></span>
+                <span className={`truncate font-medium ${cc.text}`} title={c}>{c}</span>
+              </div>
+            );})}
+          </div>
+        )}
+      </S.Card>
+      </div>
 
       {editingEvent && (
         <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={closeModal}>

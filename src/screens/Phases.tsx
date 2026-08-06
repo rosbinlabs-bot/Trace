@@ -302,9 +302,13 @@ export default function Phases(){
           {selPhase ? (<>
             <div className="flex justify-between items-center mb-2.5 pb-2 border-b border-slate-100">
               <span className="text-xs font-semibold text-brand-700 uppercase tracking-wide truncate">{selPhase.name}</span>
-              {selPhase.headConfirmedComplete
-                ? <span className="text-[10px] text-emerald-600 whitespace-nowrap inline-flex items-center gap-1"><S.Icon name="lock" className="w-3 h-3"/> locked</span>
-                : <button onClick={()=>addMs(selPhase.id)} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap font-medium">+ Add</button>}
+              {/* A completed/locked phase still allows new milestones to be added at any time — only
+                  deletion is restricted (to Admin/Super Admin, see canDelete above). The lock icon is
+                  informational (this phase was marked complete), it no longer disables adding. */}
+              <span className="flex items-center gap-2 shrink-0">
+                {selPhase.headConfirmedComplete && <span className="text-[10px] text-emerald-600 whitespace-nowrap inline-flex items-center gap-1"><S.Icon name="lock" className="w-3 h-3"/> locked</span>}
+                <button onClick={()=>addMs(selPhase.id)} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap font-medium">+ Add</button>
+              </span>
             </div>
             <div className="space-y-1.5">
               {selPhase.milestones.map(ms=>{
@@ -374,7 +378,9 @@ export default function Phases(){
                 </div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-semibold text-blue-700 bg-blue-50 rounded-full px-2.5 py-1 uppercase tracking-wide">Sub tasks</span>
-                  <button onClick={()=>addSt(ph.id,ms.id)} disabled={msDis} className={`text-xs ${msDis?'text-slate-300 cursor-not-allowed':'text-blue-600 hover:text-blue-700 font-medium'}`}>+ Add sub task</button>
+                  {/* Adding a sub task is never blocked, even once the milestone is approved/locked —
+                      only deletion is restricted (canDelete, Admin/Super Admin only). */}
+                  <button onClick={()=>addSt(ph.id,ms.id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add sub task</button>
                 </div>
                 <div className={`rounded-xl border border-blue-100 ${S.LEVEL.subtask.tint} divide-y divide-blue-100`}>
                   {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=stLock&&actor!=='Strategic Lead'; const overdue=S.isOverdue(s); return (

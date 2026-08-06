@@ -142,7 +142,7 @@ export default function ProjectMaster(){
       <S.Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>
-            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Project Members</S.Th><S.Th>Monthly Fee</S.Th><S.Th>Total Revenue</S.Th><S.Th>Billing Due</S.Th><S.Th>Status</S.Th><S.Th>Lock</S.Th><S.Th>Days to Closure</S.Th>
+            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Project Members</S.Th><S.Th>Monthly Fee</S.Th><S.Th>Total Collection / Total Value</S.Th><S.Th>Billing Due</S.Th><S.Th>Status</S.Th><S.Th>Lock</S.Th><S.Th>Days to Closure</S.Th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const dueSoon = S.billingDueSoon(p); return (
@@ -348,7 +348,7 @@ export default function ProjectMaster(){
             <div className="mt-4 grid grid-cols-3 gap-3">
               <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Total Project Months</div><div className="text-lg font-bold text-slate-800">{months.toFixed(1)}</div></S.Card>
               <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Monthly Fee</div><div className="text-lg font-bold text-slate-800">{S.fmt(form.monthlyFee)}</div></S.Card>
-              <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Revenue (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
+              <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Collection / Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
             </div>
 
             {/* Payment Receipts — Due Date / Amount / Receipt Status / Remarks; editable until the

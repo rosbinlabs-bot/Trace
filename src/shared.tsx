@@ -86,11 +86,17 @@ export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategi
 // of designation label. Only once that's ruled out do Strategic Lead / Project Head get matched by
 // designation name (so their badge stays meaningful even at a lower permission level); Admin-level
 // anyone else also gets 'admin'; everyone else is a base 'consultant'.
+// A user's effective permission level: their own per-account override (Administration -> Users ->
+// custom edit, Super Admin only) if one has been set, otherwise the standard designation -> level
+// mapping everyone else follows. This is the one place that decision is made, so deriveRole/
+// isSuperAdmin/capabilityFor below all agree on the same answer for a given user.
+export const effectivePermissionLevel = (u: any, admin: any) => u?.permissionOverride || admin?.designationLevel?.[u?.designation];
+
 export const deriveRole = (email: string, admin: any) => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return 'consultant';
   if (u.type==='Client') return 'client';
-  const level = admin?.designationLevel?.[u.designation];
+  const level = effectivePermissionLevel(u, admin);
   if (level==='Super Admin') return 'admin';
   if (u.designation==='Strategic Lead') return 'strategicLead';
   if (u.designation==='Project Head') return 'projectHead';
@@ -172,6 +178,31 @@ export const EVENT_TYPE_COLOR: any = {
 };
 export const EVENT_STATUSES = ['Pending','Completed','Cancelled'];
 
+// Per-client color coding for the Calendar — every client gets a stable, distinct color (hashed from
+// their name, so the same client always lands on the same color across reloads/sessions without
+// needing an admin-maintained color assignment). Used both for the calendar's deadline/event chips
+// and the client legend list next to it, so a client's name and their events always match.
+export const CLIENT_COLOR_PALETTE = [
+  { text:'text-rose-600',    dot:'bg-rose-500',    chip:'bg-rose-50 text-rose-700' },
+  { text:'text-blue-600',    dot:'bg-blue-500',    chip:'bg-blue-50 text-blue-700' },
+  { text:'text-emerald-600', dot:'bg-emerald-500', chip:'bg-emerald-50 text-emerald-700' },
+  { text:'text-amber-600',   dot:'bg-amber-500',   chip:'bg-amber-50 text-amber-700' },
+  { text:'text-violet-600',  dot:'bg-violet-500',  chip:'bg-violet-50 text-violet-700' },
+  { text:'text-cyan-600',    dot:'bg-cyan-500',    chip:'bg-cyan-50 text-cyan-700' },
+  { text:'text-pink-600',    dot:'bg-pink-500',    chip:'bg-pink-50 text-pink-700' },
+  { text:'text-lime-700',    dot:'bg-lime-600',    chip:'bg-lime-50 text-lime-700' },
+  { text:'text-orange-600',  dot:'bg-orange-500',  chip:'bg-orange-50 text-orange-700' },
+  { text:'text-indigo-600',  dot:'bg-indigo-500',  chip:'bg-indigo-50 text-indigo-700' },
+];
+const NEUTRAL_CLIENT_COLOR = { text:'text-slate-500', dot:'bg-slate-400', chip:'bg-slate-100 text-slate-600' };
+export const colorForClient = (name: string) => {
+  const key = (name||'').trim().toLowerCase();
+  if(!key) return NEUTRAL_CLIENT_COLOR;
+  let h = 0;
+  for(let i=0;i<key.length;i++) h = (h*31 + key.charCodeAt(i)) >>> 0;
+  return CLIENT_COLOR_PALETTE[h % CLIENT_COLOR_PALETTE.length];
+};
+
 // Document Library — a standalone repository of reusable documents (templates, playbooks, past
 // deliverables kept for reference), separate from the per-project files attached in Phase Management.
 // Lifted to App level (same reasoning as CalendarDataContext) so it survives navigating away and back.
@@ -191,7 +222,7 @@ export const INVOICE_STATUSES = ['Pending','Received','Delayed','On Hold'];
 export const isSuperAdmin = (email: string, admin: any) => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return false;
-  return admin?.designationLevel?.[u.designation] === 'Super Admin';
+  return effectivePermissionLevel(u, admin) === 'Super Admin';
 };
 
 // Canonical project roles used for member selection & phase tagging
@@ -262,7 +293,7 @@ export const DEFAULT_PERMISSION_MATRIX: any = {
 export const capabilityFor = (module: string, email: string, admin: any): string => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return 'None';
-  const col = u.type==='Client' ? 'Client' : (admin?.designationLevel?.[u.designation] || null);
+  const col = u.type==='Client' ? 'Client' : (effectivePermissionLevel(u, admin) || null);
   if (!col) return 'None';
   return (admin?.matrix?.[module]||{})[col] || 'None';
 };
