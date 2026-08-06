@@ -40,6 +40,7 @@ export default function Team(){
   const blankDraft: any = { name:'', role:'', dept:'', util:0, avail:'', capacity:'40h/wk' };
   const [draft, setDraft] = useState<any>(blankDraft);
   const [confirmRemove, setConfirmRemove] = useState(null);
+  const [productivityOpen, setProductivityOpen] = useState(true);
   const avgUtil = team.length ? Math.round(team.reduce((a,m)=>a+m.util,0)/team.length) : 0;
   const avgAvail = team.length ? Math.round(team.reduce((a,m)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
   const overloaded = team.filter(m=>m.util>90);
@@ -245,12 +246,19 @@ export default function Team(){
       )}
 
       {/* Team Productivity — benchmarks set in Administration -> Team Productivity, actuals computed
-          live from Project Master + Billing Tracker (see productivityFor above). */}
+          live from Project Master + Billing Tracker (see productivityFor above). Collapsible — click
+          the header to expand/collapse; open by default. */}
       <S.Card className="overflow-hidden mt-5">
-        <div className="px-4 pt-3 pb-2">
-          <div className="font-semibold text-slate-800">Team Productivity — Benchmarks vs Actuals</div>
-          <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — projects, team size and billing come from Project Master and Billing Tracker; a Premium-tier project counts as two projects.</div>
-        </div>
+        <button onClick={()=>setProductivityOpen(o=>!o)} className="w-full flex items-center justify-between gap-2 px-4 pt-3 pb-2 text-left">
+          <div>
+            <div className="font-semibold text-slate-800 inline-flex items-center gap-1.5">
+              <span className="text-slate-400 text-xs w-3 inline-block">{productivityOpen?'▼':'▶'}</span>
+              Team Productivity — Benchmarks vs Actuals
+            </div>
+            <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — projects, team size and billing come from Project Master and Billing Tracker; a Premium-tier project counts as two projects.</div>
+          </div>
+        </button>
+        {productivityOpen && (
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr><S.Th>Name</S.Th><S.Th>No. of Projects</S.Th><S.Th>Team Size</S.Th><S.Th>Billing Target</S.Th><S.Th>On Site Visits / Project</S.Th></tr>
@@ -278,6 +286,7 @@ export default function Team(){
             )}
           </tbody>
         </table>
+        )}
       </S.Card>
     </div>
   );
