@@ -8,6 +8,7 @@ export default function Dashboard(){
   const { team } = React.useContext(S.TeamDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
+  const { settings } = React.useContext(S.SettingsContext);
   const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(a.billingDueDate)-S.daysLeft(b.billingDueDate));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
   // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
@@ -141,17 +142,21 @@ export default function Dashboard(){
   // of 2 concurrent projects. A PM currently on zero projects (e.g. someone freshly onboarded, never
   // tagged to a project team) has 2 open slots even though they'd never show up scanning project
   // team lists — so this starts from the master Project Manager roster (Administration -> Users,
-  // designation === 'Project Manager'), not from who happens to already be on a project. "Within 30/
-  // 60 days" additionally counts a PM's own projects that are ≥70% complete and closing in that
-  // window as no longer occupying a slot. ----
+  // designation === 'Project Manager'), not from who happens to already be on a project. A Premium-
+  // tier project (S.isPremiumProject, same Category Master lookup Team Productivity already uses)
+  // counts double — S.projectWeight — so a single Premium engagement fills both of a PM's slots on
+  // its own, the same as two Normal-tier projects would. "Within 30/60 days" additionally treats a
+  // PM's own project as no longer occupying weight once it's ≥70% complete and closes in that window.
   const IDEAL_PM_LOAD = 2;
   const projectManagers = (admin.users||[]).filter((u:any)=>u.type!=='Client' && u.status==='Active' && u.designation==='Project Manager');
   const pmActiveProjects = (name:string) => activeProjectsList.filter((p:any)=>(p.team||[]).some((t:any)=>t.name===name));
   const pmLoad = (days:number) => projectManagers.map((u:any)=>{
     const projs = pmActiveProjects(u.name);
-    const closing = projs.filter((p:any)=> p.end && S.daysLeft(p.end)<=days && projCompletionPct(p)>=70).length;
-    const current = days===0 ? projs.length : Math.max(0, projs.length-closing);
-    return { name:u.name, projects: projs.map((p:any)=>p.name), count: projs.length, slots: Math.max(0, IDEAL_PM_LOAD-current) };
+    const weightOf = (p:any) => S.projectWeight(p, settings.categories);
+    const totalWeight = projs.reduce((s:number,p:any)=>s+weightOf(p),0);
+    const closingWeight = projs.filter((p:any)=> p.end && S.daysLeft(p.end)<=days && projCompletionPct(p)>=70).reduce((s:number,p:any)=>s+weightOf(p),0);
+    const current = days===0 ? totalWeight : Math.max(0, totalWeight-closingWeight);
+    return { name:u.name, projects: projs.map((p:any)=>`${p.name}${weightOf(p)>1?' (Premium ×2)':''}`), count: totalWeight, slots: Math.max(0, IDEAL_PM_LOAD-current) };
   });
   const pmLoadNow = pmLoad(0);
   const slotsNow = pmLoadNow.reduce((s,p)=>s+p.slots,0);
