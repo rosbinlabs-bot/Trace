@@ -187,6 +187,20 @@ export default function Risks() {
               )}
               <div className="text-[11px] text-slate-400 mb-3">Added by {r.addedBy || '—'}{r.addedAt ? ` · ${new Date(r.addedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })}` : ''}</div>
 
+              <div className="flex flex-col gap-1 mb-3">
+                <label className="text-[10px] text-slate-400">Project</label>
+                {editGeneral ? (
+                  <select className={S.gInp} value={r.project} onChange={e => {
+                    const newProj = e.target.value;
+                    const newRoster = S.buildRoster(projectByName(newProj), admin);
+                    const keepSupport = newRoster.some((p: any) => p.name === r.supportBy);
+                    mut(r.id, { project: newProj, supportBy: keepSupport ? r.supportBy : '' });
+                  }}>
+                    {(role === 'admin' ? projects : myTeamProjects).map((p: any) => <option key={p.id} value={p.name}>{p.name}</option>)}
+                  </select>
+                ) : <div className="text-xs text-slate-600 py-1.5">{r.project}</div>}
+              </div>
+
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-slate-400">Probability</label>
