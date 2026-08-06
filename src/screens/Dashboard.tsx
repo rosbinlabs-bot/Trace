@@ -46,11 +46,12 @@ export default function Dashboard(){
   const stCompletionPct = stOnly.length ? Math.round(100*stOnly.filter(S.isApproved).length/stOnly.length) : 0;
   const avgUtil = team.length ? Math.round(team.reduce((a:number,m:any)=>a+m.util,0)/team.length) : 0;
   const avgAvail = team.length ? Math.round(team.reduce((a:number,m:any)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
-  const overloaded = team.filter((m:any)=>m.util>90).length;
+  // Overloaded = at or above 100% utilization (not the >90% Team Management uses elsewhere) — this
+  // dashboard's own definition, per the COO's call.
+  const overloaded = team.filter((m:any)=>m.util>=100).length;
   const deptTotals: any = {};
   team.forEach((m:any)=>{ (deptTotals[m.dept]=deptTotals[m.dept]||[]).push(m.util); });
   const deptAvg = Object.entries(deptTotals).map(([d,arr]: any) =>[d, Math.round(arr.reduce((a:number,b:number)=>a+b,0)/arr.length)]).sort((a:any,b:any)=>b[1]-a[1]);
-  const busiestDept = deptAvg[0];
 
   // ---- on-time delivery rate — replaces the old unused `margin`/`sla` legacy columns (never
   // exposed in any edit UI, so always empty for real projects) with something computed live: of
@@ -89,6 +90,10 @@ export default function Dashboard(){
     if (!mss.length) return null;
     return [...mss].sort((a:any,b:any)=>a.deadline<b.deadline?-1:1)[0];
   };
+  // Whoever on THIS project's team sits at the level Administration -> Roles & Permissions maps to
+  // "Project Manager" (admin-editable, so this stays correct even if that mapping isn't L3 for a
+  // given tenant) — replaces the old "Lead" column, which only ever showed the L1 (Strategic Lead).
+  const projectManagerFor = (p:any) => (p.team||[]).find((t:any)=>S.designationForLevel(t.level, admin)==='Project Manager')?.name || '—';
 
   const risksOpenCount = openRisks.length;
   const issuesOpen = issues.filter((i:any)=>i.status==='Open'||i.status==='In Progress');
@@ -129,23 +134,26 @@ export default function Dashboard(){
     .sort((a:any,b:any)=>overdueDaysOf(b)-overdueDaysOf(a)).slice(0,5);
   const projectOf = (invProjectId:string) => projects.find((p:any)=>p.id===invProjectId);
 
-  // ---- immediate project capacity — bench now, plus what frees up as active projects close.
-  // Bench = consultants below 70% utilization; their spare capacity comes from the `avail` field
-  // when it's a parseable percentage, else estimated as (100 - util). Projects "closing soon" are
-  // active, at least 70% through their milestones, ending within 90 days — each one's whole team
-  // is counted as freed capacity on its end date. ----
-  const parseAvail = (s:any) => { const n = Number(String(s||'').replace('%','')); return isNaN(n) ? null : n; };
-  const benchMembers = team.filter((m:any)=>m.util<70);
-  const benchFTE = benchMembers.reduce((sum:number,m:any)=>{ const a=parseAvail(m.avail); return sum + (a!=null ? a/100 : Math.max(0,100-m.util)/100); },0);
-  const avgTeamSize = activeProjectsList.length ? Math.max(1, Math.round(activeProjectsList.reduce((s:number,p:any)=>s+(p.team||[]).length,0)/activeProjectsList.length)) : 1;
-  const closingSoon = activeProjectsList
-    .filter((p:any)=>{ const d=S.daysLeft(p.end); return p.end && d>=0 && d<=90 && projCompletionPct(p)>=70; })
-    .sort((a:any,b:any)=>S.daysLeft(a.end)-S.daysLeft(b.end));
-  const freedFTEWithin = (days:number) => closingSoon.filter((p:any)=>S.daysLeft(p.end)<=days).reduce((s:number,p:any)=>s+(p.team||[]).length,0);
-  const slotsWithin = (fte:number) => Math.floor(fte/avgTeamSize);
-  const slotsNow = slotsWithin(benchFTE);
-  const slots30 = slotsWithin(benchFTE+freedFTEWithin(30));
-  const slots60 = slotsWithin(benchFTE+freedFTEWithin(60));
+  // ---- immediate project capacity — one open "slot" per Project Manager below their ideal load
+  // of 2 concurrent projects. A PM currently on zero projects (e.g. someone freshly onboarded, never
+  // tagged to a project team) has 2 open slots even though they'd never show up scanning project
+  // team lists — so this starts from the master Project Manager roster (Administration -> Users,
+  // designation === 'Project Manager'), not from who happens to already be on a project. "Within 30/
+  // 60 days" additionally counts a PM's own projects that are ≥70% complete and closing in that
+  // window as no longer occupying a slot. ----
+  const IDEAL_PM_LOAD = 2;
+  const projectManagers = (admin.users||[]).filter((u:any)=>u.type!=='Client' && u.status==='Active' && u.designation==='Project Manager');
+  const pmActiveProjects = (name:string) => activeProjectsList.filter((p:any)=>(p.team||[]).some((t:any)=>t.name===name));
+  const pmLoad = (days:number) => projectManagers.map((u:any)=>{
+    const projs = pmActiveProjects(u.name);
+    const closing = projs.filter((p:any)=> p.end && S.daysLeft(p.end)<=days && projCompletionPct(p)>=70).length;
+    const current = days===0 ? projs.length : Math.max(0, projs.length-closing);
+    return { name:u.name, projects: projs.map((p:any)=>p.name), count: projs.length, slots: Math.max(0, IDEAL_PM_LOAD-current) };
+  });
+  const pmLoadNow = pmLoad(0);
+  const slotsNow = pmLoadNow.reduce((s,p)=>s+p.slots,0);
+  const slots30 = pmLoad(30).reduce((s,p)=>s+p.slots,0);
+  const slots60 = pmLoad(60).reduce((s,p)=>s+p.slots,0);
 
   // ---- risk register snapshot — highest severity first (probability + impact score) ----
   const sevScore = (v:string) => v==='High'?2:v==='Medium'?1:0;
@@ -157,12 +165,12 @@ export default function Dashboard(){
   // shows (capacity, collections aging, approver/overload correlation) — same {icon,tone,text} shape.
   const extraInsights: any[] = [];
   if (bottlenecks.length) {
-    const overApprover = bottlenecks.find(b=>team.some((m:any)=>m.name===b.approver.name && m.util>90));
-    if (overApprover) extraInsights.push({ icon:'flame', tone:'amber', text:`${overApprover.approver.name} is both the approver on a stuck decision and running above 90% utilization — the bottleneck and the overload are the same person.` });
+    const overApprover = bottlenecks.find(b=>team.some((m:any)=>m.name===b.approver.name && m.util>=100));
+    if (overApprover) extraInsights.push({ icon:'flame', tone:'amber', text:`${overApprover.approver.name} is both the approver on a stuck decision and running at or above 100% utilization — the bottleneck and the overload are the same person.` });
   }
-  if (closingSoon.length) {
-    const p = closingSoon[0];
-    extraInsights.push({ icon:'rocket', tone:'blue', text:`${p.name} is ${projCompletionPct(p)}% complete and closes in ${S.daysLeft(p.end)}d, freeing ${(p.team||[]).length} consultant(s) — good timing to line up the next engagement for them.` });
+  const idlePMs = pmLoadNow.filter(p=>p.count===0);
+  if (idlePMs.length) {
+    extraInsights.push({ icon:'rocket', tone:'blue', text:`${idlePMs.map(p=>p.name).join(', ')} ${idlePMs.length===1?'has':'have'} no active projects right now — full capacity available to staff on new work immediately.` });
   }
   if (overdueInvoices.length) {
     const inv = overdueInvoices[0]; const proj = projectOf(inv.project);
@@ -274,7 +282,7 @@ export default function Dashboard(){
         <div className="font-semibold text-slate-800 mb-3">Project Health Matrix</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Lead</S.Th><S.Th>Health</S.Th><S.Th>Complete</S.Th><S.Th>Collected</S.Th><S.Th>Risk</S.Th><S.Th>Team</S.Th><S.Th>Next Milestone</S.Th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Project</S.Th><S.Th>Client</S.Th><S.Th>Project Manager</S.Th><S.Th>Pending Approvals</S.Th><S.Th>Health</S.Th><S.Th>Complete</S.Th><S.Th>Collected</S.Th><S.Th>Risk</S.Th><S.Th>Team</S.Th><S.Th>Next Milestone</S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {[...trackedProjects].sort((a:any,b:any)=>{ const order:any={red:0,amber:1,green:2}; return order[projectHealth(a)]-order[projectHealth(b)]; }).map((p:any)=>{
                 const health = projectHealth(p);
@@ -285,11 +293,13 @@ export default function Dashboard(){
                 const worstRisk = openR.some((r:any)=>r.impact==='High') ? 'High' : openR.some((r:any)=>r.impact==='Medium') ? 'Medium' : openR.length ? 'Low' : 'None';
                 const nm = nextMilestoneFor(p);
                 const nmOverdue = nm && S.isOverdue(nm);
+                const pendingCount = pendingReviewEntries.filter(e=>e.project===p.name).length;
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <S.Td className="font-medium">{p.name}</S.Td>
                     <S.Td className="text-slate-500">{p.client||'—'}</S.Td>
-                    <S.Td>{S.projectLeadName(p)||'—'}</S.Td>
+                    <S.Td>{projectManagerFor(p)}</S.Td>
+                    <S.Td>{pendingCount>0 ? <span className="text-amber-600 font-medium">{pendingCount}</span> : <span className="text-slate-400">0</span>}</S.Td>
                     <S.Td><span className={healthDot}>●</span> <span className="capitalize">{health}</span></S.Td>
                     <S.Td>{projCompletionPct(p)}%</S.Td>
                     <S.Td>{collectedPct}%</S.Td>
@@ -299,7 +309,7 @@ export default function Dashboard(){
                   </tr>
                 );
               })}
-              {trackedProjects.length===0 && <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No active projects.</td></tr>}
+              {trackedProjects.length===0 && <tr><td colSpan={10} className="text-center text-sm text-slate-400 py-8">No active projects.</td></tr>}
             </tbody>
           </table>
         </div>
@@ -418,32 +428,30 @@ export default function Dashboard(){
         </S.Card>
       </div>
 
-      {/* Immediate project capacity — bench now, and what frees up as active projects close, so
-          new-business decisions are grounded in actual current + near-term headcount. */}
+      {/* Immediate project capacity — one open slot per Project Manager below their ideal load of 2
+          concurrent projects, so a PM with zero projects (never tagged to any project team, and so
+          otherwise invisible anywhere in this data) still shows up with open capacity. */}
       <S.Card className="p-4 mb-4">
         <div className="font-semibold text-slate-800 mb-3">Immediate Project Capacity</div>
         <div className="grid grid-cols-3 gap-3 mb-3">
-          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Slots now</div><div className="text-xl font-bold text-brand-800">{slotsNow}</div><div className="text-[11px] text-brand-600 mt-0.5">{benchFTE.toFixed(1)} FTE on bench</div></div>
-          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Within 30 days</div><div className="text-xl font-bold text-brand-800">{slots30}</div><div className="text-[11px] text-brand-600 mt-0.5">+{freedFTEWithin(30)} FTE freeing up</div></div>
-          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Within 60 days</div><div className="text-xl font-bold text-brand-800">{slots60}</div><div className="text-[11px] text-brand-600 mt-0.5">+{freedFTEWithin(60)} FTE freeing up</div></div>
+          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Slots now</div><div className="text-xl font-bold text-brand-800">{slotsNow}</div><div className="text-[11px] text-brand-600 mt-0.5">{projectManagers.length} PM(s), ideal load {IDEAL_PM_LOAD}/PM</div></div>
+          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Within 30 days</div><div className="text-xl font-bold text-brand-800">{slots30}</div><div className="text-[11px] text-brand-600 mt-0.5">as PM projects ≥70% complete close</div></div>
+          <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Within 60 days</div><div className="text-xl font-bold text-brand-800">{slots60}</div><div className="text-[11px] text-brand-600 mt-0.5">as PM projects ≥70% complete close</div></div>
         </div>
-        <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Projects closing soon (≥70% complete, within 90 days)</div>
+        <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">By Project Manager</div>
         <div className="space-y-1">
-          {closingSoon.map((p:any)=>(
-            <div key={p.id} className="flex justify-between text-sm bg-slate-50 rounded-lg px-3 py-2">
-              <span className="text-slate-700">{p.name} <span className="text-slate-400">— {projCompletionPct(p)}% complete</span></span>
-              <span className="text-xs text-slate-500 whitespace-nowrap">{p.end} · {S.daysLeft(p.end)}d · frees {(p.team||[]).length}</span>
+          {pmLoadNow.map((p:any)=>(
+            <div key={p.name} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+              <span className="text-slate-700">{p.name} <span className="text-slate-400">{p.projects.length ? `— ${p.projects.join(', ')}` : '— no active projects'}</span></span>
+              <span className={`text-xs whitespace-nowrap font-medium ${p.slots>0?'text-emerald-600':'text-slate-400'}`}>{p.count}/{IDEAL_PM_LOAD} projects · {p.slots} slot{p.slots===1?'':'s'} open</span>
             </div>
           ))}
-          {closingSoon.length===0 && <div className="text-sm text-slate-400">No active projects closing within 90 days yet.</div>}
+          {pmLoadNow.length===0 && <div className="text-sm text-slate-400">No one holds the Project Manager designation yet — set it in Administration → Users.</div>}
         </div>
-        <div className="text-xs text-slate-400 mt-3 uppercase tracking-wide">Bench today ({benchMembers.length})</div>
-        <div className="text-sm text-slate-600 mt-1">{benchMembers.length ? benchMembers.map((m:any)=>`${m.name} (${m.dept||'—'}, ${m.util}%)`).join(', ') : 'No one below 70% utilization right now.'}</div>
       </S.Card>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Busiest Department</div><div className="text-lg font-semibold text-slate-700">{busiestDept ? `${busiestDept[0]} · ${busiestDept[1]}%` : '—'}</div></S.Card>
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Consultants Overloaded</div><div className="text-lg font-semibold text-slate-700">{overloaded} &gt; 90% util</div></S.Card>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Consultants Overloaded</div><div className="text-lg font-semibold text-slate-700">{overloaded} ≥ 100% util</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Open Issues</div><div className="text-lg font-semibold text-slate-700">{issuesBySeverity.High}H / {issuesBySeverity.Medium}M / {issuesBySeverity.Low}L</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Avg Resource Availability</div><div className="text-lg font-semibold text-slate-700">{avgAvail}%</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Implemented This Month</div><div className="text-lg font-semibold text-slate-700">{implementedThisMonth.length}</div></S.Card>
