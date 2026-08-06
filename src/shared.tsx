@@ -216,6 +216,22 @@ export const DEFAULT_DESIGNATION_LEVEL: any = {
   'Project Head':'Admin',
   'Strategic Lead':'Super Admin',
 };
+
+// Hierarchy Level (Administration -> Users): a separate axis from the permission-level system above.
+// PERMISSION_LEVELS/designationLevel decide what a person can DO in the app (capability matrix);
+// HIERARCHY_LEVELS decides where they sit in the reporting/seniority chain (L1 = most senior). Each
+// user record carries its own `level` field, entered explicitly when they're added — it isn't derived
+// from designation, since two people with the same designation can still sit at different seniority
+// (e.g. a newly-promoted vs. a long-tenured Project Head). DEFAULT_HIERARCHY_LEVEL only seeds a
+// sensible starting value in the Add Teammate form; it's never silently re-applied after that.
+export const HIERARCHY_LEVELS = ['L1','L2','L3','L4','L5'];
+export const DEFAULT_HIERARCHY_LEVEL: any = {
+  'Strategic Lead':'L1',
+  'Project Head':'L2',
+  'Project Manager':'L3',
+  'BD':'L3',
+  'Associate':'L4',
+};
 export const PERMISSION_MODULES = ['Project Master','Phase Management','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
 export const CAPABILITY_COLOR: any = { 'None':'bg-slate-100 text-slate-400','View':'bg-blue-100 text-blue-700','Edit':'bg-amber-100 text-amber-700','Approve':'bg-violet-100 text-violet-700','Full':'bg-emerald-100 text-emerald-700' };

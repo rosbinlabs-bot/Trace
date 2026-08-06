@@ -222,7 +222,8 @@ function UsersPanel(){
   // Client) -> 'teammate' or 'client' (the actual form). Teammate keeps the original single-step
   // form/behavior untouched; Client is new (see addClient below).
   const [addMode, setAddMode] = useState<null|'menu'|'teammate'|'client'>(null);
-  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') });
+  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') });
+  const [levelTouched, setLevelTouched] = useState(false); // true once the admin manually picks a level, so we stop re-defaulting it as the designation changes
   const [pwTouched, setPwTouched] = useState(false); // true once the admin manually edits the password field, so we stop overwriting it as the name changes
   const [clientDraft, setClientDraft] = useState<any>({ name:'', email:'', projectId:'', password: defaultPasswordFor('') });
   const [clientPwTouched, setClientPwTouched] = useState(false);
@@ -245,8 +246,8 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, draft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, status:'Active', joined: S.TODAY_ISO }]);
-      setDraft({ name:'', email:'', designation:'Associate', password: defaultPasswordFor('') }); setPwTouched(false); setAddMode(null);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.DEFAULT_HIERARCHY_LEVEL[draft.designation]||'L4', status:'Active', joined: S.TODAY_ISO }]);
+      setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
@@ -269,6 +270,7 @@ function UsersPanel(){
     setBusy(null);
   };
   const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); };
+  const setHierarchyLevel = (id, level) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,level}:u)); };
   const setClientProject = (id, projectId) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u)); };
   const approveUser = (u:any) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x)); };
   const toggleSuspend = async (u:any) => {
@@ -349,14 +351,18 @@ function UsersPanel(){
             <div className="text-xs font-medium text-slate-600 inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5 text-brand-500"/> Add Teammate</div>
             <button onClick={()=>setAddMode('menu')} className="text-[11px] text-slate-400 hover:text-slate-600">Change type</button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
               <input value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
               <input value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
-              <select value={draft.designation} onChange={e=>setDraft(d=>({...d,designation:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <select value={draft.designation} onChange={e=>{ const designation=e.target.value; setDraft(d=>({...d,designation, level: levelTouched ? d.level : (S.DEFAULT_HIERARCHY_LEVEL[designation]||d.level) })); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Level</label>
+              <select value={draft.level} onChange={e=>{setLevelTouched(true); setDraft(d=>({...d,level:e.target.value}));}} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                {S.HIERARCHY_LEVELS.map(l=><option key={l}>{l}</option>)}
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
@@ -492,7 +498,7 @@ function UsersPanel(){
           <S.Card className="overflow-hidden mb-6">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {teamUsers.map((u:any)=>{
@@ -508,6 +514,14 @@ function UsersPanel(){
                       ) : u.designation}
                     </S.Td>
                     <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{admin.designationLevel[u.designation]||'—'}</S.Badge></S.Td>
+                    <S.Td>
+                      {canEditUsers ? (
+                        <select value={u.level||''} onChange={e=>setHierarchyLevel(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+                          <option value="">—</option>
+                          {S.HIERARCHY_LEVELS.map(l=><option key={l}>{l}</option>)}
+                        </select>
+                      ) : <S.Badge cls="bg-violet-50 text-violet-700">{u.level||'—'}</S.Badge>}
+                    </S.Td>
                     <S.Td><StatusCell u={u}/></S.Td>
                     <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
                     <S.Td><ActionsCell u={u}/></S.Td>
@@ -515,7 +529,7 @@ function UsersPanel(){
                   );
                 })}
                 {teamUsers.length===0 && (
-                  <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
+                  <tr><td colSpan={8} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
                 )}
               </tbody>
             </table>

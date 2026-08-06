@@ -427,6 +427,74 @@ export default function App() {
     };
   }, [tenantId]);
 
+  // ---- Live sync: without this, teammates only see what was on the server when their tab first
+  // loaded (db.loadAll() runs once per tenant switch, above) — someone else's edit to a date/status/
+  // anything just sits invisible until a manual refresh. This subscribes to Supabase Realtime for
+  // every synced table and merges incoming inserts/updates/deletes straight into local state (via the
+  // raw setXState setters, not the wrapped ones — merging shouldn't re-trigger a write back to the
+  // database). Runs independently of the initial load effect so a fresh page load's realtime
+  // subscription and its one-time fetch don't have to wait on each other.
+  useEffect(() => {
+    if (!tenantId) return;
+    const mergeById = (setState: any, fromDb: (r: any) => any, idKey = 'id') => (payload: any) => {
+      setState((prev: any[]) => {
+        if (payload.eventType === 'DELETE') {
+          const oldId = payload.old?.[idKey];
+          return prev.filter((x) => x[idKey] !== oldId);
+        }
+        const row = fromDb(payload.new);
+        const idx = prev.findIndex((x) => x[idKey] === row[idKey]);
+        if (idx === -1) return [...prev, row];
+        const next = prev.slice();
+        next[idx] = row;
+        return next;
+      });
+    };
+    const unsubscribe = db.subscribeRealtime(tenantId, {
+      projects: mergeById(setProjectsState, db.projectFromDb),
+      risks: mergeById(setRisksState, db.riskFromDb),
+      issues: mergeById(setIssuesState, db.issueFromDb),
+      change_requests: mergeById(setChangesState, db.changeFromDb),
+      calendar_events: mergeById(setCalendarEventsState, db.eventFromDb),
+      library_docs: mergeById(setLibraryDocsState, db.docFromDb),
+      deliverables: mergeById(setDeliverablesState, db.deliverableFromDb),
+      invoices: mergeById(setInvoicesState, db.invoiceFromDb),
+      team: mergeById(setTeamState, db.teamFromDb, 'name'),
+      notifications: mergeById(setNotifications, db.notificationFromDb),
+      phase_trees: (payload: any) => {
+        setPhaseTreeState((prev: any) => {
+          if (payload.eventType === 'DELETE') {
+            const pid = payload.old?.project_id;
+            if (!pid) return prev;
+            const next = { ...prev };
+            delete next[pid];
+            return next;
+          }
+          const row = payload.new;
+          return { ...prev, [row.project_id]: row.tree || [] };
+        });
+      },
+      admin_data: (payload: any) => {
+        setAdminState((prev: any) => {
+          if (payload.eventType === 'DELETE') {
+            const key = payload.old?.key;
+            if (!key) return prev;
+            const next = { ...prev };
+            delete next[key];
+            return next;
+          }
+          const row = payload.new;
+          return { ...prev, [row.key]: row.value };
+        });
+      },
+      app_settings: (payload: any) => {
+        if (payload.eventType === 'DELETE') return;
+        setSettingsState({ ...S.DEFAULT_PROJECT_SETTINGS, ...(payload.new?.data || {}) });
+      },
+    });
+    return unsubscribe;
+  }, [tenantId]);
+
   const setProjects = wrapSetter(setProjectsState, db.syncProjects);
   const setPhaseTree = wrapSetter(setPhaseTreeState, db.syncTree);
   const setRisks = wrapSetter(setRisksState, db.syncRisks);
