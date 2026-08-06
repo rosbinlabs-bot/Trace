@@ -103,6 +103,10 @@ export const DEFAULT_PROJECT_SETTINGS: any = {
   // Function Master (Administration -> Masters -> Function Master) — used by the Document Library's
   // "Function" dropdown to tag which business function a document belongs to.
   functions: ['Sales','Marketing','Production','Operations','Finance & Accounts','Human Resource','IT','Audit'],
+  // Department Master (Administration -> Masters -> Department Master) — used by Team Management's
+  // Department dropdown, so every consultant's department comes from one shared, editable list
+  // instead of free text (which used to let the same department end up spelled two different ways).
+  departments: ['Delivery','Consulting','Sales & BD','HR','Finance & Accounts','IT','Operations','Marketing','Audit'],
 };
 export const SettingsContext = React.createContext<any>({ settings: DEFAULT_PROJECT_SETTINGS, setSettings: ()=>{} });
 // Case-insensitive de-dup append, used whenever a user adds a new master-list value inline.

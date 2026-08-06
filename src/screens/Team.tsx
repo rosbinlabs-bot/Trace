@@ -4,6 +4,14 @@ import * as S from '../shared';
 export default function Team(){
   const { team, setTeam } = React.useContext(S.TeamDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
+  const { settings } = React.useContext(S.SettingsContext);
+  // Department Master (Administration -> Project Settings -> Masters -> Department Master) is the
+  // single source of truth for department names now, so two people can't add the same department
+  // spelled two different ways ("Delivery" vs "delivery"). If a member already has a dept value from
+  // before this list existed, or one outside the master list, it's kept as a selectable option too
+  // rather than silently dropped.
+  const DEPT_OPTS = (settings.departments && settings.departments.length) ? settings.departments : S.DEFAULT_PROJECT_SETTINGS.departments;
+  const deptOptsFor = (current) => (current && !DEPT_OPTS.includes(current)) ? [...DEPT_OPTS, current] : DEPT_OPTS;
   // List view is the default per product decision — grid stays available as a toggle.
   const [view, setView] = useState('list');
   const [adding, setAdding] = useState(false);
@@ -72,7 +80,10 @@ export default function Team(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Role</label>
               <input value={draft.role} onChange={e=>setDraft(d=>({...d,role:e.target.value}))} placeholder="e.g. Project Manager" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Department</label>
-              <input value={draft.dept} onChange={e=>setDraft(d=>({...d,dept:e.target.value}))} placeholder="e.g. Delivery" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+              <select value={draft.dept} onChange={e=>setDraft(d=>({...d,dept:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— Select —</option>
+                {deptOptsFor(draft.dept).map(d=><option key={d} value={d}>{d}</option>)}
+              </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Utilization %</label>
               <input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.util} onChange={e=>setDraft(d=>({...d,util:e.target.value.replace(/[^0-9]/g,'')}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Availability</label>
@@ -118,8 +129,11 @@ export default function Team(){
                       className="w-32 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
                   </S.Td>
                   <S.Td>
-                    <input defaultValue={m.dept} placeholder="e.g. Delivery" onBlur={e=>patchMember(m.name,'dept',e.target.value)}
-                      className="w-28 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
+                    <select value={m.dept||''} onChange={e=>patchMember(m.name,'dept',e.target.value)}
+                      className="w-28 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white">
+                      <option value="">— Select —</option>
+                      {deptOptsFor(m.dept).map(d=><option key={d} value={d}>{d}</option>)}
+                    </select>
                   </S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2 min-w-[140px]">

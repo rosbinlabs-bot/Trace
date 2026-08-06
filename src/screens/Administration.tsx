@@ -840,6 +840,8 @@ function AdminOverviewDetail({ item, setTab }: any){
       return <SimpleListEditor list={settings.priorityLevels} placeholder="e.g. Critical" onChange={v=>canEdit && setSettings(s=>({...s,priorityLevels:v}))} canEdit={canEdit}/>;
     case 'Function Master':
       return <SimpleListEditor list={settings.functions} placeholder="e.g. Legal" onChange={v=>canEdit && setSettings(s=>({...s,functions:v}))} canEdit={canEdit}/>;
+    case 'Department Master':
+      return <SimpleListEditor list={settings.departments} placeholder="e.g. Legal" onChange={v=>canEdit && setSettings(s=>({...s,departments:v}))} canEdit={canEdit}/>;
     case 'Backup':
       return (
         <div>
@@ -872,7 +874,7 @@ export default function Admin(){
     'Organization':['Company','Branch','Departments','Holiday Calendar','Working Days'],
     'Access':['Roles','Permissions','Audit Logs'],
     'Templates':['Project Templates','Phase Templates','Deliverable Templates','Email Templates'],
-    'Masters':['Status Master','Priority Master','Function Master','Notification Rules'],
+    'Masters':['Status Master','Priority Master','Function Master','Department Master','Notification Rules'],
     'System':['Backup','Integrations'],
   };
   const [selectedGroup, setSelectedGroup] = useState(Object.keys(groups)[0]);
