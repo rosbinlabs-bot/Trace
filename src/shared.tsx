@@ -893,6 +893,7 @@ export const docIconTone = (n) => {
 export const newItem = (name) => ({
   id:uid('IT'), name, assignees:[], deadline:'', actualDate:'', status:'Not Started', review:'',
   approved:false, docs:[], headApprovedImpl:false, clientApprovedImpl:false, clientAcceptedDate:'',
+  remarks:[], // {id, text, by, at} -- a running comment log, added from the sub task detail modal
 });
 
 // Anyone can mark an item Completed — but who does the marking decides whether it still needs a
@@ -989,11 +990,24 @@ export function AssigneeChips({assignees, roster, onAdd, onRemove, disabled, acc
     </div>
   );
 }
-export function DocsChips({docs, onAttach, onRemove, disabled}: any){
+// `docs` entries carry a real Supabase Storage path (see db.uploadPhaseDoc) once uploaded through
+// this component -- d.path present means the filename is clickable and calls onDownload(d). Older
+// entries from before real uploads existed only ever had {n: filename} with no path; those still
+// render (so nothing already saved disappears) but aren't clickable, since there's no real file
+// behind them to fetch.
+export function DocsChips({docs, onAttach, onRemove, onDownload, disabled, downloadingId}: any){
   return (
     <div className="flex flex-wrap gap-1 max-w-[170px]">
       {(docs||[]).map((d,i)=>(
-        <span key={i} className="inline-flex items-center gap-1 bg-slate-100 rounded px-1 py-0.5 text-[10px]"><Icon name={docIcon(d.n)} className={`w-3 h-3 shrink-0 ${docIconTone(d.n)}`}/> <span className="truncate max-w-[70px]">{d.n}</span>{!disabled && <button onClick={()=>onRemove(i)} className="text-red-400">×</button>}</span>
+        <span key={d.id||i} className="inline-flex items-center gap-1 bg-slate-100 rounded px-1 py-0.5 text-[10px]">
+          <Icon name={downloadingId===(d.id||i) ? 'refresh' : docIcon(d.n)} className={`w-3 h-3 shrink-0 ${downloadingId===(d.id||i) ? 'text-brand-500' : docIconTone(d.n)}`}/>
+          {d.path && onDownload ? (
+            <button type="button" onClick={()=>onDownload(d)} className="truncate max-w-[70px] hover:underline hover:text-brand-700 text-left" title="Download">{d.n}</button>
+          ) : (
+            <span className="truncate max-w-[70px]" title={d.path ? d.n : `${d.n} — no file on record`}>{d.n}</span>
+          )}
+          {!disabled && <button onClick={()=>onRemove(i)} className="text-red-400">×</button>}
+        </span>
       ))}
       {!disabled && (
         <label className="cursor-pointer text-brand-600 hover:text-brand-700 text-[10px] border border-dashed border-brand-300 rounded px-1 py-0.5">+ Attach
@@ -1010,7 +1024,7 @@ export function ApprovalFlow({item, actor, level, onDecide, onMarkImplemented, o
   const reviewerRole = level==='subtask' ? 'Project Manager' : 'Project Head';
   const locked = isApproved(item);
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-row flex-wrap items-center gap-1">
       {item.review==='Implemented Review'
         ? <Badge cls={statusColor(item.headApprovedImpl ? 'Client Review' : 'Head Review')}>{item.headApprovedImpl ? 'Awaiting Client' : 'Head Review (Implemented)'}</Badge>
         : item.review==='PM Verification' ? <Badge cls={statusColor('PM Verification')}>PM Verification</Badge>

@@ -149,32 +149,47 @@ export const syncChanges = (prev: any[], next: any[]) => syncArray('change_reque
 export const syncEvents = (prev: any[], next: any[]) => syncArray('calendar_events', prev, next, eventToDb);
 export const syncDocs = (prev: any[], next: any[]) => syncArray('library_docs', prev, next, docToDb);
 
-/* ============================ Document Library: file storage ============================ */
-// The 'library-docs' Supabase Storage bucket is private (not public) -- every object lives under a
-// <tenant_id>/... path, and storage.objects RLS policies only let a signed-in user read/write/delete
-// objects under their own tenant's folder (mirrors every other table's tenant_id RLS). Downloads go
-// through a short-lived signed URL rather than a public link, so a document is never reachable by
-// anyone outside the tenant even if the link leaked.
-export async function uploadLibraryDoc(docId: string, file: File) {
+/* ============================ file storage (Document Library + Phase Management) ============================ */
+// Every file-attaching feature in the app shares this same shape: a private Supabase Storage bucket,
+// one object per <tenant_id>/... path, RLS policies that only let a signed-in user read/write/delete
+// objects under their own tenant's folder (mirrors every other table's tenant_id RLS), and downloads
+// through a short-lived signed URL rather than a public link -- so a file is never reachable by
+// anyone outside the tenant even if the link leaked. 'library-docs' backs Document Library;
+// 'phase-docs' backs milestone/sub task attachments in Phase Management.
+async function uploadToBucket(bucket: string, id: string, file: File) {
   if (!TENANT_ID) throw new Error('No tenant context to upload into.');
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `${TENANT_ID}/${docId}-${safeName}`;
-  const { error } = await supabase.storage.from('library-docs').upload(path, file, { upsert: true });
+  const path = `${TENANT_ID}/${id}-${Date.now()}-${safeName}`;
+  const { error } = await supabase.storage.from(bucket).upload(path, file, { upsert: true });
   if (error) throw error;
-  return { filePath: path, fileName: file.name, fileSize: file.size };
+  return { path, name: file.name, size: file.size };
 }
-
-export async function getLibraryDocDownloadUrl(filePath: string) {
-  const { data, error } = await supabase.storage.from('library-docs').createSignedUrl(filePath, 60);
+async function getBucketDownloadUrl(bucket: string, path: string) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, 60);
   if (error) throw error;
   return data.signedUrl as string;
 }
-
-export async function deleteLibraryDocFile(filePath: string) {
-  if (!filePath) return;
-  const { error } = await supabase.storage.from('library-docs').remove([filePath]);
+async function deleteFromBucket(bucket: string, path: string) {
+  if (!path) return;
+  const { error } = await supabase.storage.from(bucket).remove([path]);
   if (error) throw error;
 }
+
+export async function uploadLibraryDoc(docId: string, file: File) {
+  const r = await uploadToBucket('library-docs', docId, file);
+  return { filePath: r.path, fileName: r.name, fileSize: r.size };
+}
+export const getLibraryDocDownloadUrl = (filePath: string) => getBucketDownloadUrl('library-docs', filePath);
+export const deleteLibraryDocFile = (filePath: string) => deleteFromBucket('library-docs', filePath);
+
+// Phase Management: milestone/sub task attachments. `id` is a fresh per-file id (S.uid('DOC')) so
+// several files attached to the same item never collide on path even if uploaded back to back.
+export async function uploadPhaseDoc(id: string, file: File) {
+  const r = await uploadToBucket('phase-docs', id, file);
+  return { id, path: r.path, name: r.name, size: r.size };
+}
+export const getPhaseDocDownloadUrl = (path: string) => getBucketDownloadUrl('phase-docs', path);
+export const deletePhaseDocFile = (path: string) => deleteFromBucket('phase-docs', path);
 export const syncDeliverables = (prev: any[], next: any[]) => syncArray('deliverables', prev, next, deliverableToDb);
 export const syncTeam = (prev: any[], next: any[]) => syncArray('team', prev, next, teamToDb, 'name');
 export const syncInvoices = (prev: any[], next: any[]) => syncArray('invoices', prev, next, invoiceToDb);

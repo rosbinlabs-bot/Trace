@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
 
 // The four "acting as" tiers Phase Management's approval workflow understands, in the same order
 // they're offered in the header switcher.
@@ -10,7 +11,7 @@ export default function Phases(){
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
-  const { profile: myProfile } = React.useContext(S.CurrentUserContext);
+  const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
@@ -93,11 +94,57 @@ export default function Phases(){
   const addStAssignee = (phId, msId, stId, name) => mutSt(phId, msId, stId, s => ({...s, assignees:[...(s.assignees||[]), name]}));
   const removeStAssignee = (phId, msId, stId, name) => mutSt(phId, msId, stId, s => ({...s, assignees:(s.assignees||[]).filter(x=>x!==name)}));
 
-  // ---- documents ----
-  const attachMsDocs = (phId, msId, files) => mutMs(phId, msId, m => ({...m, docs:[...(m.docs||[]), ...Array.from(files).map((f:any)=>({n:f.name}))]}));
-  const removeMsDoc = (phId, msId, i) => mutMs(phId, msId, m => ({...m, docs:(m.docs||[]).filter((_,j)=>j!==i)}));
-  const attachStDocs = (phId, msId, stId, files) => mutSt(phId, msId, stId, s => ({...s, docs:[...(s.docs||[]), ...Array.from(files).map((f:any)=>({n:f.name}))]}));
-  const removeStDoc = (phId, msId, stId, i) => mutSt(phId, msId, stId, s => ({...s, docs:(s.docs||[]).filter((_,j)=>j!==i)}));
+  // ---- documents: real Supabase Storage uploads (db.uploadPhaseDoc), same private/tenant-scoped
+  // bucket pattern as Document Library. docUploading/docErr surface progress and failures inline near
+  // wherever the attach control is rendered, since the upload is now a real network call, not just an
+  // instant in-memory push. downloadingDocId drives the little spinner swap in S.DocsChips.
+  const [docUploading, setDocUploading] = useState(false);
+  const [docErr, setDocErr] = useState('');
+  const [downloadingDocId, setDownloadingDocId] = useState<string|null>(null);
+  const attachMsDocs = async (phId, msId, files) => {
+    setDocErr(''); setDocUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of Array.from(files) as File[]) { uploaded.push(await db.uploadPhaseDoc(S.uid('DOC'), f)); }
+      mutMs(phId, msId, m => ({...m, docs:[...(m.docs||[]), ...uploaded.map(u=>({id:u.id, n:u.name, path:u.path, size:u.size, uploadedAt:new Date().toISOString(), uploadedBy:myEmail}))]}));
+    } catch(e:any) { setDocErr(e.message || 'Could not upload that file.'); }
+    setDocUploading(false);
+  };
+  const removeMsDoc = (phId, msId, i) => {
+    const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+    const d = ms && (ms.docs||[])[i];
+    mutMs(phId, msId, m => ({...m, docs:(m.docs||[]).filter((_,j)=>j!==i)}));
+    if(d?.path) db.deletePhaseDocFile(d.path).catch((e)=>console.error('Storage cleanup failed:', e));
+  };
+  const attachStDocs = async (phId, msId, stId, files) => {
+    setDocErr(''); setDocUploading(true);
+    try {
+      const uploaded = [];
+      for (const f of Array.from(files) as File[]) { uploaded.push(await db.uploadPhaseDoc(S.uid('DOC'), f)); }
+      mutSt(phId, msId, stId, s => ({...s, docs:[...(s.docs||[]), ...uploaded.map(u=>({id:u.id, n:u.name, path:u.path, size:u.size, uploadedAt:new Date().toISOString(), uploadedBy:myEmail}))]}));
+    } catch(e:any) { setDocErr(e.message || 'Could not upload that file.'); }
+    setDocUploading(false);
+  };
+  const removeStDoc = (phId, msId, stId, i) => {
+    const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+    const s = ms && (ms.subtasks||[]).find(x=>x.id===stId);
+    const d = s && (s.docs||[])[i];
+    mutSt(phId, msId, stId, s => ({...s, docs:(s.docs||[]).filter((_,j)=>j!==i)}));
+    if(d?.path) db.deletePhaseDocFile(d.path).catch((e)=>console.error('Storage cleanup failed:', e));
+  };
+  const downloadDoc = async (d:any) => {
+    if(!d.path) return;
+    setDocErr(''); setDownloadingDocId(d.id||d.path);
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path), '_blank'); }
+    catch(e:any) { setDocErr(e.message || 'Could not generate a download link.'); }
+    setDownloadingDocId(null);
+  };
+
+  // ---- remarks: a running comment log on a sub task, added from the detail modal ----
+  const addStRemark = (phId, msId, stId, text) => {
+    if(!text.trim()) return;
+    mutSt(phId, msId, stId, s => ({...s, remarks:[...(s.remarks||[]), { id:S.uid('RMK'), text:text.trim(), by:myProfile?.name||myEmail, at:new Date().toISOString() }]}));
+  };
 
   // ---- phase-level: start-date lock, On Hold toggle, completion confirmation ----
   const startEditableBy = (ph) => !ph.start || actor==='Project Head' || actor==='Strategic Lead';
@@ -145,6 +192,15 @@ export default function Phases(){
   const selPhase = phases.find(p=>p.id===selectedPhaseId) || phases[0] || null;
   const selMs = selPhase ? (selPhase.milestones||[]).find(m=>m.id===selectedMsId) || null : null;
   const selectPhase = (ph) => { setSelectedPhaseId(ph.id); setSelectedMsId(null); };
+  // Sub task detail modal — {phId, msId, stId} of whichever sub task was clicked to expand, or null
+  // when closed. Re-looked-up from `phases` on every render (not a stale snapshot) so live edits
+  // made elsewhere (or via realtime sync from another user) show up immediately while it's open.
+  const [detailStIds, setDetailStIds] = useState<{phId:string, msId:string, stId:string}|null>(null);
+  const detailPh = detailStIds ? phases.find(p=>p.id===detailStIds.phId) : null;
+  const detailMs = detailPh ? (detailPh.milestones||[]).find(m=>m.id===detailStIds!.msId) : null;
+  const detailSt = detailMs ? (detailMs.subtasks||[]).find(s=>s.id===detailStIds!.stId) : null;
+  const [remarkDraft, setRemarkDraft] = useState('');
+  React.useEffect(() => { setRemarkDraft(''); }, [detailStIds]);
   const dotColor = (s) => ({
     'Not Started':'bg-slate-300','Yet to Start':'bg-slate-300','In Progress':'bg-brand-500','On Hold':'bg-amber-400',
     'Completed':'bg-emerald-500','Implemented':'bg-violet-500','Dropped':'bg-red-400','Terminated':'bg-red-500'
@@ -181,6 +237,7 @@ export default function Phases(){
 
   return (
     <div>
+      {docErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{docErr}</div>}
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <S.SectionTitle sub="Per-project phases → milestones → sub tasks. Project Manager approves Sub Tasks, Project Head approves Milestones & Phases, Client Owner signs off on Implemented items in the Client Portal.">Phase Management</S.SectionTitle>
         <div className="flex items-center gap-2">
@@ -349,7 +406,7 @@ export default function Phases(){
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Documents</label>
-                      <S.DocsChips docs={ms.docs} disabled={msDis} onAttach={files=>attachMsDocs(ph.id,ms.id,files)} onRemove={i=>removeMsDoc(ph.id,ms.id,i)}/>
+                      <S.DocsChips docs={ms.docs} disabled={msDis} onAttach={files=>attachMsDocs(ph.id,ms.id,files)} onRemove={i=>removeMsDoc(ph.id,ms.id,i)} onDownload={downloadDoc} downloadingId={downloadingDocId}/>
                     </div>
                     {canDelete && <button onClick={()=>removeMs(ph.id,ms.id)} disabled={msDis} className={`text-xs whitespace-nowrap ml-auto ${msDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕ Remove</button>}
                   </div>
@@ -378,6 +435,11 @@ export default function Phases(){
                   {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=stLock&&actor!=='Strategic Lead'; const overdue=S.isOverdue(s); return (
                     <div key={s.id} id={`st-${s.id}`} className={`flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
+                      {/* Opens the full detail modal — view everything, download/upload attachments,
+                          add remarks — without disturbing the quick inline fields alongside it. */}
+                      <button onClick={()=>setDetailStIds({phId:ph.id, msId:ms.id, stId:s.id})} title="View details" className="text-slate-300 hover:text-brand-600 shrink-0">
+                        <S.Icon name="search" className="w-3.5 h-3.5"/>
+                      </button>
                       <input className={inpFor('subtask')+" flex-1 min-w-[140px]"+(overdue?" border-red-300":"")} value={s.name} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
                       <S.AssigneeChips assignees={s.assignees} roster={roster} disabled={genDis} accent={S.LEVEL.subtask} onAdd={nm=>addStAssignee(ph.id,ms.id,s.id,nm)} onRemove={nm=>removeStAssignee(ph.id,ms.id,s.id,nm)}/>
                       <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
@@ -388,7 +450,7 @@ export default function Phases(){
                         onMarkImplemented={()=>markImplementedSt(ph.id,ms.id,s.id)}
                         onHeadApproveImpl={()=>headApproveImplSt(ph.id,ms.id,s.id)}
                         onCancelImpl={()=>cancelImplSt(ph.id,ms.id,s.id)}/>
-                      <S.DocsChips docs={s.docs} disabled={genDis} onAttach={files=>attachStDocs(ph.id,ms.id,s.id,files)} onRemove={i=>removeStDoc(ph.id,ms.id,s.id,i)}/>
+                      <S.DocsChips docs={s.docs} disabled={genDis} onAttach={files=>attachStDocs(ph.id,ms.id,s.id,files)} onRemove={i=>removeStDoc(ph.id,ms.id,s.id,i)} onDownload={downloadDoc} downloadingId={downloadingDocId}/>
                       {canDelete && <button onClick={()=>removeSt(ph.id,ms.id,s.id)} disabled={genDis} className={`${genDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕</button>}
                     </div>
                   );})}
@@ -467,6 +529,97 @@ export default function Phases(){
         <div>Sub tasks are approved by the <b className="text-brand-700">Project Manager</b>; once all of a milestone's sub tasks are approved, the <b className="text-brand-700">Project Head</b> approves the milestone; once every milestone is approved, the <b className="text-brand-700">Project Head</b> confirms the phase.</div>
         <div><b className="text-brand-700">Implemented</b> — the most important status — needs the <b className="text-brand-700">Project Head</b>'s approval, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only the <b className="text-brand-700">Strategic Lead</b> can re-open them, and only the <b className="text-brand-700">Project Head</b>/<b className="text-brand-700">Strategic Lead</b> can change a phase's start date once it's set.</div>
       </div>
+
+      {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
+          search-icon button on a sub task row. Reuses the same StatusControl/ApprovalFlow/AssigneeChips/
+          DocsChips as the inline row, just laid out with room to breathe and a remarks log underneath. */}
+      {detailSt && detailMs && detailPh && (() => {
+        const ph = detailPh, ms = detailMs, s = detailSt;
+        const stLocked = S.isApproved(s); const stDis = stLocked && actor!=='Strategic Lead'; const overdue = S.isOverdue(s);
+        return (
+          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setDetailStIds(null)}>
+            <div className="bg-white rounded-xl max-w-lg w-full max-h-[88vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
+              <div className="flex justify-between items-start mb-1">
+                <div className="text-[11px] text-slate-400">{ph.name} → {ms.name}</div>
+                <button className="text-slate-400 hover:text-slate-600" onClick={()=>setDetailStIds(null)}>✕</button>
+              </div>
+              <input className={inpFor('subtask')+" font-medium text-sm w-full mb-3"+(overdue?" border-red-300":"")} value={s.name} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
+
+              <div className="grid grid-cols-2 gap-3 mb-3">
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400">Deadline {overdue && <span className="text-red-500">— overdue</span>}</label>
+                  <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <label className="text-[10px] text-slate-400">Actual date</label>
+                  <span className="text-xs text-slate-600 py-1.5 inline-block">{S.itemDoneDate(s) || '—'}</span>
+                </div>
+              </div>
+
+              <div className="mb-3">
+                <label className="text-[10px] text-slate-400 block mb-1">Assignees</label>
+                <S.AssigneeChips assignees={s.assignees} roster={roster} disabled={stDis} accent={S.LEVEL.subtask} onAdd={nm=>addStAssignee(ph.id,ms.id,s.id,nm)} onRemove={nm=>removeStAssignee(ph.id,ms.id,s.id,nm)}/>
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap mb-4 pb-4 border-b border-slate-100">
+                <StatusControl item={s} level="subtask" onChange={val=>setStStatus(ph.id,ms.id,s.id,val)}/>
+                <S.ApprovalFlow item={s} actor={actor} level="subtask"
+                  onDecide={d=>decideSt(ph.id,ms.id,s.id,d)}
+                  onMarkImplemented={()=>markImplementedSt(ph.id,ms.id,s.id)}
+                  onHeadApproveImpl={()=>headApproveImplSt(ph.id,ms.id,s.id)}
+                  onCancelImpl={()=>cancelImplSt(ph.id,ms.id,s.id)}/>
+              </div>
+
+              <div className="mb-4">
+                <label className="text-[10px] text-slate-400 block mb-1.5">Attachments {docUploading && <span className="text-brand-500">— uploading…</span>}</label>
+                {(s.docs||[]).length===0 && <div className="text-xs text-slate-300 mb-1.5">No attachments yet.</div>}
+                <div className="space-y-1">
+                  {(s.docs||[]).map((d:any,i:number)=>(
+                    <div key={d.id||i} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs">
+                      <S.Icon name={downloadingDocId===(d.id||d.path) ? 'refresh' : S.docIcon(d.n)} className={`w-3.5 h-3.5 shrink-0 ${downloadingDocId===(d.id||d.path) ? 'text-brand-500' : S.docIconTone(d.n)}`}/>
+                      {d.path ? (
+                        <button onClick={()=>downloadDoc(d)} className="flex-1 min-w-0 truncate text-left hover:underline hover:text-brand-700" title="Download">{d.n}</button>
+                      ) : (
+                        <span className="flex-1 min-w-0 truncate text-slate-400" title="No file on record">{d.n}</span>
+                      )}
+                      {d.size && <span className="text-[10px] text-slate-400 whitespace-nowrap">{(d.size/1024).toFixed(0)} KB</span>}
+                      {!stDis && <button onClick={()=>removeStDoc(ph.id,ms.id,s.id,i)} className="text-red-400 hover:text-red-600">✕</button>}
+                    </div>
+                  ))}
+                </div>
+                {!stDis && (
+                  <label className="mt-2 inline-block cursor-pointer text-xs text-brand-600 hover:text-brand-700 border border-dashed border-brand-300 rounded-lg px-2.5 py-1.5">+ Upload attachment
+                    <input type="file" multiple accept={S.DOC_ACCEPT} className="hidden" onChange={e=>{attachStDocs(ph.id,ms.id,s.id,e.target.files); e.target.value='';}}/>
+                  </label>
+                )}
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-400 block mb-1.5">Remarks</label>
+                <div className="space-y-2 mb-2 max-h-40 overflow-auto">
+                  {(s.remarks||[]).length===0 && <div className="text-xs text-slate-300">No remarks yet.</div>}
+                  {(s.remarks||[]).map((r:any)=>(
+                    <div key={r.id} className="bg-slate-50 rounded-lg px-2.5 py-1.5">
+                      <div className="text-xs text-slate-700">{r.text}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{r.by} · {new Date(r.at).toLocaleString('en-US',{dateStyle:'medium', timeStyle:'short'})}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex gap-1.5">
+                  <input value={remarkDraft} onChange={e=>setRemarkDraft(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter' && remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }}
+                    placeholder="Add a remark…" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                  <button onClick={()=>{ if(remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">Add</button>
+                </div>
+              </div>
+
+              <div className="flex justify-between items-center mt-5 pt-4 border-t border-slate-100">
+                {canDelete ? <button onClick={()=>{removeSt(ph.id,ms.id,s.id); setDetailStIds(null);}} disabled={stDis} className={`text-sm ${stDis?'text-slate-300':'text-red-500 hover:text-red-700'}`}>✕ Remove sub task</button> : <span/>}
+                <button onClick={()=>setDetailStIds(null)} className="text-sm px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50">Close</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
