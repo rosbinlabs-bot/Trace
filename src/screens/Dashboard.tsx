@@ -18,8 +18,8 @@ export default function Dashboard(){
   projects.forEach(p=>{
     (tree[p.id]||[]).forEach(ph=>{
       ph.milestones.forEach(ms=>{
-        allEntries.push({ item:ms, project:p.name });
-        (ms.subtasks||[]).forEach(s=> allEntries.push({ item:s, project:p.name }));
+        allEntries.push({ item:ms, project:p.name, level:'Milestone' });
+        (ms.subtasks||[]).forEach(s=> allEntries.push({ item:s, project:p.name, level:'Sub Task' }));
       });
     });
   });
@@ -32,8 +32,10 @@ export default function Dashboard(){
   const todayEntries = allEntries.filter(e=>e.item.deadline===S.TODAY_ISO);
   const upcomingEntries = allEntries.filter(e=>e.item.deadline && e.item.deadline>S.TODAY_ISO && e.item.deadline<=S.addDays(S.TODAY_ISO,14) && !S.isApproved(e.item));
   const clientPendingEntries = allEntries.filter(e=>e.item.review==='Implemented Review' && e.item.headApprovedImpl && !e.item.clientApprovedImpl);
-  const pmPendingEntries = allEntries.filter(e=>e.item.review==='PM Verification');
-  const headPendingEntries = allEntries.filter(e=>e.item.review==='Head Review');
+  // `review` is a generic 'Pending Review' sentinel now (level-based approval) — e.level tells a
+  // pending Sub Task apart from a pending Milestone.
+  const pmPendingEntries = allEntries.filter(e=>e.item.review==='Pending Review' && e.level==='Sub Task');
+  const headPendingEntries = allEntries.filter(e=>e.item.review==='Pending Review' && e.level==='Milestone');
   const approvedEntries = allEntries.filter(e=>S.isApproved(e.item));
   const implementedEntries = allEntries.filter(e=>e.item.status==='Implemented');
   const implementedThisMonth = implementedEntries.filter(e=>e.item.clientAcceptedDate && e.item.clientAcceptedDate.slice(0,7)===monthKey);
@@ -60,7 +62,7 @@ export default function Dashboard(){
     { label:"Today's Deliverables", value:todayEntries.length, sub:`${overdueEntries.length} overdue overall`, tone:'text-amber-600' },
     { label:'Overdue Activities', value:overdueEntries.length, sub:`across ${new Set(overdueEntries.map(e=>e.project)).size} project(s)`, tone:'text-red-600' },
     { label:'Pending Client Approvals', value:clientPendingEntries.length, sub:'awaiting sign-off in Client Portal', tone:'text-purple-600' },
-    { label:'Pending Internal Approvals', value:pmPendingEntries.length+headPendingEntries.length, sub:`${pmPendingEntries.length} PM · ${headPendingEntries.length} Head`, tone:'text-amber-600' },
+    { label:'Pending Internal Approvals', value:pmPendingEntries.length+headPendingEntries.length, sub:`${pmPendingEntries.length} Sub Task · ${headPendingEntries.length} Milestone`, tone:'text-amber-600' },
     { label:'Upcoming Deliverables', value:upcomingEntries.length, sub:'next 14 days', tone:'text-blue-600' },
   ];
   const widgets = [
@@ -101,7 +103,7 @@ export default function Dashboard(){
                     <span className="text-xs text-slate-400 truncate">{p.client}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs whitespace-nowrap">
-                    <span className="text-slate-500">PM: <b className="text-slate-700">{p.pm||'—'}</b></span>
+                    <span className="text-slate-500">Lead: <b className="text-slate-700">{S.projectLeadName(p)||'—'}</b></span>
                     <span className="text-slate-400">Due {p.billingDueDate}</span>
                     <span className={`font-medium ${d<0?'text-red-600':'text-amber-600'}`}>{d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`in ${d}d`}</span>
                   </div>

@@ -142,8 +142,9 @@ function RolesPermissionsPanel(){
   // grant themselves more access by editing the matrix -- only Full (Super Admin by default) can.
   const canEditRoles = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Full');
   const setLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level })); };
+  const setHierarchyLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationHierarchyLevel', dl => ({ ...(dl||{}), [designation]: level })); };
   const setCap = (mod, level, cap) => { if(!canEditRoles) return; patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } })); };
-  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); };
+  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('designationHierarchyLevel', ()=>({...S.DEFAULT_HIERARCHY_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); };
   return (
     <div className="space-y-5">
       {!canEditRoles && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access to Roles & Permissions — only a Super Admin (Full capability on Administration) can change designation levels or the capability matrix.</div>}
@@ -162,6 +163,22 @@ function RolesPermissionsPanel(){
               <select value={admin.designationLevel[d]} disabled={!canEditRoles} onChange={e=>setLevel(d, e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.PERMISSION_LEVELS.map(l=><option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      </S.Card>
+
+      <S.Card className="p-4">
+        <div className="font-semibold text-slate-800 mb-1 flex items-center gap-2"><S.Icon name="structure" className="w-4 h-4 text-slate-400"/> Designation → Hierarchy Level</div>
+        <div className="text-xs text-slate-400 mb-3">A separate axis from Permission Level above — this is seniority (L1 = most senior, up to L9), not capability. Project Master's Project Team and Phase Management's whole approval chain (who approves Sub Tasks/Milestones/Phases, and the Implemented escalation order) are driven entirely by hierarchy level. This table just sets the default level a designation seeds when picked; each person's actual level (Administration → Users, or their entry on a specific project's team) can still be set individually.</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {S.DESIGNATIONS.map(d=>(
+            <div key={d} className="border border-slate-200 rounded-lg p-3">
+              <div className="text-sm font-medium text-slate-700 mb-2">{d}</div>
+              <select value={S.designationHierarchyLevel(d, admin)} disabled={!canEditRoles} onChange={e=>setHierarchyLevel(d, e.target.value)}
+                className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500">
+                {S.HIERARCHY_LEVELS.map(l=><option key={l} value={l}>{l}</option>)}
               </select>
             </div>
           ))}
@@ -252,7 +269,7 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, draft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.DEFAULT_HIERARCHY_LEVEL[draft.designation]||'L4', status:'Active', joined: S.TODAY_ISO }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', status:'Active', joined: S.TODAY_ISO }]);
       setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
@@ -366,7 +383,7 @@ function UsersPanel(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
               <input value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
-              <select value={draft.designation} onChange={e=>{ const designation=e.target.value; setDraft(d=>({...d,designation, level: levelTouched ? d.level : (S.DEFAULT_HIERARCHY_LEVEL[designation]||d.level) })); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+              <select value={draft.designation} onChange={e=>{ const designation=e.target.value; setDraft(d=>({...d,designation, level: levelTouched ? d.level : (S.designationHierarchyLevel(designation, admin)||d.level) })); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Level</label>

@@ -90,7 +90,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   // to whatever S.NAV_MODULE says their capabilityFor() that module allows -- an item whose module
   // resolves to 'None' (e.g. Administration for an Officer-level Associate) simply isn't shown, and
   // the matching <Gate> below blocks the route itself so it can't be reached by typing the URL either.
-  const navGroups = role === 'client' ? S.CLIENT_NAV : S.NAV
+  const navGroups = role === 'client' ? S.CLIENT_NAV : role === 'guest' ? S.GUEST_NAV : S.NAV
     .map((g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) }))
     .filter((g: any) => g.items.length > 0);
   const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
@@ -196,6 +196,17 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   <Route path="/portal" element={<ClientGate admin={admin} email={email}><Portal /></ClientGate>} />
                   <Route path="/structure" element={<ClientGate admin={admin} email={email}><ProjectStructure /></ClientGate>} />
                   <Route path="*" element={<Navigate to="/portal" replace />} />
+                </>
+              ) : role === 'guest' ? (
+                // Guest teammate (Project Master -> Guest Teammates): hard-restricted to Phase
+                // Management only, for the single project they were added to -- Phases.tsx itself
+                // renders read-only for role==='guest' (view + download attachments, no edit
+                // controls). Same "route table is the real boundary" pattern as the Client branch
+                // above; no other URL reaches anything else.
+                <>
+                  <Route path="/" element={<Navigate to="/phases" replace />} />
+                  <Route path="/phases" element={<Phases />} />
+                  <Route path="*" element={<Navigate to="/phases" replace />} />
                 </>
               ) : (
                 <>
@@ -567,13 +578,13 @@ export default function App() {
   // every project-scoped screen (Project Master, Phase Management, Deliverables, Gantt,
   // Implementation, Risks/Issues, Calendar, Client Approval, Reports) reads projects from this same
   // context, so fixing it here is what makes all of them correct at once.
-  const visibleProjects = role === 'client'
+  const visibleProjects = (role === 'client' || role === 'guest')
     ? projects.filter((p: any) => p.id === myProfile?.project)
     : S.staffVisibleProjects(projects, role, myProfile);
   // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
-  // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
-  // see activity/approval notifications from every OTHER project in the tenant too.
-  const visibleNotifications = role === 'client' ? notifications.filter((n: any) => n.projectId === myProfile?.project) : notifications;
+  // regardless of role, and it's rendered in Shell for every account) -- without this, a client (or
+  // guest) would see activity/approval notifications from every OTHER project in the tenant too.
+  const visibleNotifications = (role === 'client' || role === 'guest') ? notifications.filter((n: any) => n.projectId === myProfile?.project) : notifications;
   // Risks, Issues, Deliverables and Calendar events aren't looked up through ProjectsDataContext --
   // Risks.tsx/Issues.tsx/the Reports "Risk Dashboard"/"Deliverable Budget" reports and Calendar all
   // render their own full list straight from GovernanceDataContext/DeliverablesDataContext/

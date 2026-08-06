@@ -1,9 +1,18 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
+
+// Same default-password rule as Administration -> Users -> Add Teammate/Client (first 4 letters of
+// the name, lowercased, + "1234") -- duplicated here in ProjectMaster rather than importing a private
+// helper from Administration.tsx, since Guest teammates are added from this screen instead.
+const defaultGuestPassword = (name: string) => {
+  const letters = (name || '').replace(/[^a-zA-Z]/g, '').toLowerCase();
+  return (letters.slice(0, 4) || 'user') + '1234';
+};
 
 export default function ProjectMaster(){
   const { role } = React.useContext(S.RoleContext);
-  const { admin } = React.useContext(S.AdminDataContext);
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   const { invoices, setInvoices } = React.useContext(S.InvoicesDataContext);
   const { settings, setSettings } = React.useContext(S.SettingsContext);
@@ -22,7 +31,7 @@ export default function ProjectMaster(){
 
   const openExisting = (p) => { setForm({ ...p }); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
   const openNew = () => {
-    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, strategicLead:'', projectHead:'', pm:'', associate:'', clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
+    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, team:[], clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
     setIsNew(true); setExtChooser(false); setReqMenuOpen(false);
   };
   const close = () => { setForm(null); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
@@ -71,6 +80,49 @@ export default function ProjectMaster(){
   const INDUSTRIES = (settings.industries && settings.industries.length) ? settings.industries : S.DEFAULT_PROJECT_SETTINGS.industries;
   const CONSULTING_CATEGORIES = (settings.consultingCategories && settings.consultingCategories.length) ? settings.consultingCategories : S.DEFAULT_PROJECT_SETTINGS.consultingCategories;
   const ENGAGEMENTS = (settings.engagementTypes && settings.engagementTypes.length) ? settings.engagementTypes : S.DEFAULT_PROJECT_SETTINGS.engagementTypes;
+
+  // ---- Project Team (by hierarchy level) — replaces the old 4 fixed Strategic Lead/Project Head/PM/
+  // Associate pickers. Every downstream approval decision in Phase Management is driven by this list
+  // (see S.approverLevelFor/implementChainFor), so who's on it and at what level really matters, not
+  // just who's "the PM" by title. Picking a name defaults its level from that person's designation
+  // (Administration -> Roles & Permissions -> Designation -> Hierarchy Level), editable afterward.
+  const teamList = form?.team || [];
+  const personDesignation = (name:string) => (admin.users||[]).find((u:any)=>u.name===name)?.designation;
+  const defaultLevelFor = (name:string) => S.designationHierarchyLevel(personDesignation(name), admin) || S.HIERARCHY_LEVELS[S.HIERARCHY_LEVELS.length-1];
+  const setTeamList = (list:any[]) => setF('team', list);
+  const addTeamMember = () => setTeamList([...teamList, { name:'', level:S.HIERARCHY_LEVELS[0] }]);
+  const setTeamMemberName = (i:number, name:string) => setTeamList(teamList.map((t:any,j:number)=> j===i?{...t, name, level:defaultLevelFor(name)||t.level}:t));
+  const setTeamMemberLevel = (i:number, level:string) => setTeamList(teamList.map((t:any,j:number)=> j===i?{...t, level}:t));
+  const removeTeamMember = (i:number) => setTeamList(teamList.filter((_:any,j:number)=>j!==i));
+
+  // ---- Guest Teammates — a read-only login (Administration -> Users, type:'Guest') tagged to this
+  // one project: can view Phase Management and download sub task attachments there, nothing else (see
+  // S.deriveRole / App.tsx's Guest route table). Added straight from here rather than Administration,
+  // since a Guest only ever makes sense in the context of the specific project they're being let into.
+  const [guestDraft, setGuestDraft] = useState({ name:'', email:'', password:defaultGuestPassword('') });
+  const [guestPwTouched, setGuestPwTouched] = useState(false);
+  const [guestBusy, setGuestBusy] = useState(false);
+  const [guestErr, setGuestErr] = useState('');
+  const setGuestDraftName = (name:string) => setGuestDraft(d=>({...d, name, password: guestPwTouched? d.password : defaultGuestPassword(name)}));
+  const projectGuests = (admin.users||[]).filter((u:any)=>u.type==='Guest' && u.project===form?.id);
+  const addGuest = async () => {
+    const name = guestDraft.name.trim(), guestEmail = guestDraft.email.trim();
+    if(!name || !guestEmail || !guestDraft.password || guestDraft.password.length<8){ setGuestErr('Name, email and an 8+ character password are required.'); return; }
+    if((admin.users||[]).some((u:any)=>u.email.toLowerCase()===guestEmail.toLowerCase())){ setGuestErr('A user with that email already exists.'); return; }
+    setGuestErr(''); setGuestBusy(true);
+    try {
+      await db.createUserAccount(guestEmail, guestDraft.password, name);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email:guestEmail, type:'Guest', project:form.id, status:'Active', joined:S.TODAY_ISO }]);
+      setGuestDraft({ name:'', email:'', password:defaultGuestPassword('') }); setGuestPwTouched(false);
+    } catch(e:any) { setGuestErr(e.message || 'Could not create the guest login.'); }
+    setGuestBusy(false);
+  };
+  const removeGuest = async (u:any) => {
+    setGuestErr(''); setGuestBusy(true);
+    try { await db.deleteUserAccount(u.email); patchAdmin('users', (us:any[])=>us.filter(x=>x.id!==u.id)); }
+    catch(e:any) { setGuestErr(e.message || 'Could not remove that guest.'); }
+    setGuestBusy(false);
+  };
 
   // ---- client member helpers (multiple persons, one designated owner) ----
   const clients = form?.clients || [];
@@ -152,9 +204,9 @@ export default function ProjectMaster(){
                 <S.Td>{p.client}</S.Td>
                 <S.Td>
                   <div className="text-xs leading-relaxed min-w-[200px]">
-                    <div><span className="text-slate-400">Strategic Lead:</span> {p.strategicLead||'—'}</div>
-                    <div><span className="text-slate-400">Project Head:</span> {p.projectHead||'—'}</div>
-                    <div><span className="text-slate-400">PM:</span> {p.pm||'—'} · <span className="text-slate-400">Associate:</span> {p.associate||'—'}</div>
+                    {(p.team||[]).length ? (p.team||[]).slice().sort((a:any,b:any)=>S.levelNum(a.level)-S.levelNum(b.level)).map((t:any,i:number)=>(
+                      <div key={i}><span className="text-slate-400">{t.level}:</span> {t.name||'—'}</div>
+                    )) : <div className="text-slate-400">No team assigned</div>}
                     <div><span className="text-slate-400">Client Owner:</span> {owner? <span className="text-emerald-700 font-medium">{owner.name}</span> : '—'}
                       {(p.clients||[]).length>1 && <span className="text-slate-400"> +{(p.clients||[]).length-1} more</span>}</div>
                   </div>
@@ -245,10 +297,6 @@ export default function ProjectMaster(){
               <S.SelF label="Engagement Type" value={form.engagement} canEdit={canEdit} onChange={v=>setF('engagement',v)} opts={ENGAGEMENTS} />
               <S.DateF label="Start Date" value={form.start} canEdit={canEdit} onChange={v=>setF('start',v)} />
               <S.DateF label="End Date" value={form.end} canEdit={canEdit} onChange={v=>setF('end',v)} />
-              <S.PeopleF label="Strategic Lead" value={form.strategicLead} canEdit={canEdit} onChange={v=>setF('strategicLead',v)} people={PEOPLE} />
-              <S.PeopleF label="Project Head" value={form.projectHead} canEdit={canEdit} onChange={v=>setF('projectHead',v)} people={PEOPLE} />
-              <S.PeopleF label="Project Manager" value={form.pm} canEdit={canEdit} onChange={v=>setF('pm',v)} people={PEOPLE} />
-              <S.PeopleF label="Associate" value={form.associate} canEdit={canEdit} onChange={v=>setF('associate',v)} people={PEOPLE} />
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Status</label>
                 <select value={form.status} disabled={!canEditStatus} onChange={e=>applyLifecycle({status:e.target.value})} className={S.fieldCls(canEditStatus)}>
@@ -267,6 +315,66 @@ export default function ProjectMaster(){
                 <label className="text-xs text-slate-400 block mb-1">Months Remaining</label>
                 <div className={`w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-slate-100 ${S.remainingLabel(form.end).cls}`}>{S.remainingLabel(form.end).txt}</div>
               </div>
+            </div>
+
+            {/* Project Team — dynamic hierarchy-level list, drives Phase Management's whole approval
+                chain (see S.approverLevelFor/implementChainFor). Replaces the old 4 fixed role pickers. */}
+            <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="flex justify-between items-center mb-2">
+                <div><span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Project Team (by Level)</span>
+                  <span className="ml-2 text-[11px] text-slate-400">L1 is most senior. Approval in Phase Management is driven entirely by who's here and at what level.</span></div>
+                {canEdit && <button onClick={addTeamMember} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap">+ Add team member</button>}
+              </div>
+              <div className="space-y-2">
+                {teamList.map((t:any,i:number)=>(
+                  <div key={i} className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
+                    <select value={t.name} disabled={!canEdit} onChange={e=>setTeamMemberName(i,e.target.value)}
+                      className={`flex-1 min-w-[150px] border rounded-lg px-2 py-1 text-sm ${canEdit?'border-slate-200 bg-white':'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                      <option value="">— Select —</option>
+                      {PEOPLE.map((p:string)=><option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <select value={t.level} disabled={!canEdit} onChange={e=>setTeamMemberLevel(i,e.target.value)}
+                      className={`w-36 border rounded-lg px-2 py-1 text-sm ${canEdit?'border-slate-200 bg-white':'border-slate-200 bg-slate-100 text-slate-500'}`}>
+                      {S.HIERARCHY_LEVELS.map(l=>{ const d=S.designationForLevel(l,admin); return <option key={l} value={l}>{l}{d?` · ${d}`:''}</option>; })}
+                    </select>
+                    {canEdit && <button onClick={()=>removeTeamMember(i)} className="text-xs text-red-400 hover:text-red-600 shrink-0">✕</button>}
+                  </div>
+                ))}
+                {teamList.length===0 && <div className="text-xs text-slate-400">No team members yet{canEdit?' — add at least one and assign a level.':''}.</div>}
+              </div>
+            </div>
+
+            {/* Guest Teammates — read-only, view-Phase-Management-and-download-attachments-only logins
+                scoped to exactly this project (see S.deriveRole / App.tsx's Guest route table). */}
+            <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+              <div className="flex justify-between items-center mb-2">
+                <div><span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Guest Teammates</span>
+                  <span className="ml-2 text-[11px] text-slate-400">Can view Phase Management and download sub task attachments for this project only — no other access.</span></div>
+              </div>
+              {guestErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-2">{guestErr}</div>}
+              <div className="space-y-2 mb-2">
+                {projectGuests.map((u:any)=>(
+                  <div key={u.id} className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg p-2 text-sm">
+                    <span className="flex-1 min-w-0 truncate font-medium text-slate-700">{u.name}</span>
+                    <span className="flex-1 min-w-0 truncate text-slate-400">{u.email}</span>
+                    <S.Badge cls={u.status==='Active'?'bg-emerald-100 text-emerald-700':'bg-slate-200 text-slate-600'}>{u.status}</S.Badge>
+                    {canEdit && <button onClick={()=>removeGuest(u)} disabled={guestBusy} className="text-xs text-red-400 hover:text-red-600 shrink-0 disabled:opacity-50">✕</button>}
+                  </div>
+                ))}
+                {projectGuests.length===0 && <div className="text-xs text-slate-400">No guest teammates yet.</div>}
+              </div>
+              {canEdit && !isNew && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
+                    <input value={guestDraft.name} onChange={e=>setGuestDraftName(e.target.value)} placeholder="Guest name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
+                    <input value={guestDraft.email} onChange={e=>setGuestDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+                  <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
+                    <input value={guestDraft.password} onChange={e=>{setGuestPwTouched(true); setGuestDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-32 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+                  <button onClick={addGuest} disabled={guestBusy} className="text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{guestBusy?'Adding…':'+ Add Guest'}</button>
+                </div>
+              )}
+              {isNew && canEdit && <div className="text-[11px] text-slate-400">Save the project first, then add guest teammates here.</div>}
             </div>
 
             {/* Client members — multiple persons, one owner has status rights */}

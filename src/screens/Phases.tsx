@@ -2,32 +2,42 @@ import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
 import * as db from '../db';
 
-// The four "acting as" tiers Phase Management's approval workflow understands, in the same order
-// they're offered in the header switcher.
-const ACTOR_TIERS = ['Associate','Project Manager','Project Head','Strategic Lead'];
-
 export default function Phases(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
+  const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
-  // "Acting as" used to be a free toggle ANY signed-in account could flip to any of the four tiers --
-  // which is how an Associate could switch to "Strategic Lead" and get past every approval gate below
-  // that reads `actor`. It's now derived from the signed-in account's real designation and locked
-  // there for everyone except Admin/Super Admin (role==='admin'), who legitimately need to review the
-  // board from every tier's perspective. BD has no tier of its own in this workflow, so it falls back
-  // to the base Associate tier rather than granting it a level it was never meant to have.
-  const myActorTier = ACTOR_TIERS.includes(myProfile?.designation) ? myProfile.designation : 'Associate';
+  const projMeta = projects.find(p=>p.id===activeProj) || {};
+  // A Guest teammate (see S.deriveRole) reaches this screen only through App.tsx's hard-restricted
+  // Guest route table, scoped to their one tagged project — but every control on this screen still
+  // re-checks readOnly itself, same defense-in-depth reasoning as every other capability check in
+  // this app. Guest can view everything and download attachments; nothing else.
+  const readOnly = role==='guest';
+  // "Acting as" is scoped to THIS project's actual team now — only the hierarchy levels really
+  // present in Project Master's team list show up as tabs, instead of a fixed global list of four
+  // (see S.projectLevelNumsPresent). It's derived from the signed-in account's own level on this
+  // project's team (falling back to their Administration -> Users hierarchy level / designation
+  // default if they're not on this project's team at all) and locked there for everyone except
+  // Admin/Super Admin (role==='admin'), who legitimately need to review the board from every tier
+  // actually on this project.
+  const presentLevels = S.projectLevelNumsPresent(projMeta).map(n=>`L${n}`); // ascending seniority, L1 first
+  const myTeamEntry = (projMeta.team||[]).find((t:any)=>t.name===myProfile?.name);
+  const myActorLevel = myTeamEntry?.level || myProfile?.level || S.designationHierarchyLevel(myProfile?.designation, admin) || 'L9';
   const canSwitchActor = role==='admin';
-  const [actor, setActorState] = useState(myActorTier); // Associate | Project Manager | Project Head | Strategic Lead
+  const [actor, setActorState] = useState(myActorLevel); // e.g. 'L1' .. 'L9'
   const setActor = (a) => { if(canSwitchActor) setActorState(a); }; // no-op for anyone locked to their own tier
+  // Keep a locked (non-admin) account's actor level in sync with their own real level, and reset an
+  // admin's preview level whenever it switches to a project where that tier isn't actually present.
+  React.useEffect(() => { if(!canSwitchActor) setActorState(myActorLevel); }, [myActorLevel, canSwitchActor]);
+  React.useEffect(() => { if(canSwitchActor && presentLevels.length && !presentLevels.includes(actor)) setActorState(presentLevels[0]); }, [activeProj]); // eslint-disable-line react-hooks/exhaustive-deps
   // Only Admin/Super Admin may delete a phase, milestone or sub task -- every other actor tier used
   // to be able to click these buttons with no check at all (the Associate-deletes-a-phase bug).
-  const canDelete = role==='admin';
+  const canDelete = role==='admin' && !readOnly;
 
   const ITEM_STATUS_OPTS = (settings.itemStatuses && settings.itemStatuses.length) ? settings.itemStatuses : S.DEFAULT_PROJECT_SETTINGS.itemStatuses;
 
@@ -35,13 +45,7 @@ export default function Phases(){
   const setPhases = (updater) => setTree(t => ({...t, [activeProj]: typeof updater==='function'? updater(t[activeProj]||[]) : updater}));
 
   // Roster limited to THIS project's team — only they can be tagged as assignees
-  const projMeta = projects.find(p=>p.id===activeProj) || {};
-  const roster = [
-    projMeta.strategicLead && {name:projMeta.strategicLead, group:'Strategic Lead'},
-    projMeta.projectHead && {name:projMeta.projectHead, group:'Project Head'},
-    projMeta.pm && {name:projMeta.pm, group:'Project Manager'},
-    projMeta.associate && {name:projMeta.associate, group:'Associate'},
-  ].filter(Boolean);
+  const roster = S.buildRoster(projMeta, admin);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
 
   // ---- mutation helpers ----
@@ -49,18 +53,19 @@ export default function Phases(){
   const mutMs = (phId, msId, fn) => mutPhase(phId, ph => ({...ph, milestones: ph.milestones.map(m => m.id===msId ? fn({...m}) : m)}));
   const mutSt = (phId, msId, stId, fn) => mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).map(s => s.id===stId ? fn({...s}) : s)}));
 
-  // Owner isn't something a user needs to fill in — it defaults to this project's Project Manager.
-  const addPhase = () => setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:projMeta.pm||'', start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]);
+  // Owner isn't something a user needs to fill in — it defaults to this project's most senior (L1) team member.
+  const l1Name = (projMeta.team||[]).find((t:any)=>t.level==='L1')?.name || '';
+  const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]); };
   const removePhase = (id) => { if(!canDelete) return; setPhases(ps => ps.filter(p=>p.id!==id)); };
-  const addMs = (phId) => mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]}));
+  const addMs = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]})); };
   const removeMs = (phId, msId) => { if(!canDelete) return; mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)})); };
-  const addSt = (phId, msId) => mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]}));
+  const addSt = (phId, msId) => { if(readOnly) return; mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]})); };
   const removeSt = (phId, msId, stId) => { if(!canDelete) return; mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)})); };
 
   // ---- status changes: Not Started / In Progress / On Hold apply immediately; Completed queues review ----
   const setMsStatus = (phId, msId, val) => {
     mutMs(phId, msId, m => S.applyStatus(m, val, 'milestone', actor));
-    if(val==='Completed' && S.ROLE_RANK[actor]>=S.APPROVER_RANK.milestone){
+    if(val==='Completed' && S.actorQualifies('milestone', actor)){
       const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
       if(ph && ms) notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
         message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
@@ -68,25 +73,27 @@ export default function Phases(){
   };
   const setStStatus = (phId, msId, stId, val) => mutSt(phId, msId, stId, s => S.applyStatus(s, val, 'subtask', actor));
 
-  // ---- review decisions: Project Manager decides Sub Tasks, Project Head decides Milestones ----
+  // ---- review decisions: up to L2 decides Sub Tasks, L1 decides Milestones (S.approverLevelFor) ----
   const decideMs = (ph, ms, decision) => {
     mutMs(ph.id, ms.id, m => decision==='Approved'
       ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO})
       : ({...m, status:'In Progress', review:'', approved:false}));
     if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
-      message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by the Project Head.` });
+      message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
   const decideSt = (phId, msId, stId, decision) => mutSt(phId, msId, stId, s => decision==='Approved'
     ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO})
     : ({...s, status:'In Progress', review:'', approved:false}));
 
-  // ---- "Implemented" escalation: Project Head approves first, then the Client Owner signs off in Portal ----
-  const markImplementedMs = (phId, msId) => mutMs(phId, msId, m => ({...m, review:'Implemented Review', headApprovedImpl:false, clientApprovedImpl:false}));
-  const markImplementedSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, review:'Implemented Review', headApprovedImpl:false, clientApprovedImpl:false}));
-  const headApproveImplMs = (phId, msId) => mutMs(phId, msId, m => ({...m, headApprovedImpl:true}));
-  const headApproveImplSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, headApprovedImpl:true}));
-  const cancelImplMs = (phId, msId) => mutMs(phId, msId, m => ({...m, review:'', headApprovedImpl:false}));
-  const cancelImplSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, review:'', headApprovedImpl:false}));
+  // ---- "Implemented" escalation: sequential chain from whoever marked it up to L1 (S.implementChainFor
+  // walks every level actually present on this project's team, skipping any that are missing), then the
+  // Client Owner signs off in the Client Portal once the internal chain is fully approved. ----
+  const markImplementedMs = (phId, msId) => mutMs(phId, msId, m => { const chain = S.implementChainFor(projMeta, actor); return {...m, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; });
+  const markImplementedSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => { const chain = S.implementChainFor(projMeta, actor); return {...s, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; });
+  const chainApproveMs = (phId, msId) => mutMs(phId, msId, m => { const rest=(m.implChain||[]).slice(1); return {...m, implChain:rest, implApprovals:[...(m.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; });
+  const chainApproveSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => { const rest=(s.implChain||[]).slice(1); return {...s, implChain:rest, implApprovals:[...(s.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; });
+  const cancelImplMs = (phId, msId) => mutMs(phId, msId, m => ({...m, review:'', implChain:[], headApprovedImpl:false}));
+  const cancelImplSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, review:'', implChain:[], headApprovedImpl:false}));
 
   // ---- assignees ----
   const addMsAssignee = (phId, msId, name) => mutMs(phId, msId, m => ({...m, assignees:[...(m.assignees||[]), name]}));
@@ -147,15 +154,18 @@ export default function Phases(){
   };
 
   // ---- phase-level: start-date lock, On Hold toggle, completion confirmation ----
-  const startEditableBy = (ph) => !ph.start || actor==='Project Head' || actor==='Strategic Lead';
-  const toggleHold = (phId) => mutPhase(phId, ph => ({...ph, onHold:!ph.onHold}));
+  // Once a phase has a start date, only L2-or-more-senior can change it (was "Project Head or
+  // Strategic Lead" — generalized the same way as everything else in this file).
+  const startEditableBy = (ph) => !readOnly && (!ph.start || S.levelNum(actor)<=2);
+  const toggleHold = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, onHold:!ph.onHold})); };
+  const phaseApproverLevel = S.approverLevelFor('phase', projMeta);
   const confirmPhaseComplete = (ph) => {
     mutPhase(ph.id, x => ({...x, headConfirmedComplete:true}));
     notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, type:'Phase Completed',
-      message:`Phase "${ph.name}" has been confirmed Completed by the Project Head.` });
+      message:`Phase "${ph.name}" has been confirmed Completed by ${actor}.` });
   };
 
-  const isTagged = (item, role) => (item.assignees||[]).some(nm=>{ const r=roster.find(x=>x.name===nm); return r && r.group===role; });
+  const isTagged = (item, level) => (item.assignees||[]).some(nm=>{ const r=roster.find((x:any)=>x.name===nm); return r && r.level===level; });
 
   const inpFor = (lvl) => `border border-slate-200 rounded px-2 py-1 text-xs focus:outline-none ${S.LEVEL[lvl].focus}`;
   const pickableStatuses = (level, ms) => {
@@ -174,7 +184,8 @@ export default function Phases(){
     const locked = S.isApproved(item);
     // Sub tasks: anyone can mark progress/completion — who does it decides whether it still needs
     // review (see S.applyStatus). Milestones stay restricted to tagged assignees, same as before.
-    const canEdit = locked ? actor==='Strategic Lead' : (level==='subtask' ? true : isTagged(item, actor));
+    // A read-only Guest teammate never gets an editable control, regardless of tagging.
+    const canEdit = !readOnly && (locked ? actor==='L1' : (level==='subtask' ? true : isTagged(item, actor)));
     if(!canEdit) return <S.Badge cls={S.statusColor(displayStatus)}>{displayStatus}</S.Badge>;
     const opts = pickableStatuses(level, ms);
     return (
@@ -216,20 +227,22 @@ export default function Phases(){
   // needed attention today under everything due next month too.
   const daysUntil = (d) => d ? Math.floor((new Date(d).getTime() - new Date(S.TODAY_ISO).getTime())/86400000) : null;
   const isUrgent = (d) => { const n = daysUntil(d); return n!==null && n<=2; }; // overdue (negative) or due within 2 days
+  const msApproverLevel = S.approverLevelFor('milestone', projMeta);
+  const stApproverLevel = S.approverLevelFor('subtask', projMeta);
   const myActionItems = [];
-  if(actor!=='Strategic Lead'){
+  if(!readOnly && actor!=='L1'){
     phases.forEach(ph=>{
       ph.milestones.forEach(ms=>{
         if(!S.isApproved(ms) && !ms.review && isTagged(ms, actor) && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Update status — ${ms.name}` });
-        if(actor==='Project Head' && ms.review==='Head Review' && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve milestone — ${ms.name}` });
-        if(actor==='Project Head' && ms.review==='Implemented Review' && !ms.headApprovedImpl && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve Implemented — ${ms.name}` });
+        if(actor===msApproverLevel && ms.review && ms.review!=='Implemented Review' && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve milestone — ${ms.name}` });
+        if(ms.review==='Implemented Review' && !ms.headApprovedImpl && (ms.implChain||[])[0]===actor && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Approve Implemented — ${ms.name}` });
         (ms.subtasks||[]).forEach(s=>{
           if(!S.isApproved(s) && !s.review && isTagged(s, actor) && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Update status — ${s.name}` });
-          if(actor==='Project Manager' && s.review==='PM Verification' && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve sub task — ${s.name}` });
-          if(actor==='Project Head' && s.review==='Implemented Review' && !s.headApprovedImpl && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve Implemented — ${s.name}` });
+          if(actor===stApproverLevel && s.review && s.review!=='Implemented Review' && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve sub task — ${s.name}` });
+          if(s.review==='Implemented Review' && !s.headApprovedImpl && (s.implChain||[])[0]===actor && isUrgent(s.deadline)) myActionItems.push({ ph, ms, st:s, label:`Approve Implemented — ${s.name}` });
         });
       });
-      if(actor==='Project Head' && S.phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold && isUrgent(ph.end)) myActionItems.push({ ph, label:`Confirm phase complete — ${ph.name}` });
+      if(actor===phaseApproverLevel && S.phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold && isUrgent(ph.end)) myActionItems.push({ ph, label:`Confirm phase complete — ${ph.name}` });
     });
   }
   const jumpTo = (a) => { setSelectedPhaseId(a.ph.id); setSelectedMsId(a.ms ? a.ms.id : null); setActionOpen(false); };
@@ -239,25 +252,31 @@ export default function Phases(){
     <div>
       {docErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{docErr}</div>}
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
-        <S.SectionTitle sub="Per-project phases → milestones → sub tasks. Project Manager approves Sub Tasks, Project Head approves Milestones & Phases, Client Owner signs off on Implemented items in the Client Portal.">Phase Management</S.SectionTitle>
+        <S.SectionTitle sub="Per-project phases → milestones → sub tasks. Sub Tasks are approved up to L2, Milestones & Phases need L1, and the Implemented escalation walks every level on this project's team up to L1 before the Client Owner signs off in the Client Portal.">Phase Management</S.SectionTitle>
+        {!readOnly && (
         <div className="flex items-center gap-2">
           <span className="text-xs text-slate-400">Acting as:</span>
           {canSwitchActor ? (
             <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 text-xs">
-              {ACTOR_TIERS.map(a=>(
-                <button key={a} onClick={()=>setActor(a)} className={`relative px-2.5 py-1 rounded-md font-medium transition-colors ${actor===a?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>
-                  {a}
-                </button>
-              ))}
+              {presentLevels.length===0 && <span className="px-2.5 py-1 text-slate-400">No leveled team on this project yet</span>}
+              {presentLevels.map(a=>{
+                const desig = S.designationForLevel(a, admin);
+                return (
+                  <button key={a} onClick={()=>setActor(a)} className={`relative px-2.5 py-1 rounded-md font-medium transition-colors whitespace-nowrap ${actor===a?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>
+                    {a}{desig?` · ${desig}`:''}
+                  </button>
+                );
+              })}
             </div>
           ) : (
-            // Locked to the signed-in account's real designation -- no switcher, so there's no way
-            // to act with a higher tier's approval rights than the account actually holds.
-            <span className="relative text-xs font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1">
-              {actor}
+            // Locked to the signed-in account's real level on this project -- no switcher, so there's
+            // no way to act with a higher tier's approval rights than the account actually holds.
+            <span className="relative text-xs font-medium text-brand-700 bg-brand-50 border border-brand-200 rounded-lg px-2.5 py-1 whitespace-nowrap">
+              {actor}{S.designationForLevel(actor, admin) ? ` · ${S.designationForLevel(actor, admin)}` : ''}
             </span>
           )}
         </div>
+        )}
       </div>
 
       {/* Needs your action — collapsed by default; click to expand the list. Replaces a stack of
@@ -269,14 +288,14 @@ export default function Phases(){
           {myActionItems.length>0 && <S.Badge cls="bg-amber-100 text-amber-700">{myActionItems.length}</S.Badge>}
           {!actionOpen && (
             <span className="text-xs text-slate-400 truncate ml-1">
-              {myActionItems.length===0 ? (actor==='Strategic Lead' ? '— nothing needs your action' : '— nothing waiting on you') : `— ${myActionItems[0].label}${myActionItems.length>1?` +${myActionItems.length-1} more`:''}`}
+              {myActionItems.length===0 ? (actor==='L1' ? '— nothing needs your action' : '— nothing waiting on you') : `— ${myActionItems[0].label}${myActionItems.length>1?` +${myActionItems.length-1} more`:''}`}
             </span>
           )}
         </button>
         {actionOpen && (
           <div className="px-4 pb-4">
             {myActionItems.length===0 ? (
-              <div className="text-sm text-slate-400">{actor==='Strategic Lead' ? 'Nothing needs your action — you can still re-open any approved item if needed.' : 'Nothing is waiting on you right now.'}</div>
+              <div className="text-sm text-slate-400">{actor==='L1' ? 'Nothing needs your action — you can still re-open any approved item if needed.' : 'Nothing is waiting on you right now.'}</div>
             ) : (
               <div className="space-y-1.5">
                 {myActionItems.map((a,i)=>(
@@ -305,15 +324,15 @@ export default function Phases(){
       <div className="mb-4 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 flex flex-wrap items-center gap-2">
         <span className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mr-1">Project Team</span>
         {roster.map(r=>(
-          <span key={r.name+r.group} className="text-[11px] rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">
-            {r.name} <span className="opacity-70">· {r.group}</span>
+          <span key={r.name+r.level} className="text-[11px] rounded-full px-2 py-0.5 bg-slate-200 text-slate-600">
+            {r.name} <span className="opacity-70">· {r.label}</span>
           </span>
         ))}
       </div>
 
       <div className="flex justify-between items-center mb-3">
         <div className="text-xs text-slate-400">{phases.length} phase(s) · {phases.reduce((a,p)=>a+p.milestones.length,0)} milestone(s)</div>
-        <button onClick={addPhase} className={`${S.LEVEL.phase.solid} text-white text-sm px-3 py-1.5 rounded-lg`}>+ Add Phase</button>
+        {!readOnly && <button onClick={addPhase} className={`${S.LEVEL.phase.solid} text-white text-sm px-3 py-1.5 rounded-lg`}>+ Add Phase</button>}
       </div>
 
       {phases.length===0 ? (
@@ -356,7 +375,7 @@ export default function Phases(){
                   informational (this phase was marked complete), it no longer disables adding. */}
               <span className="flex items-center gap-2 shrink-0">
                 {selPhase.headConfirmedComplete && <span className="text-[10px] text-emerald-600 whitespace-nowrap inline-flex items-center gap-1"><S.Icon name="lock" className="w-3 h-3"/> locked</span>}
-                <button onClick={()=>addMs(selPhase.id)} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap font-medium">+ Add</button>
+                {!readOnly && <button onClick={()=>addMs(selPhase.id)} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap font-medium">+ Add</button>}
               </span>
             </div>
             <div className="space-y-1.5">
@@ -386,7 +405,7 @@ export default function Phases(){
         <S.Card className="p-4 flex-1 min-w-[300px]">
           {selMs ? (() => {
             const ms = selMs, ph = selPhase;
-            const msLocked = S.isApproved(ms); const msDis = msLocked && actor!=='Strategic Lead'; const msOverdue = S.isOverdue(ms); const subReady = S.subtasksReady(ms);
+            const msLocked = S.isApproved(ms); const msDis = readOnly || (msLocked && actor!=='L1'); const msOverdue = S.isOverdue(ms); const subReady = S.subtasksReady(ms);
             return (
               <div>
                 <button onClick={()=>setSelectedMsId(null)} className="inline-flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 mb-3">← {ph.name}</button>
@@ -418,10 +437,10 @@ export default function Phases(){
                 </div>
                 <div className="flex items-center gap-2 flex-wrap mb-4 pb-4 border-b border-slate-100">
                   <StatusControl item={ms} level="milestone" ms={ms} onChange={val=>setMsStatus(ph.id,ms.id,val)}/>
-                  <S.ApprovalFlow item={ms} actor={actor} level="milestone"
+                  <S.ApprovalFlow item={ms} actorLevel={readOnly?null:actor} kind="milestone" project={projMeta} admin={admin}
                     onDecide={d=>decideMs(ph,ms,d)}
                     onMarkImplemented={()=>markImplementedMs(ph.id,ms.id)}
-                    onHeadApproveImpl={()=>headApproveImplMs(ph.id,ms.id)}
+                    onChainApprove={()=>chainApproveMs(ph.id,ms.id)}
                     onCancelImpl={()=>cancelImplMs(ph.id,ms.id)}/>
                   {!subReady && !ms.review && !msLocked && <span className="text-[11px] text-amber-600">Complete all sub tasks first</span>}
                 </div>
@@ -429,10 +448,10 @@ export default function Phases(){
                   <span className="text-xs font-semibold text-blue-700 bg-blue-50 rounded-full px-2.5 py-1 uppercase tracking-wide">Sub tasks</span>
                   {/* Adding a sub task is never blocked, even once the milestone is approved/locked —
                       only deletion is restricted (canDelete, Admin/Super Admin only). */}
-                  <button onClick={()=>addSt(ph.id,ms.id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add sub task</button>
+                  {!readOnly && <button onClick={()=>addSt(ph.id,ms.id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add sub task</button>}
                 </div>
                 <div className={`rounded-xl border border-blue-100 ${S.LEVEL.subtask.tint} divide-y divide-blue-100`}>
-                  {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=stLock&&actor!=='Strategic Lead'; const overdue=S.isOverdue(s); return (
+                  {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=readOnly||(stLock&&actor!=='L1'); const overdue=S.isOverdue(s); return (
                     <div key={s.id} id={`st-${s.id}`} className={`flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
                       {/* Opens the full detail modal — view everything, download/upload attachments,
@@ -445,10 +464,10 @@ export default function Phases(){
                       <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
                       <span className="text-[11px] text-slate-400 whitespace-nowrap">done {S.itemDoneDate(s) || '—'}</span>
                       <StatusControl item={s} level="subtask" onChange={val=>setStStatus(ph.id,ms.id,s.id,val)}/>
-                      <S.ApprovalFlow item={s} actor={actor} level="subtask"
+                      <S.ApprovalFlow item={s} actorLevel={readOnly?null:actor} kind="subtask" project={projMeta} admin={admin}
                         onDecide={d=>decideSt(ph.id,ms.id,s.id,d)}
                         onMarkImplemented={()=>markImplementedSt(ph.id,ms.id,s.id)}
-                        onHeadApproveImpl={()=>headApproveImplSt(ph.id,ms.id,s.id)}
+                        onChainApprove={()=>chainApproveSt(ph.id,ms.id,s.id)}
                         onCancelImpl={()=>cancelImplSt(ph.id,ms.id,s.id)}/>
                       <S.DocsChips docs={s.docs} disabled={genDis} onAttach={files=>attachStDocs(ph.id,ms.id,s.id,files)} onRemove={i=>removeStDoc(ph.id,ms.id,s.id,i)} onDownload={downloadDoc} downloadingId={downloadingDocId}/>
                       {canDelete && <button onClick={()=>removeSt(ph.id,ms.id,s.id)} disabled={genDis} className={`${genDis?'text-slate-300':'text-red-400 hover:text-red-600'}`}>✕</button>}
@@ -480,10 +499,10 @@ export default function Phases(){
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Owner</label>
-                      <span className="text-xs text-slate-600 py-1.5 inline-block" title="Defaults to this project's Project Manager">{ph.owner || projMeta.pm || '—'}</span>
+                      <span className="text-xs text-slate-600 py-1.5 inline-block" title="Defaults to this project's most senior (L1) team member">{ph.owner || l1Name || '—'}</span>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-slate-400">Start date {startLocked && <span title="Locked — only Project Head or Strategic Lead can change a start date once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
+                      <label className="text-[10px] text-slate-400">Start date {startLocked && <span title="Locked — only L2-or-more-senior can change a start date once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
                       <input type="date" className={inpFor('phase')} value={ph.start} disabled={startLocked} onChange={e=>mutPhase(ph.id, x=>({...x,start:e.target.value}))}/>
                     </div>
                     <div className="flex flex-col gap-1">
@@ -501,15 +520,15 @@ export default function Phases(){
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
-                  {(actor==='Project Head' || actor==='Strategic Lead') && !ph.headConfirmedComplete && (
+                  {!readOnly && S.levelNum(actor)<=2 && !ph.headConfirmedComplete && (
                     <button onClick={()=>toggleHold(ph.id)} className={`text-xs px-2.5 py-1.5 rounded-lg border whitespace-nowrap ${ph.onHold?'border-emerald-300 text-emerald-600 hover:bg-emerald-50':'border-amber-300 text-amber-600 hover:bg-amber-50'}`}>
                       {ph.onHold ? 'Resume' : 'Put on hold'}
                     </button>
                   )}
                   {ready && !ph.headConfirmedComplete && !ph.onHold && (
-                    actor==='Project Head'
+                    (!readOnly && actor===phaseApproverLevel)
                       ? <button onClick={()=>confirmPhaseComplete(ph)} className="text-xs px-2.5 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-600 text-white whitespace-nowrap">Confirm completion</button>
-                      : <span className="text-xs text-amber-600 whitespace-nowrap py-1.5">Awaiting Head confirmation</span>
+                      : <span className="text-xs text-amber-600 whitespace-nowrap py-1.5">Awaiting {phaseApproverLevel} confirmation</span>
                   )}
                   {canDelete && <button onClick={()=>removePhase(ph.id)} className="text-xs text-red-500 hover:text-red-700 whitespace-nowrap ml-auto">✕ Remove phase</button>}
                 </div>
@@ -526,8 +545,8 @@ export default function Phases(){
       </div>
       )}
       <div className="mt-4 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-1.5">
-        <div>Sub tasks are approved by the <b className="text-brand-700">Project Manager</b>; once all of a milestone's sub tasks are approved, the <b className="text-brand-700">Project Head</b> approves the milestone; once every milestone is approved, the <b className="text-brand-700">Project Head</b> confirms the phase.</div>
-        <div><b className="text-brand-700">Implemented</b> — the most important status — needs the <b className="text-brand-700">Project Head</b>'s approval, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only the <b className="text-brand-700">Strategic Lead</b> can re-open them, and only the <b className="text-brand-700">Project Head</b>/<b className="text-brand-700">Strategic Lead</b> can change a phase's start date once it's set.</div>
+        <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
+        <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
       </div>
 
       {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
@@ -535,7 +554,7 @@ export default function Phases(){
           DocsChips as the inline row, just laid out with room to breathe and a remarks log underneath. */}
       {detailSt && detailMs && detailPh && (() => {
         const ph = detailPh, ms = detailMs, s = detailSt;
-        const stLocked = S.isApproved(s); const stDis = stLocked && actor!=='Strategic Lead'; const overdue = S.isOverdue(s);
+        const stLocked = S.isApproved(s); const stDis = readOnly || (stLocked && actor!=='L1'); const overdue = S.isOverdue(s);
         return (
           <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setDetailStIds(null)}>
             <div className="bg-white rounded-xl max-w-lg w-full max-h-[88vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
@@ -563,10 +582,10 @@ export default function Phases(){
 
               <div className="flex items-center gap-2 flex-wrap mb-4 pb-4 border-b border-slate-100">
                 <StatusControl item={s} level="subtask" onChange={val=>setStStatus(ph.id,ms.id,s.id,val)}/>
-                <S.ApprovalFlow item={s} actor={actor} level="subtask"
+                <S.ApprovalFlow item={s} actorLevel={readOnly?null:actor} kind="subtask" project={projMeta} admin={admin}
                   onDecide={d=>decideSt(ph.id,ms.id,s.id,d)}
                   onMarkImplemented={()=>markImplementedSt(ph.id,ms.id,s.id)}
-                  onHeadApproveImpl={()=>headApproveImplSt(ph.id,ms.id,s.id)}
+                  onChainApprove={()=>chainApproveSt(ph.id,ms.id,s.id)}
                   onCancelImpl={()=>cancelImplSt(ph.id,ms.id,s.id)}/>
               </div>
 
@@ -605,11 +624,13 @@ export default function Phases(){
                     </div>
                   ))}
                 </div>
-                <div className="flex gap-1.5">
-                  <input value={remarkDraft} onChange={e=>setRemarkDraft(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter' && remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }}
-                    placeholder="Add a remark…" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                  <button onClick={()=>{ if(remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">Add</button>
-                </div>
+                {!readOnly && (
+                  <div className="flex gap-1.5">
+                    <input value={remarkDraft} onChange={e=>setRemarkDraft(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter' && remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }}
+                      placeholder="Add a remark…" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                    <button onClick={()=>{ if(remarkDraft.trim()){ addStRemark(ph.id,ms.id,s.id,remarkDraft); setRemarkDraft(''); } }} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">Add</button>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-between items-center mt-5 pt-4 border-t border-slate-100">

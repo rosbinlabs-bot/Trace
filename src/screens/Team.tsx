@@ -72,18 +72,19 @@ export default function Team(){
   // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
   // teammate's Users id); every actual below is derived live from Project Master + Billing Tracker,
   // the same way the rest of the app computes its numbers — nothing here is typed in by hand. A
-  // member is "on" a project if they fill any of its four named roles (Strategic Lead / Project
-  // Head / PM / Associate); a Premium-tier project counts as TWO projects toward the "No. of
-  // Projects" actual (S.projectWeight), everything else counts it once.
+  // member is "on" a project if they appear anywhere in that project's team[] (Project Master ->
+  // Project Team, hierarchy-level based — replaces the old 4 fixed named-role fields); a Premium-tier
+  // project counts as TWO projects toward the "No. of Projects" actual (S.projectWeight), everything
+  // else counts it once.
   const usersByName: any = {};
   (admin.users||[]).forEach((u:any)=>{ usersByName[u.name]=u; });
   const CATEGORY_TIERS = (settings.categories && settings.categories.length) ? settings.categories : S.DEFAULT_PROJECT_SETTINGS.categories;
-  const projectsFor = (name:string) => projects.filter((p:any)=>name && [p.pm,p.projectHead,p.strategicLead,p.associate].includes(name));
+  const projectsFor = (name:string) => projects.filter((p:any)=>name && (p.team||[]).some((t:any)=>t.name===name));
   const productivityFor = (m:any) => {
     const mine = projectsFor(m.name);
     const actualProjects = mine.reduce((a:number,p:any)=>a+S.projectWeight(p, CATEGORY_TIERS), 0);
     const colleagues = new Set();
-    mine.forEach((p:any)=>{ [p.pm,p.projectHead,p.strategicLead,p.associate].forEach((nm:string)=>{ if(nm && nm!==m.name) colleagues.add(nm); }); });
+    mine.forEach((p:any)=>{ (p.team||[]).forEach((t:any)=>{ if(t.name && t.name!==m.name) colleagues.add(t.name); }); });
     const actualBilling = mine.reduce((a:number,p:any)=>a+S.projInvoicedRevenue(p, invoices), 0);
     const actualVisits = mine.length ? Math.round((mine.reduce((a:number,p:any)=>a+(Number(p.visitsMonth)||0),0)/mine.length)*10)/10 : 0;
     const u = usersByName[m.name];

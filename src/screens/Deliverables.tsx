@@ -4,6 +4,7 @@ import * as S from '../shared';
 export default function Deliverables(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  const { admin } = React.useContext(S.AdminDataContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
@@ -13,12 +14,7 @@ export default function Deliverables(){
 
   const projMeta = projects.find(p=>p.id===activeProj) || {};
   const phases = tree[activeProj] || [];
-  const roster = [
-    projMeta.strategicLead && {name:projMeta.strategicLead, group:'Strategic Lead'},
-    projMeta.projectHead && {name:projMeta.projectHead, group:'Project Head'},
-    projMeta.pm && {name:projMeta.pm, group:'Project Manager'},
-    projMeta.associate && {name:projMeta.associate, group:'Associate'},
-  ].filter(Boolean);
+  const roster = S.buildRoster(projMeta, admin);
 
   // Flatten phases -> milestones -> sub tasks into one list of rows, each carrying its parent
   // names so the table can show full context without re-deriving anything.
@@ -95,14 +91,14 @@ export default function Deliverables(){
           <option value="Not Started">Not Started</option>
           <option value="In Progress">In Progress</option>
           <option value="On Hold">On Hold</option>
-          <option value="PM Verification">PM Verification</option>
-          <option value="Head Review">Head Review</option>
+          <option value="Pending Review">Pending Review</option>
+          <option value="Implemented Review">Implemented Review</option>
           <option value="Completed">Completed</option>
           <option value="Implemented">Implemented</option>
         </select>
         <select className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none" value={assigneeFilter} onChange={e=>setAssigneeFilter(e.target.value)}>
           <option value="All">All assignees</option>
-          {roster.map(r=><option key={r.name} value={r.name}>{r.name} · {r.group}</option>)}
+          {roster.map(r=><option key={r.name} value={r.name}>{r.name} · {r.label}</option>)}
         </select>
         <select className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none" value={monthFilter} onChange={e=>setMonthFilter(e.target.value)}>
           <option value="All">All months</option>

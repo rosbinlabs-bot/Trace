@@ -74,7 +74,7 @@ export const CurrentUserContext = React.createContext<any>({ email:'', profile:n
 // and its use in App.tsx) rather than picked manually — there used to be a demo "acting as" switcher
 // here before real login existed.
 export const RoleContext = React.createContext<any>({ role:'consultant', setRole:()=>{} });
-export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant', client:'Client' };
+export const ROLE_LABELS = { admin:'Admin', projectHead:'Project Head', strategicLead:'Strategic Lead', consultant:'Consultant', client:'Client', guest:'Guest' };
 // Maps a signed-in email to one of the RoleContext values above, using the same admin_data.users /
 // designationLevel records Administration -> Users and -> Roles & Permissions edit. A Client-type
 // account (added via Administration -> Users -> "Add Client", see Administration.tsx) is checked
@@ -96,6 +96,11 @@ export const deriveRole = (email: string, admin: any) => {
   const u = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
   if (!u || u.status!=='Active') return 'consultant';
   if (u.type==='Client') return 'client';
+  // Guest teammate (added from Project Master -> Guest Teammates, see ProjectMaster.tsx): a
+  // hard-restricted read-only account, tagged to exactly one project, that can view Phase Management
+  // and download sub task attachments there -- nothing else. No designation/hierarchy level, since
+  // it never enters the approval chain.
+  if (u.type==='Guest') return 'guest';
   const level = effectivePermissionLevel(u, admin);
   if (level==='Super Admin') return 'admin';
   if (u.designation==='Strategic Lead') return 'strategicLead';
@@ -115,8 +120,23 @@ export const deriveRole = (email: string, admin: any) => {
 export const staffVisibleProjects = (projects: any[], role: string, profile: any) => {
   if (role==='admin') return projects;
   if (!profile) return [];
-  return projects.filter((p:any) => [p.strategicLead, p.projectHead, p.pm, p.associate].includes(profile.name));
+  return projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===profile.name));
 };
+
+// Every Guest teammate/assignee roster entry a project's screens need: name + hierarchy level, plus a
+// display label combining the two (e.g. "L2 · Project Head") via designationForLevel. Replaces three
+// near-identical inline roster builders that used to read the 4 fixed strategicLead/projectHead/pm/
+// associate fields (Phases.tsx, Deliverables.tsx, Portal.tsx) — all three now call this instead, so a
+// project's team list has exactly one place that turns project.team into a roster.
+// The project's most senior (L1) team member's name — used anywhere a compact "who's in charge"
+// display is needed (Dashboard billing widget, Reports portfolio table, Implementation Tracker
+// summary) in place of the old fixed "Project Manager" field.
+export const projectLeadName = (project: any): string => (project?.team||[]).find((t:any)=>t.level==='L1')?.name || '';
+
+export const buildRoster = (project: any, admin?: any) => (project?.team||[]).map((t:any) => {
+  const designation = admin ? designationForLevel(t.level, admin) : '';
+  return { name: t.name, level: t.level, label: designation ? `${t.level} · ${designation}` : t.level };
+});
 
 // Company-wide master lists that power several New Project form dropdowns (Category, Industry,
 // Consulting Category, Engagement Type). Editable from Administration -> Project Settings and
@@ -255,13 +275,64 @@ export const DEFAULT_DESIGNATION_LEVEL: any = {
 // from designation, since two people with the same designation can still sit at different seniority
 // (e.g. a newly-promoted vs. a long-tenured Project Head). DEFAULT_HIERARCHY_LEVEL only seeds a
 // sensible starting value in the Add Teammate form; it's never silently re-applied after that.
-export const HIERARCHY_LEVELS = ['L1','L2','L3','L4','L5'];
+export const HIERARCHY_LEVELS = ['L1','L2','L3','L4','L5','L6','L7','L8','L9'];
 export const DEFAULT_HIERARCHY_LEVEL: any = {
   'Strategic Lead':'L1',
   'Project Head':'L2',
   'Project Manager':'L3',
   'BD':'L3',
   'Associate':'L4',
+};
+// Designation -> Hierarchy Level mapping, admin-editable (Administration -> Roles & Permissions ->
+// "Designation → Hierarchy Level", same pattern as designationLevel/permission levels below). Falls
+// back to DEFAULT_HIERARCHY_LEVEL for any designation the admin hasn't remapped yet, so the table
+// always shows a sane starting value instead of blank. This is the single source of truth for "what
+// level does this designation sit at by default" — used to seed a new user's Level field, to default
+// a Project Master team member's level when a name is picked, and to show a designation label next to
+// an L-number anywhere levels are displayed (approval chips, project team rosters, etc).
+export const designationHierarchyLevel = (designation: string, admin: any): string =>
+  (admin?.designationHierarchyLevel && admin.designationHierarchyLevel[designation]) || DEFAULT_HIERARCHY_LEVEL[designation] || '';
+// Inverse lookup for display: "which designation is L2 by default" — used to label approval chips
+// and project team rows with e.g. "L2 · Project Head" instead of a bare number. Not guaranteed
+// unique (an admin could map two designations to the same level); just returns the first match.
+export const designationForLevel = (level: string, admin: any): string => {
+  const map = { ...DEFAULT_HIERARCHY_LEVEL, ...(admin?.designationHierarchyLevel || {}) };
+  const hit = Object.keys(map).find(d => map[d] === level);
+  return hit || '';
+};
+// Numeric seniority (L1 = 1 = most senior). Unparseable/missing levels sort last (99), so an item
+// with no level assigned never accidentally outranks a properly-leveled one.
+export const levelNum = (lv: string): number => { const n = parseInt(String(lv || '').replace('L', ''), 10); return isNaN(n) ? 99 : n; };
+// Distinct levels actually present on a project's team (S.HIERARCHY_LEVELS numbers only), ascending
+// by seniority (L1 first) -- this is what scopes Phase Management's "Acting as" tabs to only the
+// tiers that actually exist on THIS project, instead of a fixed global list.
+export const projectLevelNumsPresent = (project: any): number[] =>
+  (Array.from(new Set((project?.team || []).map((t: any) => levelNum(t.level)))) as number[]).filter((n: number) => n < 99).sort((a: number, b: number) => a - b);
+// The level that must sign off to finalize a Completed `kind` item on this project -- Sub Tasks
+// need up to L2, Milestones & Phases need L1 specifically. If the target level itself isn't on this
+// project's team, escalate to the next more senior level that IS present (e.g. no L2 -> L1); if
+// nobody senior enough is on the team at all, fall back to whoever's most senior present so there's
+// always a real approver rather than a dead end.
+export const approverLevelFor = (kind: 'subtask' | 'milestone' | 'phase', project: any): string => {
+  const targetNum = kind === 'subtask' ? 2 : 1;
+  const present = projectLevelNumsPresent(project);
+  if (!present.length) return `L${targetNum}`;
+  const eligible = present.filter(n => n <= targetNum);
+  const num = eligible.length ? Math.max(...eligible) : present[0];
+  return `L${num}`;
+};
+// Does this actor's level already qualify to finalize a `kind` item directly, no queueing? Sub Tasks:
+// L1 or L2. Milestones & Phases: L1 only.
+export const actorQualifies = (kind: 'subtask' | 'milestone' | 'phase', actorLevel: string): boolean =>
+  levelNum(actorLevel) <= (kind === 'subtask' ? 2 : 1);
+// The "Implemented" escalation chain for an item being pushed to Implemented by `actorLevel` --
+// every level present on this project's team that's more senior than the actor, walked from the
+// level closest to the actor up to L1 last (e.g. actor L4, team has L1/L2/L3 -> ['L3','L2','L1']; if
+// L2 isn't on the team, that step is skipped -> ['L3','L1']). An actor who's already the most senior
+// level present returns an empty chain -- nothing left to escalate, ready for Client sign-off.
+export const implementChainFor = (project: any, actorLevel: string): string[] => {
+  const actorNum = levelNum(actorLevel);
+  return projectLevelNumsPresent(project).filter(n => n < actorNum).sort((a, b) => b - a).map(n => `L${n}`);
 };
 export const PERMISSION_MODULES = ['Project Master','Phase Management','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
@@ -357,6 +428,7 @@ export const PRODUCTIVITY_METRICS = [
 export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { projects:0, teamSize:0, billingTarget:0, onsiteVisits:0 };
 export const DEFAULT_ADMIN_DATA: any = {
   designationLevel: DEFAULT_DESIGNATION_LEVEL,
+  designationHierarchyLevel: DEFAULT_HIERARCHY_LEVEL,
   matrix: DEFAULT_PERMISSION_MATRIX,
   users: USERS_SEED,
   company: DEFAULT_COMPANY_INFO,
@@ -516,6 +588,16 @@ export const CLIENT_NAV = [
   { group:'Client', items:[
     { id:'portal', label:'Client Portal' },
     { id:'structure', label:'Project Structure' },
+  ]},
+];
+
+// Guest teammate (see deriveRole above) — one screen only: Phase Management, read-only, scoped to
+// their single tagged project (App.tsx filters ProjectsDataContext the same way it does for Client).
+// App.tsx's Shell swaps to this list and hard-restricts the route table to just /phases, same pattern
+// as CLIENT_NAV so there's no way to reach anything else by typing a URL either.
+export const GUEST_NAV = [
+  { group:'Guest', items:[
+    { id:'phases', label:'Phase Management' },
   ]},
 ];
 
@@ -893,29 +975,24 @@ export const docIconTone = (n) => {
 export const newItem = (name) => ({
   id:uid('IT'), name, assignees:[], deadline:'', actualDate:'', status:'Not Started', review:'',
   approved:false, docs:[], headApprovedImpl:false, clientApprovedImpl:false, clientAcceptedDate:'',
+  implChain:[], implApprovals:[], // {level} pending chain / {level,by,at} history for the Implemented escalation
   remarks:[], // {id, text, by, at} -- a running comment log, added from the sub task detail modal
 });
 
 // Anyone can mark an item Completed — but who does the marking decides whether it still needs a
-// review step. Each level has an approving role (Project Manager for Sub Tasks, Project Head for
-// Milestones); if the person marking it done already holds that role or higher, it skips the queue
-// and finalizes immediately — there's no point asking someone to re-approve their own call.
-export const ROLE_RANK = { 'Associate':0, 'Project Manager':1, 'Project Head':2, 'Strategic Lead':3 };
-export const APPROVER_RANK = { subtask: ROLE_RANK['Project Manager'], milestone: ROLE_RANK['Project Head'] };
-
-// Pure status transition shared by milestones & sub tasks. `level` ('milestone'|'subtask') matters
-// because a Sub Task only needs Project Manager sign-off to finalize as Completed, while a
-// Milestone needs the Project Head's sign-off (gated on all its own sub tasks already being
-// approved — see subtasksReady()).
-//  - marker outranks the approver -> finalizes immediately: approved:true, actualDate stamped
-//  - marker is below the approver -> queued for review (PM for sub tasks, Project Head for milestones)
-//  - reviewer approves            -> approved:true, actualDate stamped (today)
-//  - reviewer sends back          -> reopens as "In Progress"
+// review step. Sub Tasks finalize immediately for anyone at L2 or more senior (L1); Milestones &
+// Phases finalize immediately only for L1 (see actorQualifies above). Below that, it queues for
+// review by whoever holds the project's actual approver level for that kind (approverLevelFor above
+// — the target level if it's on this project's team, else the next more senior level that is).
+//  - marker qualifies (actorQualifies)     -> finalizes immediately: approved:true, actualDate stamped
+//  - marker doesn't qualify                -> queued for review ('Pending Review')
+//  - reviewer approves                     -> approved:true, actualDate stamped (today)
+//  - reviewer sends back                   -> reopens as "In Progress"
 //  - any other status (Not Started / In Progress / On Hold) applies immediately, no approval needed
-export const applyStatus = (item, val, level, actor) => {
+export const applyStatus = (item, val, kind: 'subtask'|'milestone'|'phase', actorLevel: string) => {
   if(val==='Completed'){
-    if(actor && ROLE_RANK[actor]>=APPROVER_RANK[level]) return {...item, status:'Completed', review:'', approved:true, actualDate:item.actualDate||TODAY_ISO};
-    return {...item, status:'Completed', review: level==='subtask' ? 'PM Verification' : 'Head Review'};
+    if(actorLevel && actorQualifies(kind, actorLevel)) return {...item, status:'Completed', review:'', approved:true, actualDate:item.actualDate||TODAY_ISO};
+    return {...item, status:'Completed', review:'Pending Review'};
   }
   return {...item, status:val, review:'', approved:false, actualDate:''};
 };
@@ -983,7 +1060,7 @@ export function AssigneeChips({assignees, roster, onAdd, onRemove, disabled, acc
       {!disabled && (
         <select className={`border border-slate-200 rounded px-1 py-0.5 text-[11px] focus:outline-none ${a.focus}`} value="" onChange={e=>{ if(e.target.value) onAdd(e.target.value); }}>
           <option value="">+ Tag team mate…</option>
-          {roster.filter(r=>!(assignees||[]).includes(r.name)).map(r=><option key={r.name} value={r.name}>{r.name} · {r.group}</option>)}
+          {roster.filter(r=>!(assignees||[]).includes(r.name)).map(r=><option key={r.name} value={r.name}>{r.name} · {r.label}</option>)}
         </select>
       )}
       {(!assignees||assignees.length===0) && disabled && <span className="text-[11px] text-slate-300">Unassigned</span>}
@@ -1017,32 +1094,41 @@ export function DocsChips({docs, onAttach, onRemove, onDownload, disabled, downl
     </div>
   );
 }
-// A single decision control shared by the two single-stage approvals (Project Manager finalizes
-// Sub Tasks, Project Head finalizes Milestones) plus the two-stage "Implemented" escalation
-// (Project Head approves first, then the Client Owner signs off in the Client Portal).
-export function ApprovalFlow({item, actor, level, onDecide, onMarkImplemented, onHeadApproveImpl, onCancelImpl}: any){
-  const reviewerRole = level==='subtask' ? 'Project Manager' : 'Project Head';
+// A single decision control shared by the two single-stage approvals (up to L2 finalizes Sub Tasks,
+// L1 finalizes Milestones & Phases — see approverLevelFor/actorQualifies above) plus the multi-stage
+// "Implemented" escalation (every project-team level more senior than whoever pushed it, walked one
+// at a time up to L1, then the Client Owner signs off in the Client Portal). `actorLevel` is null for
+// a read-only viewer (e.g. a Guest teammate) — every interactive branch below requires a real level
+// match, so passing null just renders the status badge with no controls.
+export function ApprovalFlow({item, actorLevel, kind, project, admin, onDecide, onMarkImplemented, onChainApprove, onCancelImpl}: any){
+  const approverLevel = approverLevelFor(kind, project);
+  const approverDesignation = admin ? designationForLevel(approverLevel, admin) : '';
+  const approverLabel = approverDesignation ? `${approverLevel} · ${approverDesignation}` : approverLevel;
   const locked = isApproved(item);
+  const pendingReview = item.review && item.review!=='Implemented Review';
+  const chain = item.implChain || [];
+  const nextChainLevel = chain[0];
+  const nextChainDesignation = admin && nextChainLevel ? designationForLevel(nextChainLevel, admin) : '';
+  const nextChainLabel = nextChainLevel ? (nextChainDesignation ? `${nextChainLevel} · ${nextChainDesignation}` : nextChainLevel) : '';
   return (
     <div className="flex flex-row flex-wrap items-center gap-1">
       {item.review==='Implemented Review'
-        ? <Badge cls={statusColor(item.headApprovedImpl ? 'Client Review' : 'Head Review')}>{item.headApprovedImpl ? 'Awaiting Client' : 'Head Review (Implemented)'}</Badge>
-        : item.review==='PM Verification' ? <Badge cls={statusColor('PM Verification')}>PM Verification</Badge>
-        : item.review==='Head Review' ? <Badge cls={statusColor('Head Review')}>Head Review</Badge>
+        ? <Badge cls={statusColor(item.headApprovedImpl ? 'Client Review' : 'Head Review')}>{item.headApprovedImpl ? 'Awaiting Client' : `Pending ${nextChainLabel} approval`}</Badge>
+        : pendingReview ? <Badge cls={statusColor('Head Review')}>{`Pending ${approverLabel} approval`}</Badge>
         : item.status==='Implemented' ? <Badge cls={statusColor('Implemented')}><span className="inline-flex items-center gap-1"><Icon name="rocket" className="w-3 h-3"/> Implemented</span></Badge>
         : locked ? <Badge cls={statusColor('Approved')}>✓ Approved</Badge>
         : <span className="text-[11px] text-slate-300">—</span>}
 
-      {(item.review==='PM Verification' || item.review==='Head Review') && actor===reviewerRole && (
+      {pendingReview && actorLevel===approverLevel && (
         <select className="border border-slate-200 rounded px-1 py-0.5 text-[11px] focus:outline-none" defaultValue="" onChange={e=>{ if(e.target.value){ onDecide(e.target.value); e.target.value=''; } }}>
           <option value="">Decision…</option>
           {HEAD_DECISIONS.map(o=><option key={o}>{o}</option>)}
         </select>
       )}
 
-      {item.review==='Implemented Review' && !item.headApprovedImpl && actor==='Project Head' && (
+      {item.review==='Implemented Review' && !item.headApprovedImpl && nextChainLevel && actorLevel===nextChainLevel && (
         <div className="flex gap-1">
-          <button onClick={onHeadApproveImpl} className="bg-indigo-500 text-white rounded px-1.5 py-0.5 text-[10px] whitespace-nowrap">Approve → Client</button>
+          <button onClick={onChainApprove} className="bg-indigo-500 text-white rounded px-1.5 py-0.5 text-[10px] whitespace-nowrap">Approve{chain.length>1?` (${chain.length-1} more)`:' → Client'}</button>
           <button onClick={onCancelImpl} className="bg-orange-400 text-white rounded px-1.5 py-0.5 text-[10px]">Cancel</button>
         </div>
       )}
@@ -1050,7 +1136,7 @@ export function ApprovalFlow({item, actor, level, onDecide, onMarkImplemented, o
         <div className="text-[10px] text-violet-600 max-w-[130px] leading-tight">Awaiting Client Owner sign-off in the Client Portal.</div>
       )}
 
-      {locked && !item.review && item.status!=='Implemented' && (actor==='Project Manager' || actor==='Project Head') && (
+      {locked && !item.review && item.status!=='Implemented' && actorLevel && actorQualifies(kind, actorLevel) && (
         <button onClick={onMarkImplemented} className="bg-violet-500 hover:bg-violet-600 text-white rounded px-1.5 py-0.5 text-[10px] whitespace-nowrap inline-flex items-center gap-1"><Icon name="rocket" className="w-3 h-3"/> Mark Implemented</button>
       )}
     </div>

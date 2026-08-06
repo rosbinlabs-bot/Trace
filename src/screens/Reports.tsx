@@ -34,8 +34,10 @@ export default function Reports(){
 
   const overdueEntries = allEntries.filter(e=>S.isOverdue(e.item)).sort((a,b)=>(a.item.deadline||'').localeCompare(b.item.deadline||''));
 
-  const pmPending = allEntries.filter(e=>e.item.review==='PM Verification');
-  const headPending = allEntries.filter(e=>e.item.review==='Head Review');
+  // `review` is a generic 'Pending Review' sentinel now (level-based approval, not a fixed role name)
+  // — e.level ('Sub Task'/'Milestone') is what tells these two apart.
+  const pmPending = allEntries.filter(e=>e.item.review==='Pending Review' && e.level==='Sub Task');
+  const headPending = allEntries.filter(e=>e.item.review==='Pending Review' && e.level==='Milestone');
   const clientPending = allEntries.filter(e=>e.item.review==='Implemented Review' && e.item.headApprovedImpl && !e.item.clientApprovedImpl);
 
   const approvedEntries = allEntries.filter(e=>S.isApproved(e.item));
@@ -101,7 +103,7 @@ export default function Reports(){
             <tr key={p.id}>
               <S.Td className="font-medium">{p.name}</S.Td>
               <S.Td>{p.client}</S.Td>
-              <S.Td>{p.pm||'—'}</S.Td>
+              <S.Td>{S.projectLeadName(p)||'—'}</S.Td>
               <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
               <S.Td>
                 <div className="flex items-center gap-2">
@@ -111,7 +113,7 @@ export default function Reports(){
               </S.Td>
               <S.Td><S.Badge cls={S.statusColor(p.risk==='High'?'At Risk':'In Progress')}>{p.risk}</S.Badge></S.Td>
             </tr>
-          )), ['Project','Client','PM','Status','Milestone Completion','Risk']
+          )), ['Project','Client','Lead','Status','Milestone Completion','Risk']
         );
       case 'revenue':
         return (
@@ -228,11 +230,11 @@ export default function Reports(){
         return (
           <div className="space-y-5">
             <div>
-              <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">PM Verification ({pmPending.length})</div>
+              <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Sub Task Approval ({pmPending.length})</div>
               {pmPending.length===0 ? <div className="text-sm text-slate-400">Nothing pending.</div> : miniTable(pmPending.map((e,i)=>(<tr key={i}><S.Td>{e.project}</S.Td><S.Td className="font-medium">{e.item.name}</S.Td><S.Td>{e.level}</S.Td></tr>)), ['Project','Item','Level'])}
             </div>
             <div>
-              <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Head Review ({headPending.length})</div>
+              <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Milestone Approval ({headPending.length})</div>
               {headPending.length===0 ? <div className="text-sm text-slate-400">Nothing pending.</div> : miniTable(headPending.map((e,i)=>(<tr key={i}><S.Td>{e.project}</S.Td><S.Td className="font-medium">{e.item.name}</S.Td><S.Td>{e.level}</S.Td></tr>)), ['Project','Item','Level'])}
             </div>
             <div>

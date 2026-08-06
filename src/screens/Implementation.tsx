@@ -37,7 +37,7 @@ export default function Implementation(){
 
       <S.Card className="p-5 mb-4">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <div><div className="text-xs text-slate-400">Project Manager</div><div className="font-medium">{projMeta.pm||'—'}</div></div>
+          <div><div className="text-xs text-slate-400">Project Lead (L1)</div><div className="font-medium">{S.projectLeadName(projMeta)||'—'}</div></div>
           <div><div className="text-xs text-slate-400">Awaiting Head Sign-off</div><div className="font-medium">{awaitingHead.length}</div></div>
           <div><div className="text-xs text-slate-400">Awaiting Client Acceptance</div><div className="font-medium">{awaitingClient.length}</div></div>
           <div><div className="text-xs text-slate-400">Implemented</div><S.Badge cls={S.statusColor('Implemented')}>{implemented.length} of {totalEligible}</S.Badge></div>

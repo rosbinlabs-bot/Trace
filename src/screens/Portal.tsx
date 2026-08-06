@@ -31,16 +31,12 @@ export default function Portal(){
 
   const phases = tree[activeProj] || [];
   const projMeta = projects.find(p=>p.id===activeProj) || {};
-  const roster = [
-    projMeta.strategicLead && {name:projMeta.strategicLead, group:'Strategic Lead'},
-    projMeta.projectHead && {name:projMeta.projectHead, group:'Project Head'},
-    projMeta.pm && {name:projMeta.pm, group:'Project Manager'},
-    projMeta.associate && {name:projMeta.associate, group:'Associate'},
-  ].filter(Boolean);
+  const roster = S.buildRoster(projMeta, admin);
   const clientOwner = (projMeta.clients||[]).find(c=>c.owner);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
 
-  // Pipeline: only items the Project Head has already approved for Implemented show up here —
+  // Pipeline: only items whose internal level-approval chain (Phase Management -> Mark Implemented,
+  // see S.implementChainFor) is fully complete show up here —
   // that hand-off is what makes the Client Owner's approval window appear at all.
   const pending = [];
   phases.forEach(ph=>{
@@ -63,7 +59,7 @@ export default function Portal(){
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, status:'Implemented', review:'', clientApprovedImpl:true, clientAcceptedDate:S.TODAY_ISO})));
     }
     notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, type:'Implemented',
-      message:`"${item.name}" in phase "${ph.name}" has been marked Implemented after Project Head and Client Owner approval.` });
+      message:`"${item.name}" in phase "${ph.name}" has been marked Implemented after internal approval and Client Owner sign-off.` });
   };
 
   const requestChanges = (entry) => {
@@ -137,7 +133,7 @@ export default function Portal(){
                 </button>
                 {open && (
                   <div className="px-4 py-3 border-t border-violet-100 bg-white space-y-3">
-                    <div className="text-xs text-slate-500">Approved internally by the Project Head — your sign-off marks this <b>Implemented</b>, the most important status in the project.</div>
+                    <div className="text-xs text-slate-500">Approved internally by the project team — your sign-off marks this <b>Implemented</b>, the most important status in the project.</div>
                     {canAct ? (
                       <>
                         <div className="flex gap-2">

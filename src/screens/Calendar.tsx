@@ -252,7 +252,8 @@ export default function Calendar(){
 }
 
 // Company-wide, live pending-approvals summary — real counts and items straight from the
-// Phase Management tree's review workflow (PM Verification -> Head Review -> Client Sign-off ->
-// Implemented). The actual approve/reject actions live in Phase Management (PM/Project Head) and
-// Client Portal (Client Owner), since those already carry the role-permission logic; this page is
-// the cross-project view of what's sitting where, not a duplicate action surface.
+// Phase Management tree's review workflow (Sub Task/Milestone approval by level -> Implemented
+// escalation chain -> Client Sign-off -> Implemented). The actual approve/reject actions live in
+// Phase Management (by level) and Client Portal (Client Owner), since those already carry the
+// permission logic; this page is the cross-project view of what's sitting where, not a duplicate
+// action surface.
