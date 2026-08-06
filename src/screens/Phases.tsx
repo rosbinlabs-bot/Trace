@@ -79,14 +79,14 @@ export default function Phases(){
   // ---- review decisions: up to L2 decides Sub Tasks, L1 decides Milestones (S.approverLevelFor) ----
   const decideMs = (ph, ms, decision) => {
     mutMs(ph.id, ms.id, m => decision==='Approved'
-      ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO})
-      : ({...m, status:'In Progress', review:'', approved:false}));
+      ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO, reviewSince:''})
+      : ({...m, status:'In Progress', review:'', approved:false, reviewSince:''}));
     if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
       message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
   const decideSt = (phId, msId, stId, decision) => mutSt(phId, msId, stId, s => decision==='Approved'
-    ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO})
-    : ({...s, status:'In Progress', review:'', approved:false}));
+    ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:''})
+    : ({...s, status:'In Progress', review:'', approved:false, reviewSince:''}));
 
   // ---- "Implemented" escalation: sequential chain from whoever marked it up to L1 (S.implementChainFor
   // walks every level actually present on this project's team, skipping any that are missing), then the

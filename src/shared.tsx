@@ -984,9 +984,11 @@ export const newItem = (name) => ({
 export const applyStatus = (item, val, kind: 'subtask'|'milestone'|'phase', actorLevel: string) => {
   if(val==='Completed'){
     if(actorLevel && actorQualifies(kind, actorLevel)) return {...item, status:'Completed', review:'', approved:true, actualDate:item.actualDate||TODAY_ISO};
-    return {...item, status:'Completed', review:'Pending Review'};
+    // reviewSince stamps the day it first queued for review, so the Dashboard's approval-bottleneck
+    // panel can show a real "days pending" instead of guessing from the deadline.
+    return {...item, status:'Completed', review:'Pending Review', reviewSince: item.reviewSince||TODAY_ISO};
   }
-  return {...item, status:val, review:'', approved:false, actualDate:''};
+  return {...item, status:val, review:'', approved:false, actualDate:'', reviewSince:''};
 };
 export const isApproved = (item) => !!item.approved;
 export const isOverdue = (item) => item.deadline && item.deadline < TODAY_ISO && !isApproved(item);
