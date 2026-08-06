@@ -103,7 +103,7 @@ export default function DocumentLibrary(){
 
       {adding && (
         <S.Card className="p-3 mb-4 border-2 border-dashed border-brand-300 bg-brand-50/30">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2 items-end">
             <div className="flex flex-col gap-1 lg:col-span-2"><label className="text-[10px] text-slate-400">Name of the Document</label>
               <input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} placeholder="e.g. Client Onboarding Checklist" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Industry</label>
@@ -116,12 +116,11 @@ export default function DocumentLibrary(){
               <select value={draft.function} onChange={e=>setDraft(d=>({...d,function:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {settings.functions.map(f=><option key={f}>{f}</option>)}
               </select></div>
-          </div>
-          <div className="mt-2">
-            <label className="text-[10px] text-slate-400 block mb-1">Attach File <span className="text-slate-300">— required, this is what makes the entry downloadable</span></label>
-            <input type="file" onChange={e=>setDraft(d=>({...d,file:e.target.files?.[0]||null}))}
-              className="text-xs text-slate-600 file:mr-2 file:text-xs file:border-0 file:rounded-lg file:px-2.5 file:py-1.5 file:bg-brand-100 file:text-brand-700 hover:file:bg-brand-200 file:cursor-pointer cursor-pointer"/>
-            {draft.file && <span className="text-[11px] text-slate-400 ml-2">{draft.file.name} · {(draft.file.size/1024).toFixed(0)} KB</span>}
+            <div className="flex flex-col gap-1 min-w-0"><label className="text-[10px] text-slate-400 truncate" title="Required, this is what makes the entry downloadable">Attach File</label>
+              <input type="file" onChange={e=>setDraft(d=>({...d,file:e.target.files?.[0]||null}))}
+                className="text-xs text-slate-600 file:mr-1.5 file:text-xs file:border-0 file:rounded-lg file:px-2 file:py-1.5 file:bg-brand-100 file:text-brand-700 hover:file:bg-brand-200 file:cursor-pointer cursor-pointer w-full"/>
+              {draft.file && <span className="text-[10px] text-slate-400 truncate" title={draft.file.name}>{draft.file.name} · {(draft.file.size/1024).toFixed(0)} KB</span>}
+            </div>
           </div>
           <div className="flex gap-1.5 mt-2.5 justify-end">
             <button onClick={()=>{setAdding(false);setErr('');}} disabled={busy} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-1.5 hover:bg-slate-50 disabled:opacity-50">Cancel</button>
