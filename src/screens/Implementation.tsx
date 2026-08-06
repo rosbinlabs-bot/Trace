@@ -4,7 +4,9 @@ import * as S from '../shared';
 export default function Implementation(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const [activeProj, setActiveProj] = useState(projects[0].id);
+  // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
+  // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
+  const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const projMeta = projects.find(p=>p.id===activeProj) || {};
   const phases = tree[activeProj] || [];
 

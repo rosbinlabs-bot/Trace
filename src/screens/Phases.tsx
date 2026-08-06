@@ -5,7 +5,9 @@ export default function Phases(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const [activeProj, setActiveProj] = useState(projects[0].id);
+  // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
+  // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
+  const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const [actor, setActor] = useState('Associate'); // Associate | Project Manager | Project Head | Strategic Lead
 
   const ITEM_STATUS_OPTS = (settings.itemStatuses && settings.itemStatuses.length) ? settings.itemStatuses : S.DEFAULT_PROJECT_SETTINGS.itemStatuses;

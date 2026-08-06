@@ -98,6 +98,20 @@ export const deriveRole = (email: string, admin: any) => {
   return 'consultant';
 };
 
+// Project-level visibility for staff (App.tsx -> ProjectsDataContext, mirrors the Client-role
+// filtering right below it). role==='admin' is Admin/Super Admin permission level (see deriveRole
+// above -- it already collapses both onto 'admin', which is exactly the "sees everything" tier) and
+// keeps full org-wide visibility; everyone else (Manager/Officer -- PM, Associate, BD, and anyone
+// whose Project Head/Strategic Lead designation was custom-downgraded off Admin/Super Admin) only
+// sees projects where they're personally named as Strategic Lead, Project Head, PM or Associate.
+// A brand-new project with nobody assigned yet is invisible to a restricted account until someone
+// tags them on it -- expected, not a bug: there's nothing project-specific to show them yet.
+export const staffVisibleProjects = (projects: any[], role: string, profile: any) => {
+  if (role==='admin') return projects;
+  if (!profile) return [];
+  return projects.filter((p:any) => [p.strategicLead, p.projectHead, p.pm, p.associate].includes(profile.name));
+};
+
 // Company-wide master lists that power several New Project form dropdowns (Category, Industry,
 // Consulting Category, Engagement Type). Editable from Administration -> Project Settings and
 // persisted to Supabase (app_settings table) — these are starting defaults, not demo records; if

@@ -493,11 +493,35 @@ export default function App() {
   // "Add Client"). Filtering the shared ProjectsDataContext down to that single project here means
   // Portal/ProjectStructure -- the only two screens a client's routes can even reach (see Shell above)
   // -- don't need any client-specific logic of their own; they just render whatever's in `projects`.
-  const visibleProjects = role === 'client' ? projects.filter((p: any) => p.id === myProfile?.project) : projects;
+  // Staff who aren't Admin/Super Admin (S.staffVisibleProjects) get the same treatment: only the
+  // projects where they're personally named as Strategic Lead/Project Head/PM/Associate, so an
+  // Associate or PM who isn't on a project no longer sees it (or anything scoped to it) at all --
+  // every project-scoped screen (Project Master, Phase Management, Deliverables, Gantt,
+  // Implementation, Risks/Issues, Calendar, Client Approval, Reports) reads projects from this same
+  // context, so fixing it here is what makes all of them correct at once.
+  const visibleProjects = role === 'client'
+    ? projects.filter((p: any) => p.id === myProfile?.project)
+    : S.staffVisibleProjects(projects, role, myProfile);
   // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
   // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
   // see activity/approval notifications from every OTHER project in the tenant too.
   const visibleNotifications = role === 'client' ? notifications.filter((n: any) => n.projectId === myProfile?.project) : notifications;
+  // Risks, Issues, Deliverables and Calendar events aren't looked up through ProjectsDataContext --
+  // Risks.tsx/Issues.tsx/the Reports "Risk Dashboard"/"Deliverable Budget" reports and Calendar all
+  // render their own full list straight from GovernanceDataContext/DeliverablesDataContext/
+  // CalendarDataContext, filtered only by an on-screen dropdown (which itself only offers visible
+  // projects) -- so without this, picking "All" (or just not filtering) would still show every OTHER
+  // project's risks/issues/deliverables/events to someone who can no longer even see that project.
+  // These three all key their `project` field by project NAME, not id (see Risks.tsx/Issues.tsx's own
+  // dropdowns), so this matches on name too. Change Requests have no project field at all (an org-wide
+  // register) so there's nothing to scope there. role==='admin' (Admin/Super Admin) stays unscoped;
+  // 'client' is included defensively even though its routes can't reach these screens today.
+  const isProjectScoped = role !== 'admin';
+  const visibleProjectNames = new Set(visibleProjects.map((p: any) => p.name));
+  const visibleRisks = isProjectScoped ? risks.filter((r: any) => visibleProjectNames.has(r.project)) : risks;
+  const visibleIssues = isProjectScoped ? issues.filter((i: any) => visibleProjectNames.has(i.project)) : issues;
+  const visibleDeliverables = isProjectScoped ? deliverables.filter((d: any) => visibleProjectNames.has(d.project)) : deliverables;
+  const visibleCalendarEvents = isProjectScoped ? calendarEvents.filter((e: any) => !e.project || visibleProjectNames.has(e.project)) : calendarEvents;
 
   if (session === undefined) return <LoadingScreen />;
   if (!session) return <Login />;
@@ -517,10 +541,10 @@ export default function App() {
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team, setTeam }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
-                <S.GovernanceDataContext.Provider value={{ risks, setRisks, issues, setIssues, changes, setChanges }}>
-                  <S.CalendarDataContext.Provider value={{ events: calendarEvents, setEvents: setCalendarEvents }}>
+                <S.GovernanceDataContext.Provider value={{ risks: visibleRisks, setRisks, issues: visibleIssues, setIssues, changes, setChanges }}>
+                  <S.CalendarDataContext.Provider value={{ events: visibleCalendarEvents, setEvents: setCalendarEvents }}>
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>
-                      <S.DeliverablesDataContext.Provider value={{ deliverables, setDeliverables }}>
+                      <S.DeliverablesDataContext.Provider value={{ deliverables: visibleDeliverables, setDeliverables }}>
                         <S.InvoicesDataContext.Provider value={{ invoices, setInvoices }}>
                           <S.RoleContext.Provider value={{ role, setRole:()=>{} }}>
                             <S.CurrentUserContext.Provider value={{ email: myEmail, profile: myProfile }}>
