@@ -174,9 +174,9 @@ export default function Calendar(){
           their events/deadlines on the calendar to the left (S.colorForClient), so e.g. a client
           shown in red here means that client's items are the red ones on the grid. */}
       <S.Card className="p-4 w-44 shrink-0">
-        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Clients</div>
+        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Company</div>
         {distinctClients.length===0 ? (
-          <div className="text-xs text-slate-400">No clients yet.</div>
+          <div className="text-xs text-slate-400">No companies yet.</div>
         ) : (
           <div className="space-y-1.5">
             {distinctClients.map(c=>{ const cc = S.colorForClient(c); return (
