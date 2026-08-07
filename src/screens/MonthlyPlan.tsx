@@ -9,8 +9,8 @@ import autoTable from 'jspdf-autotable';
 //      in-house and at the client site. Entered by hand; not derived from anything.
 //   2. A day-by-day table (Date / Day / Activity / Onsite-Offsite / Status) covering every
 //      calendar day of the month, weekends blocked out unless the team explicitly logs something
-//      on one. This is what previously rendered as a grouped-by-date agenda -- restyled here to
-//      the document layout, with the old "Responsible Person" column swapped for Status.
+//      on one. Once the plan is Final (see confirm/approve flow below), no-content days drop out
+//      entirely so the document reads as a clean finished deliverable, not a work-in-progress grid.
 const cellBase: React.CSSProperties = { border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top', fontSize: 12 };
 const headOrange: React.CSSProperties = { ...cellBase, background: '#ED7D31', fontWeight: 'bold', textAlign: 'center' };
 const headBlue: React.CSSProperties = { ...cellBase, background: '#BDD7EE', fontWeight: 'bold', textAlign: 'center' };
@@ -21,6 +21,7 @@ export default function MonthlyPlan(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { plan, setPlan } = React.useContext(S.MonthlyPlanDataContext);
   const { role } = React.useContext(S.RoleContext);
+  const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
 
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
@@ -29,18 +30,13 @@ export default function MonthlyPlan(){
   const projMeta = projects.find((p: any) => p.id === activeProj) || {};
   const [monthKey, setMonthKey] = useState(S.monthKeyOf());
 
-  // Same edit gate Phase Management uses (Phases.tsx's `readOnly`): Admin/Super Admin always gets
-  // full edit rights; everyone else needs to actually be on THIS project's team. A Client never
-  // reaches this screen at all -- Administration -> Roles & Permissions has Client:'None' on Phase
-  // Management, and this route is gated on that same capability (see App.tsx).
-  const readOnly = role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
-  const canEdit = !readOnly;
-
-  const phases = tree[activeProj] || [];
   const hasPlan = !!(plan[activeProj] && plan[activeProj][monthKey]);
   const planData = (plan[activeProj] && plan[activeProj][monthKey]) || { objectives: [], activities: [] };
   const objectives: any[] = planData.objectives || [];
   const activities: any[] = planData.activities || [];
+  const confirmStatus: string = planData.confirmStatus || 'Draft';
+  const isPending = confirmStatus === 'Pending Approval';
+  const isFinal = confirmStatus === 'Final';
   const setPlanData = (updater: any) => setPlan((pl: any) => {
     const forProj = pl[activeProj] || {};
     const prev = forProj[monthKey] || { objectives: [], activities: [] };
@@ -48,12 +44,37 @@ export default function MonthlyPlan(){
     return { ...pl, [activeProj]: { ...forProj, [monthKey]: next } };
   });
 
+  // Who's signed in, as far as THIS project's team is concerned -- same lookup Phases.tsx uses.
+  // Confirm/Approve escalate along this same team-with-levels ladder (L1 most senior), not a fixed
+  // role, so the chain matches whatever team is actually staffed on this specific project.
+  const myTeamEntry = (projMeta.team || []).find((t: any) => t.name === myProfile?.name);
+  const myLevel: string | null = myTeamEntry?.level || (role === 'admin' ? 'L1' : null);
+  const presentLevelNums: number[] = S.projectLevelNumsPresent(projMeta); // ascending, L1 = most senior
+  const myLevelNum = myLevel ? S.levelNum(myLevel) : null;
+  const nextSeniorNum = myLevelNum != null
+    ? presentLevelNums.filter((n) => n < myLevelNum).sort((a, b) => b - a)[0]
+    : undefined;
+  const nextLevelLabel = nextSeniorNum != null ? `L${nextSeniorNum}` : null;
+  const pendingLevel: string | undefined = planData.pendingLevel;
+  const pendingApproverName = pendingLevel ? (projMeta.team || []).find((t: any) => t.level === pendingLevel)?.name : '';
+  const iAmApprover = isPending && (role === 'admin' || myLevel === pendingLevel);
+
+  // Same edit gate Phase Management uses when the plan is still a draft (Phases.tsx's `readOnly`):
+  // Admin/Super Admin always gets full rights; everyone else needs to be on THIS project's team.
+  // Once sent for approval, only the approver (or Admin/Super Admin) can still touch it -- and once
+  // Final, editing is restricted to Admin/Super Admin only, exactly as requested.
+  const draftEdit = role === 'admin' || S.isOnProjectTeam(projMeta, myProfile?.name);
+  const canEdit = isFinal ? role === 'admin' : isPending ? iAmApprover : draftEdit;
+  const readOnly = !canEdit;
+
+  const phases = tree[activeProj] || [];
+
   // Pull every Milestone/Sub Task across this project's Phase Management tree whose deadline falls
   // in the viewed month -- the "major deliverables for the month" -- and add one activity per item
   // not already on the plan (tracked by sourceId). A re-sync never duplicates or overwrites an
   // activity already here, so an edit made after syncing sticks even after syncing again.
   const syncFromPhases = () => {
-    if (!canEdit) return;
+    if (!canEdit || isFinal) return;
     const found: any[] = [];
     phases.forEach((ph: any) => {
       (ph.milestones || []).forEach((ms: any) => {
@@ -84,7 +105,7 @@ export default function MonthlyPlan(){
   // the phases" in the original request. Major Objectives are never auto-filled -- there's nothing
   // in Phase Management that corresponds to a strategic monthly objective, that's entered by hand.
   React.useEffect(() => {
-    if (canEdit && !hasPlan && activeProj) syncFromPhases();
+    if (draftEdit && !hasPlan && activeProj) syncFromPhases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeProj, monthKey, hasPlan]);
 
@@ -101,12 +122,12 @@ export default function MonthlyPlan(){
   React.useEffect(() => { setNewDate(monthKey === S.monthKeyOf() ? S.TODAY_ISO : `${monthKey}-01`); }, [monthKey]);
 
   const jumpToAdd = (dateIso: string) => {
-    if (!canEdit) return;
+    if (!canEdit || isFinal) return;
     setNewDate(dateIso);
     requestAnimationFrame(() => addRef.current?.focus());
   };
   const addActivity = () => {
-    if (!canEdit || !newActivity.trim() || !newDate) return;
+    if (!canEdit || isFinal || !newActivity.trim() || !newDate) return;
     setPlanData((pd: any) => ({ ...pd, activities: [...(pd.activities || []), {
       id: S.uid('MP'), date: newDate, activity: newActivity.trim(), onsite: newOnsite,
       status: 'Pending', sourceId: null, sourceType: 'Custom', phase: '',
@@ -116,9 +137,26 @@ export default function MonthlyPlan(){
   const removeActivity = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).filter((r: any) => r.id !== id) })); };
   const patchActivity = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).map((r: any) => r.id === id ? { ...r, ...patch } : r) })); };
 
-  const addObjective = () => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: [...(pd.objectives || []), { id: S.uid('OBJ'), text: '', dueInHouse: '', dueClient: '' }] })); };
+  const addObjective = () => { if (canEdit && !isFinal) setPlanData((pd: any) => ({ ...pd, objectives: [...(pd.objectives || []), { id: S.uid('OBJ'), text: '', dueInHouse: '', dueClient: '' }] })); };
   const removeObjective = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).filter((o: any) => o.id !== id) })); };
   const patchObjective = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).map((o: any) => o.id === id ? { ...o, ...patch } : o) })); };
+
+  // ---- confirm / approve / finalize ----
+  const finalizePlan = () => {
+    setPlanData((pd: any) => {
+      const acts = (pd.activities || []).filter((r: any) => (r.activity || '').trim());
+      return { ...pd, activities: acts, confirmStatus: 'Final', approvedBy: myProfile?.name || myEmail, approvedAt: S.TODAY_ISO };
+    });
+  };
+  const confirmPlan = () => {
+    if (!draftEdit || confirmStatus !== 'Draft') return;
+    if (nextLevelLabel) {
+      setPlanData((pd: any) => ({ ...pd, confirmStatus: 'Pending Approval', pendingLevel: nextLevelLabel, confirmedBy: myProfile?.name || myEmail, confirmedAt: S.TODAY_ISO }));
+    } else {
+      finalizePlan();
+    }
+  };
+  const approvePlan = () => { if (iAmApprover) finalizePlan(); };
 
   const fmtDDMY = (iso: string) => {
     if (!iso) return '—';
@@ -161,7 +199,8 @@ export default function MonthlyPlan(){
     for (let day = 1; day <= daysInMonth; day++) {
       const dateIso = `${monthKey}-${String(day).padStart(2, '0')}`;
       const lines = activities.filter((r: any) => r.date === dateIso);
-      if (isWeekend(day) && !lines.length) { dayBody.push([day, dayName(day), '', '', '']); continue; }
+      if (isFinal) { if (!lines.length) continue; }
+      else if (isWeekend(day) && !lines.length) { dayBody.push([day, dayName(day), '', '', '']); continue; }
       if (!lines.length) { dayBody.push([day, dayName(day), '', '', '']); continue; }
       lines.forEach((r: any, i: number) => dayBody.push([i === 0 ? day : '', i === 0 ? dayName(day) : '', r.activity, r.onsite, r.status]));
     }
@@ -182,7 +221,10 @@ export default function MonthlyPlan(){
     const dateIso = `${monthKey}-${String(day).padStart(2, '0')}`;
     const lines = activities.filter((r: any) => r.date === dateIso);
     const weekend = isWeekend(day);
-    if (weekend && !lines.length) {
+    // Once Final, dates with nothing on them are dropped entirely -- the finished document only
+    // lists real content, not a full blank calendar grid.
+    if (isFinal && !lines.length) continue;
+    if (!isFinal && weekend && !lines.length) {
       dayRows.push(
         <tr key={dateIso} style={{ background: '#ED7D31' }}>
           <td style={{ ...cellBase, textAlign: 'center' }}>{day}</td>
@@ -234,7 +276,7 @@ export default function MonthlyPlan(){
 
   return (
     <div>
-      <S.SectionTitle sub="A client-ready monthly engagement plan per project — major objectives plus a day-by-day activity table, auto-filled from Phase Management and editable by the team.">Monthly Plan</S.SectionTitle>
+      <S.SectionTitle sub="A client-ready monthly engagement plan per project — major objectives plus a day-by-day activity table, auto-filled from Phase Management and editable by the team until confirmed.">Monthly Plan</S.SectionTitle>
 
       <div className="flex gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
         {projects.map((p: any) => (
@@ -254,9 +296,14 @@ export default function MonthlyPlan(){
               <div className="text-sm font-medium text-slate-700 w-40 text-center">{S.monthLabel(monthKey)}</div>
               <button onClick={() => shiftMonth(1)} className="w-7 h-7 flex items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50">›</button>
               {monthKey !== S.monthKeyOf() && <button onClick={() => setMonthKey(S.monthKeyOf())} className="text-xs text-brand-600 hover:text-brand-700 ml-1">This Month</button>}
+              {confirmStatus !== 'Draft' && (
+                <S.Badge cls={isFinal ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}>
+                  {isFinal ? 'Final' : `Pending approval · ${pendingApproverName || S.designationForLevel(pendingLevel || '', admin) || pendingLevel}`}
+                </S.Badge>
+              )}
             </div>
             <div className="flex items-center gap-2">
-              {canEdit && <button onClick={syncFromPhases} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"><S.Icon name="refresh" className="w-3.5 h-3.5" />Sync from Phases</button>}
+              {draftEdit && confirmStatus === 'Draft' && <button onClick={syncFromPhases} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"><S.Icon name="refresh" className="w-3.5 h-3.5" />Sync from Phases</button>}
               <button onClick={exportPdf} disabled={!activities.length && !objectives.length} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"><S.Icon name="filepdf" className="w-3.5 h-3.5" />Export PDF</button>
             </div>
           </div>
@@ -270,7 +317,7 @@ export default function MonthlyPlan(){
             </div>
           </S.Card>
 
-          {canEdit && (
+          {canEdit && !isFinal && (
             <div className="flex flex-wrap items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
               <input ref={addRef} type="date" className={S.gInp + ' w-auto'} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
               <input placeholder="Activity description" className={S.gInp + ' flex-1 min-w-[180px]'} value={newActivity}
@@ -294,7 +341,7 @@ export default function MonthlyPlan(){
                   <th style={{ ...headOrange, textAlign: 'left' }}>Major objectives</th>
                   <th style={{ ...headOrange, width: 120 }}>Report submitted in-house</th>
                   <th style={{ ...headOrange, width: 120 }}>Report submitted at client site</th>
-                  {canEdit && <th style={{ ...headOrange, width: 24 }}></th>}
+                  {canEdit && !isFinal && <th style={{ ...headOrange, width: 24 }}></th>}
                 </tr>
               </thead>
               <tbody>
@@ -304,13 +351,13 @@ export default function MonthlyPlan(){
                     <td style={cellBase}>{canEdit ? <input style={plainField} placeholder="Objective" value={o.text} onChange={(e) => patchObjective(o.id, { text: e.target.value })} /> : o.text}</td>
                     <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueInHouse || ''} onChange={(e) => patchObjective(o.id, { dueInHouse: e.target.value })} /> : fmtDDMY(o.dueInHouse)}</td>
                     <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueClient || ''} onChange={(e) => patchObjective(o.id, { dueClient: e.target.value })} /> : fmtDDMY(o.dueClient)}</td>
-                    {canEdit && <td style={{ ...cellBase, textAlign: 'center' }}><button onClick={() => removeObjective(o.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999' }}>×</button></td>}
+                    {canEdit && !isFinal && <td style={{ ...cellBase, textAlign: 'center' }}><button onClick={() => removeObjective(o.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999' }}>×</button></td>}
                   </tr>
                 ))}
-                {!objectives.length && <tr><td colSpan={canEdit ? 5 : 4} style={{ ...cellBase, textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No major objectives added yet.</td></tr>}
+                {!objectives.length && <tr><td colSpan={canEdit && !isFinal ? 5 : 4} style={{ ...cellBase, textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No major objectives added yet.</td></tr>}
               </tbody>
             </table>
-            {canEdit && <button onClick={addObjective} style={{ fontSize: 12, color: '#C55A11', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 22, padding: 0 }}>+ Add objective</button>}
+            {canEdit && !isFinal && <button onClick={addObjective} style={{ fontSize: 12, color: '#C55A11', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 22, padding: 0 }}>+ Add objective</button>}
 
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
@@ -324,6 +371,44 @@ export default function MonthlyPlan(){
               </thead>
               <tbody>{dayRows}</tbody>
             </table>
+
+            <div style={{ borderTop: '1px solid #ddd', marginTop: 24, paddingTop: 16 }}>
+              {confirmStatus === 'Draft' && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: '#666', fontFamily: 'inherit' }}>
+                    {draftEdit
+                      ? (nextLevelLabel
+                          ? `Confirming sends this plan to ${S.designationForLevel(nextLevelLabel, admin) || nextLevelLabel} for approval.`
+                          : 'Confirming finalizes this plan — no more senior level is on this project\'s team.')
+                      : 'Awaiting confirmation from the project team.'}
+                  </div>
+                  {draftEdit && (
+                    <button onClick={confirmPlan} disabled={!objectives.length && !activities.length}
+                      style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif", background: '#3b5bdb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer', opacity: (!objectives.length && !activities.length) ? 0.4 : 1 }}>
+                      {nextLevelLabel ? 'Confirm & send for approval' : 'Confirm & finalize'}
+                    </button>
+                  )}
+                </div>
+              )}
+              {isPending && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 12, color: '#666', fontFamily: 'inherit' }}>
+                    Confirmed by {planData.confirmedBy} on {fmtDDMY(planData.confirmedAt)} — pending approval from {pendingApproverName ? `${pendingApproverName} (${S.designationForLevel(pendingLevel || '', admin) || pendingLevel})` : (S.designationForLevel(pendingLevel || '', admin) || pendingLevel)}.
+                  </div>
+                  {iAmApprover && (
+                    <button onClick={approvePlan}
+                      style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif", background: '#0f6e56', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer' }}>
+                      Approve & finalize
+                    </button>
+                  )}
+                </div>
+              )}
+              {isFinal && (
+                <div style={{ fontSize: 12, color: '#666', fontFamily: 'inherit' }}>
+                  Confirmed by {planData.confirmedBy || '—'}{planData.confirmedAt ? ` on ${fmtDDMY(planData.confirmedAt)}` : ''}, approved and finalized by {planData.approvedBy || '—'}{planData.approvedAt ? ` on ${fmtDDMY(planData.approvedAt)}` : ''}. Only Admin/Super Admin can edit this plan now.
+                </div>
+              )}
+            </div>
           </div>
         </>
       )}
