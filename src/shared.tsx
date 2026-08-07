@@ -821,7 +821,7 @@ export function NotificationBell(){
     return () => document.removeEventListener('mousedown', onDocClick);
   }, []);
   return (
-    <div className="relative" ref={ref}>
+    <div className="relative w-8 h-8 flex items-center justify-center" ref={ref}>
       <button onClick={toggleOpen} title="Notifications" className="relative text-slate-400 hover:text-slate-600">
         <Icon name="notifications" className="w-[18px] h-[18px]"/>
         {unreadCount>0 && <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-[9px] min-w-[16px] h-4 px-1 rounded-full flex items-center justify-center">{unreadCount}</span>}

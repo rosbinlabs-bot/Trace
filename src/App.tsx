@@ -163,7 +163,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
               <button
                 onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
                 title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                className="text-slate-400 hover:text-slate-600"
+                className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-600"
               >
                 <S.Icon name={theme === 'dark' ? 'sun' : 'moon'} className="w-[18px] h-[18px]" />
               </button>
