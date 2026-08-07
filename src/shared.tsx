@@ -16,6 +16,26 @@ export const PROJECTS: any = [];
 // ---- Revenue model: total revenue = total project months × monthly fee ----
 // Live "today", computed once when the app loads (not a frozen prototype date).
 export const TODAY_ISO = new Date().toISOString().slice(0, 10);
+
+// Relative timestamp for notification feeds: "5m ago" / "2 hours ago" / "3 days ago" up through a
+// week old, then falls back to an actual date (e.g. "12 Jul 2026") so old history doesn't read as a
+// vague, ever-growing "N days ago". Accepts either a full timestamptz (from notifications.created_at)
+// or a bare YYYY-MM-DD date string (older rows / a notification not yet round-tripped from Supabase).
+export const relativeTime = (ts: any) => {
+  if (!ts) return '';
+  const then = new Date(ts).getTime();
+  if (Number.isNaN(then)) return '';
+  const diffMs = Date.now() - then;
+  if (diffMs < 0) return new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+  const min = Math.floor(diffMs / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const days = Math.floor(hr / 24);
+  if (days < 7) return `${days} day${days===1?'':'s'} ago`;
+  return new Date(ts).toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
+};
 // End-of-month boundary used by the Deliverables report: "everything due by month end" reads off
 // this the same way every time, regardless of what day of the month TODAY_ISO happens to be.
 // Built from plain integers, not Date/toISOString — that round-trip crosses local↔UTC and can
@@ -848,7 +868,7 @@ export const NotificationFeedList = ({ notifications, emptyText }: any) => {
               <div className="text-xs text-slate-500 mt-0.5">{n.message}</div>
             </div>
           </div>
-          <span className="text-xs text-slate-400 whitespace-nowrap shrink-0">{n.when}</span>
+          <span className="text-xs text-slate-400 whitespace-nowrap shrink-0" title={n.createdAt ? new Date(n.createdAt).toLocaleString() : n.when}>{relativeTime(n.createdAt || n.when)}</span>
         </div>
       );})}
     </div>
