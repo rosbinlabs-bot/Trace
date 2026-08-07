@@ -290,7 +290,7 @@ export default function Dashboard(){
           <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <div className="font-semibold text-slate-800">{openKpi}</div>
-              <button className="text-slate-400 hover:text-slate-600" onClick={()=>setOpenKpi(null)}>✕</button>
+              <button className="text-slate-400 hover:text-slate-600" onClick={()=>setOpenKpi(null)} title="Close" aria-label="Close">✕</button>
             </div>
             <div className="space-y-1.5">
               {openKpi==='Active Projects' && (activeProjectsList.length ? activeProjectsList.map((p:any)=>(

@@ -160,6 +160,7 @@ export default function Risks() {
       </div>
 
       <S.Card className="overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr><S.Th>ID</S.Th><S.Th>Project</S.Th><S.Th>Risk</S.Th><S.Th>Supporting By</S.Th><S.Th>Prob</S.Th><S.Th>Impact</S.Th><S.Th>Target</S.Th><S.Th>Status</S.Th><S.Th></S.Th></tr>
@@ -175,12 +176,13 @@ export default function Risks() {
                 <S.Td><span className={S.priorityColor(r.impact)}>{r.impact}</span></S.Td>
                 <S.Td>{r.target || '—'}{isOverdue(r) && <span className="ml-1 text-[10px] text-red-500">overdue</span>}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(r.status)}>{r.status}</S.Badge></S.Td>
-                <S.Td>{canDelete && <button onClick={(e) => { e.stopPropagation(); removeRisk(r.id); }} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
+                <S.Td>{canDelete && <button onClick={(e) => { e.stopPropagation(); removeRisk(r.id); }} title="Remove risk" aria-label={`Remove risk ${r.id}`} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
               </tr>
             ))}
             {risks.length === 0 && <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No risks logged. Click "+ Add Risk".</td></tr>}
           </tbody>
         </table>
+        </div>
       </S.Card>
 
       {/* Risk detail modal — full view, tag Supporting By, address the risk (status/mitigation/remarks

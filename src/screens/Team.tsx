@@ -162,6 +162,7 @@ export default function Team(){
 
       {view==='list' ? (
         <S.Card className="overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr><S.Th>Name</S.Th><S.Th>Role</S.Th><S.Th>Department</S.Th><S.Th>Utilization</S.Th><S.Th>Availability</S.Th><S.Th>Capacity</S.Th><S.Th>Status</S.Th><S.Th>Actions</S.Th></tr>
@@ -176,11 +177,11 @@ export default function Team(){
                     </div>
                   </S.Td>
                   <S.Td>
-                    <input defaultValue={m.role} placeholder="e.g. Project Manager" onBlur={e=>patchMember(m.name,'role',e.target.value)}
+                    <input aria-label={`Role for ${m.name}`} defaultValue={m.role} placeholder="e.g. Project Manager" onBlur={e=>patchMember(m.name,'role',e.target.value)}
                       className="w-32 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
                   </S.Td>
                   <S.Td>
-                    <select value={m.dept||''} onChange={e=>patchMember(m.name,'dept',e.target.value)}
+                    <select aria-label={`Department for ${m.name}`} value={m.dept||''} onChange={e=>patchMember(m.name,'dept',e.target.value)}
                       className="w-28 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white">
                       <option value="">— Select —</option>
                       {deptOptsFor(m.dept).map(d=><option key={d} value={d}>{d}</option>)}
@@ -189,17 +190,17 @@ export default function Team(){
                   <S.Td>
                     <div className="flex items-center gap-2 min-w-[140px]">
                       <div className="w-16 h-2 bg-slate-100 rounded-full shrink-0"><div className={`h-2 rounded-full ${utilBarColor(m.util)}`} style={{width:Math.min(100,m.util||0)+'%'}}></div></div>
-                      <input type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={m.util} onBlur={e=>patchMember(m.name,'util',e.target.value.replace(/[^0-9]/g,''))}
+                      <input aria-label={`Utilization percent for ${m.name}`} type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={m.util} onBlur={e=>patchMember(m.name,'util',e.target.value.replace(/[^0-9]/g,''))}
                         className="w-12 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1 py-1 text-xs text-slate-500 focus:outline-none bg-transparent focus:bg-white"/>
                       <span className="text-xs text-slate-400">%</span>
                     </div>
                   </S.Td>
                   <S.Td>
-                    <input defaultValue={m.avail} placeholder="e.g. 30%" onBlur={e=>patchMember(m.name,'avail',e.target.value)}
+                    <input aria-label={`Availability for ${m.name}`} defaultValue={m.avail} placeholder="e.g. 30%" onBlur={e=>patchMember(m.name,'avail',e.target.value)}
                       className="w-20 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
                   </S.Td>
                   <S.Td>
-                    <input defaultValue={m.capacity} placeholder="e.g. 40h/wk" onBlur={e=>patchMember(m.name,'capacity',e.target.value)}
+                    <input aria-label={`Capacity for ${m.name}`} defaultValue={m.capacity} placeholder="e.g. 40h/wk" onBlur={e=>patchMember(m.name,'capacity',e.target.value)}
                       className="w-24 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
                   </S.Td>
                   <S.Td>{m.util>90 ? <S.Badge cls="bg-red-100 text-red-700">Overloaded</S.Badge> : <S.Badge cls="bg-emerald-100 text-emerald-700">Healthy</S.Badge>}</S.Td>
@@ -210,7 +211,7 @@ export default function Team(){
                         <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-500 hover:bg-slate-100 rounded px-2 py-1">Cancel</button>
                       </span>
                     ) : (
-                      <button onClick={()=>setConfirmRemove(m.name)} title="Remove" className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-2 py-1 text-xs"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                      <button onClick={()=>setConfirmRemove(m.name)} title="Remove" aria-label={`Remove ${m.name}`} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-2 py-1 text-xs"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
                     )}
                   </S.Td>
                 </tr>
@@ -220,6 +221,7 @@ export default function Team(){
               )}
             </tbody>
           </table>
+          </div>
         </S.Card>
       ) : (
         depts.map(([dept,members]: any) =>(
@@ -260,6 +262,7 @@ export default function Team(){
           </div>
         </button>
         {productivityOpen && (
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr><S.Th>Name</S.Th><S.Th>No. of Projects</S.Th><S.Th>Team Size</S.Th><S.Th>Billing Target</S.Th><S.Th>On Site Visits / Project</S.Th></tr>
@@ -287,6 +290,7 @@ export default function Team(){
             )}
           </tbody>
         </table>
+        </div>
         )}
       </S.Card>
     </div>

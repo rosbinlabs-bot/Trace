@@ -165,6 +165,7 @@ export default function Issues() {
       </div>
 
       <S.Card className="overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
             <tr><S.Th>ID</S.Th><S.Th>Project</S.Th><S.Th>Issue</S.Th><S.Th>Raised By</S.Th><S.Th>Assigned</S.Th><S.Th>Tags</S.Th><S.Th>Severity</S.Th><S.Th>Due</S.Th><S.Th>Status</S.Th><S.Th></S.Th></tr>
@@ -187,12 +188,13 @@ export default function Issues() {
                 <S.Td>
                   <S.Badge cls={S.statusColor(i.pendingStatus ? 'Pending Sign-off' : i.status)}>{i.pendingStatus ? `Pending Sign-off (${i.pendingStatus})` : i.status}</S.Badge>
                 </S.Td>
-                <S.Td>{canDelete && <button onClick={(e) => { e.stopPropagation(); removeIssue(i.id); }} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
+                <S.Td>{canDelete && <button onClick={(e) => { e.stopPropagation(); removeIssue(i.id); }} title="Remove issue" aria-label={`Remove issue ${i.id}`} className="text-red-400 hover:text-red-600">✕</button>}</S.Td>
               </tr>
             ))}
             {visibleIssues.length === 0 && <tr><td colSpan={10} className="text-center text-sm text-slate-400 py-8">{issues.length === 0 ? 'No issues logged. Click "+ Add Issue".' : 'No issues are visible to you — you need to be raised, assigned or tagged on one to see it.'}</td></tr>}
           </tbody>
         </table>
+        </div>
       </S.Card>
 
       {/* Issue detail modal */}

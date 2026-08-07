@@ -393,7 +393,7 @@ function UsersPanel(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
                 <input value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+                <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addUser} disabled={busy==='adding'} className="flex-1 text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
@@ -423,7 +423,7 @@ function UsersPanel(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
                 <input value={clientDraft.password} onChange={e=>{setClientPwTouched(true); setClientDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-violet-500"/>
-                <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+                <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addClient} disabled={busy==='adding'} className="flex-1 text-xs bg-violet-500 hover:bg-violet-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
@@ -442,7 +442,7 @@ function UsersPanel(){
               <label className="text-[10px] text-slate-400">New Password</label>
               <input value={resetFor.password} onChange={e=>setResetFor(r=>({...r,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
             </div>
-            <button type="button" title="Reset to default (first 4 letters of name + 1234)" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+            <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
             <button onClick={doReset} disabled={busy===resetFor.user.id} className="text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{busy===resetFor.user.id?'Resetting…':'Reset Password'}</button>
             <button onClick={()=>{setResetFor(null);setErr('');}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50 whitespace-nowrap">Cancel</button>
           </div>
@@ -466,13 +466,13 @@ function UsersPanel(){
               )}
               {canEditUsers && (
                 <>
-                  <button onClick={()=>startEdit(u)} title="Edit name/email" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                  <button onClick={()=>startEdit(u)} title="Edit name/email" aria-label={`Edit name/email for ${u.name}`} disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
                     <S.Icon name="edit" className="w-3.5 h-3.5"/>
                   </button>
-                  <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
+                  <button onClick={()=>{setErr('');setResetFor({user:u,password:defaultPasswordFor(u.name)});}} title="Reset password" aria-label={`Reset password for ${u.name}`} disabled={busy===u.id} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded px-1.5 py-1 disabled:opacity-40">
                     <S.Icon name="lock" className="w-3.5 h-3.5"/>
                   </button>
-                  <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
+                  <button onClick={()=>toggleSuspend(u)} title={u.status==='Active'?'Deactivate user':'Reactivate user'} aria-label={`${u.status==='Active'?'Deactivate':'Reactivate'} ${u.name}`} disabled={busy===u.id} className="text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded px-1.5 py-1 disabled:opacity-40">
                     <S.Icon name={u.status==='Active'?'ban':'checkcircle'} className="w-3.5 h-3.5"/>
                   </button>
                   {confirmRemove===u.id ? (
@@ -481,7 +481,7 @@ function UsersPanel(){
                       <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-400 hover:text-slate-600 px-1">Cancel</button>
                     </span>
                   ) : (
-                    <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                    <button onClick={()=>{setErr('');setConfirmRemove(u.id);}} title="Remove user" aria-label={`Remove ${u.name}`} disabled={busy===u.id} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-1.5 py-1 disabled:opacity-40"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
                   )}
                 </>
               )}
@@ -545,7 +545,7 @@ function UsersPanel(){
                           "Custom" selector underneath — bypassing the standard rule entirely. */}
                       <S.Badge cls={u.permissionOverride ? 'bg-amber-50 text-amber-700' : 'bg-brand-50 text-brand-700'}>{admin.designationLevel[u.designation]||'—'}{u.permissionOverride && ` → ${u.permissionOverride}`}</S.Badge>
                       {iAmSuperAdmin && (
-                        <select value={u.permissionOverride||''} onChange={e=>setPermissionOverride(u.id, e.target.value)} title="Custom override — bypasses the standard designation-based rule for this account only" className="block mt-1 border border-amber-200 bg-amber-50/40 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-amber-400">
+                        <select value={u.permissionOverride||''} onChange={e=>setPermissionOverride(u.id, e.target.value)} title="Custom override — bypasses the standard designation-based rule for this account only" aria-label={`Custom permission override for ${u.name}`} className="block mt-1 border border-amber-200 bg-amber-50/40 rounded px-1.5 py-0.5 text-[10px] focus:outline-none focus:ring-1 focus:ring-amber-400">
                           <option value="">Custom: none (use default)</option>
                           {S.PERMISSION_LEVELS.map(l=><option key={l} value={l}>Custom: {l}</option>)}
                         </select>

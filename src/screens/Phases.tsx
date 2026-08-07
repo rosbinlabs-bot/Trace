@@ -494,7 +494,7 @@ export default function Phases(){
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
                       {/* Opens the full detail modal — view everything, download/upload attachments,
                           add remarks — without disturbing the quick inline fields alongside it. */}
-                      <button onClick={()=>setDetailStIds({phId:ph.id, msId:ms.id, stId:s.id})} title="View details" className="text-slate-300 hover:text-brand-600 shrink-0">
+                      <button onClick={()=>setDetailStIds({phId:ph.id, msId:ms.id, stId:s.id})} title="View details" aria-label={`View details for ${s.name || 'sub task'}`} className="text-slate-300 hover:text-brand-600 shrink-0">
                         <S.Icon name="search" className="w-3.5 h-3.5"/>
                       </button>
                       <input className={inpFor('subtask')+" flex-1 min-w-[140px]"+(overdue?" border-red-300":"")} value={s.name} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>

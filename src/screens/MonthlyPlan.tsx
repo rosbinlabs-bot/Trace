@@ -258,10 +258,10 @@ export default function MonthlyPlan(){
           {i === 0 && <td rowSpan={lineCount} style={cellBase}>{dayName(day)}</td>}
           {r ? (
             <>
-              <td style={cellBase}>{canEdit ? <textarea rows={2} style={{ ...plainField, resize: 'vertical' }} value={r.activity} onChange={(e) => patchActivity(r.id, { activity: e.target.value })} /> : r.activity}</td>
+              <td style={cellBase}>{canEdit ? <textarea aria-label={`Activity for ${dateIso}`} rows={2} style={{ ...plainField, resize: 'vertical' }} value={r.activity} onChange={(e) => patchActivity(r.id, { activity: e.target.value })} /> : r.activity}</td>
               <td style={{ ...cellBase, textAlign: 'center', color: r.onsite === 'Onsite' ? '#C55A11' : '#888' }}>
                 {canEdit ? (
-                  <select style={{ ...plainField, textAlign: 'center', color: r.onsite === 'Onsite' ? '#C55A11' : '#888' }} value={r.onsite} onChange={(e) => patchActivity(r.id, { onsite: e.target.value })}>
+                  <select aria-label={`Onsite/offsite for ${dateIso}`} style={{ ...plainField, textAlign: 'center', color: r.onsite === 'Onsite' ? '#C55A11' : '#888' }} value={r.onsite} onChange={(e) => patchActivity(r.id, { onsite: e.target.value })}>
                     {S.ONSITE_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
                   </select>
                 ) : r.onsite}
@@ -269,10 +269,10 @@ export default function MonthlyPlan(){
               <td style={{ ...cellBase, textAlign: 'center' }}>
                 {canEdit ? (
                   <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
-                    <select className={S.deliveryStatusColor(r.status)} style={{ ...plainField, width: 'auto', textAlign: 'center', borderRadius: 4, padding: '1px 4px' }} value={r.status} onChange={(e) => patchActivity(r.id, { status: e.target.value })}>
+                    <select aria-label={`Status for ${dateIso}`} className={S.deliveryStatusColor(r.status)} style={{ ...plainField, width: 'auto', textAlign: 'center', borderRadius: 4, padding: '1px 4px' }} value={r.status} onChange={(e) => patchActivity(r.id, { status: e.target.value })}>
                       {S.DELIVERY_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
                     </select>
-                    <button onClick={() => removeActivity(r.id)} title="Remove" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999', fontSize: 12, lineHeight: 1 }}>×</button>
+                    <button onClick={() => removeActivity(r.id)} title="Remove" aria-label={`Remove activity for ${dateIso}`} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999', fontSize: 12, lineHeight: 1 }}>×</button>
                   </span>
                 ) : <S.Badge cls={S.deliveryStatusColor(r.status)}>{r.status}</S.Badge>}
               </td>
@@ -334,10 +334,10 @@ export default function MonthlyPlan(){
 
           {canEdit && !isFinal && (
             <div className="flex flex-wrap items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
-              <input ref={addRef} type="date" className={S.gInp + ' w-auto'} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
-              <input placeholder="Activity description" className={S.gInp + ' flex-1 min-w-[180px]'} value={newActivity}
+              <input aria-label="New activity date" ref={addRef} type="date" className={S.gInp + ' w-auto'} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+              <input aria-label="New activity description" placeholder="Activity description" className={S.gInp + ' flex-1 min-w-[180px]'} value={newActivity}
                 onChange={(e) => setNewActivity(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addActivity(); }} />
-              <select className={S.gInp + ' w-auto'} value={newOnsite} onChange={(e) => setNewOnsite(e.target.value)}>
+              <select aria-label="New activity onsite/offsite" className={S.gInp + ' w-auto'} value={newOnsite} onChange={(e) => setNewOnsite(e.target.value)}>
                 {S.ONSITE_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
               </select>
               <button onClick={addActivity} disabled={!newActivity.trim()} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Activity</button>
@@ -363,10 +363,10 @@ export default function MonthlyPlan(){
                 {objectives.map((o: any, i: number) => (
                   <tr key={o.id}>
                     <td style={{ ...cellBase, textAlign: 'center' }}>{i + 1}</td>
-                    <td style={cellBase}>{canEdit ? <input style={plainField} placeholder="Objective" value={o.text} onChange={(e) => patchObjective(o.id, { text: e.target.value })} /> : o.text}</td>
-                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueInHouse || ''} onChange={(e) => patchObjective(o.id, { dueInHouse: e.target.value })} /> : fmtDDMY(o.dueInHouse)}</td>
-                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueClient || ''} onChange={(e) => patchObjective(o.id, { dueClient: e.target.value })} /> : fmtDDMY(o.dueClient)}</td>
-                    {canEdit && !isFinal && <td style={{ ...cellBase, textAlign: 'center' }}><button onClick={() => removeObjective(o.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999' }}>×</button></td>}
+                    <td style={cellBase}>{canEdit ? <input aria-label={`Objective ${i + 1}`} style={plainField} placeholder="Objective" value={o.text} onChange={(e) => patchObjective(o.id, { text: e.target.value })} /> : o.text}</td>
+                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input aria-label={`Report submitted in-house date for objective ${i + 1}`} type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueInHouse || ''} onChange={(e) => patchObjective(o.id, { dueInHouse: e.target.value })} /> : fmtDDMY(o.dueInHouse)}</td>
+                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input aria-label={`Report submitted at client site date for objective ${i + 1}`} type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueClient || ''} onChange={(e) => patchObjective(o.id, { dueClient: e.target.value })} /> : fmtDDMY(o.dueClient)}</td>
+                    {canEdit && !isFinal && <td style={{ ...cellBase, textAlign: 'center' }}><button onClick={() => removeObjective(o.id)} title="Remove objective" aria-label={`Remove objective ${i + 1}`} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999' }}>×</button></td>}
                   </tr>
                 ))}
                 {!objectives.length && <tr><td colSpan={canEdit && !isFinal ? 5 : 4} style={{ ...cellBase, textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No major objectives added yet.</td></tr>}

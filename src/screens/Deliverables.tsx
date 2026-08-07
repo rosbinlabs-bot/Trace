@@ -108,6 +108,7 @@ export default function Deliverables(){
       </div>
 
       <S.Card className="overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>
             <S.Th>Type</S.Th><S.Th>Name</S.Th><S.Th>Phase</S.Th><S.Th>Milestone</S.Th><S.Th>Assignees</S.Th><S.Th>Deadline</S.Th><S.Th>Done</S.Th><S.Th>Status</S.Th>
@@ -130,6 +131,7 @@ export default function Deliverables(){
             )}
           </tbody>
         </table>
+        </div>
       </S.Card>
     </div>
   );

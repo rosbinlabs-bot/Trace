@@ -190,13 +190,14 @@ export default function ProjectMaster(){
         {canCreateProject && <button onClick={openNew} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2 rounded-lg">+ New Project</button>}
       </div>
       <S.Card className="overflow-hidden">
+        <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>
             <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Consulting Category</S.Th><S.Th>Project Members</S.Th>
             <S.Th>
               <span className="inline-flex items-center gap-1">
                 Monthly Fee
-                <button onClick={(e)=>{e.stopPropagation(); setShowFinancials(v=>!v);}} title={showFinancials?'Hide financial figures':'Show financial figures'} className="text-slate-400 hover:text-slate-600 normal-case font-normal">
+                <button onClick={(e)=>{e.stopPropagation(); setShowFinancials(v=>!v);}} title={showFinancials?'Hide financial figures':'Show financial figures'} aria-label={showFinancials?'Hide financial figures':'Show financial figures'} className="text-slate-400 hover:text-slate-600 normal-case font-normal">
                   <S.Icon name={showFinancials?'eye':'eyeoff'} className="w-3.5 h-3.5"/>
                 </button>
               </span>
@@ -232,6 +233,7 @@ export default function ProjectMaster(){
             );})}
           </tbody>
         </table>
+        </div>
       </S.Card>
 
       {form && (
@@ -395,7 +397,7 @@ export default function ProjectMaster(){
               <div className="space-y-2">
                 {clients.map((c,i)=>(
                   <div key={i} className="flex flex-wrap items-center gap-2 bg-white border border-slate-200 rounded-lg p-2">
-                    <button onClick={()=>canEdit&&setOwner(i)} disabled={!canEdit} title="Set as project owner"
+                    <button onClick={()=>canEdit&&setOwner(i)} disabled={!canEdit} title="Set as project owner" aria-label={c.owner ? `${c.name||'This client contact'} is the project owner` : `Set ${c.name||'this client contact'} as project owner`}
                       className={`w-5 h-5 rounded-full border flex items-center justify-center text-[10px] shrink-0 ${c.owner?'bg-emerald-500 border-emerald-500 text-white':'border-slate-300 text-transparent'} ${canEdit?'cursor-pointer':''}`}>●</button>
                     <input value={c.name} disabled={!canEdit} onChange={e=>setClient(i,'name',e.target.value)} placeholder="Key Person"
                       className={`flex-1 min-w-[130px] border rounded-lg px-2 py-1 text-sm ${canEdit?'border-slate-200 bg-white':'border-slate-200 bg-slate-100 text-slate-500'}`} />
@@ -519,7 +521,7 @@ export default function ProjectMaster(){
                                   <S.Icon name="checkcircle" className="w-4 h-4"/>
                                 </div>
                               ) : canEditFinancials ? (
-                                <button onClick={()=>confirmReceipt(i)} title="Mark as received" className="w-6 h-6 rounded-full border border-emerald-300 text-emerald-500 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 flex items-center justify-center transition-colors">
+                                <button onClick={()=>confirmReceipt(i)} title="Mark as received" aria-label="Mark payment as received" className="w-6 h-6 rounded-full border border-emerald-300 text-emerald-500 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 flex items-center justify-center transition-colors">
                                   <S.Icon name="checkcircle" className="w-4 h-4"/>
                                 </button>
                               ) : null}
@@ -577,7 +579,7 @@ export default function ProjectMaster(){
                               )}
                             </div>
                           </td>
-                          {iAmSuperAdmin && <td className="align-middle"><div className="h-7 flex items-center"><button onClick={()=>removeInvoice(inv.id)} title="Remove (correction only)" className="text-red-400 hover:text-red-600">✕</button></div></td>}
+                          {iAmSuperAdmin && <td className="align-middle"><div className="h-7 flex items-center"><button onClick={()=>removeInvoice(inv.id)} title="Remove (correction only)" aria-label={`Remove invoice ${inv.id||''}`} className="text-red-400 hover:text-red-600">✕</button></div></td>}
                         </tr>
                       ))}
                     </tbody>

@@ -66,6 +66,7 @@ export default function Documents(){
         {allDocs.length===0 ? (
           <div className="p-6 text-center text-sm text-slate-400">No documents attached yet — attach a file to a milestone or sub task from Phase Management's "+ Attach" control to see it listed here.</div>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Document Name</S.Th><S.Th>Project</S.Th><S.Th>Industry</S.Th><S.Th>Phase</S.Th><S.Th>Attached To</S.Th><S.Th>Level</S.Th><S.Th>Status</S.Th><S.Th></S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
@@ -80,7 +81,7 @@ export default function Documents(){
                   <S.Td><S.Badge cls={S.statusColor(d.status)}>{d.status}</S.Badge></S.Td>
                   <S.Td>
                     {d.doc.path && (
-                      <button onClick={(e)=>{ e.stopPropagation(); openDoc(d.doc); }} disabled={busy} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
+                      <button onClick={(e)=>{ e.stopPropagation(); openDoc(d.doc); }} disabled={busy} title="Download" aria-label={`Download ${d.doc.n}`} className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
                         <S.Icon name={busy?'refresh':'download'} className="w-3.5 h-3.5"/>
                       </button>
                     )}
@@ -89,6 +90,7 @@ export default function Documents(){
               );})}
             </tbody>
           </table>
+          </div>
         )}
       </S.Card>
     </div>
