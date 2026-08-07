@@ -252,7 +252,7 @@ export default function ProjectMaster(){
                 </button>
               </span>
             </S.Th>
-            <S.Th>Total Collection / Total Value</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
+            <S.Th>Revenue Realized</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const collected = S.projInvoicedRevenue(p, invoices); return (
