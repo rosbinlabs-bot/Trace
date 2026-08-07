@@ -255,6 +255,25 @@ export const syncDeliverables = (prev: any[], next: any[]) => syncArray('deliver
 export const syncTeam = (prev: any[], next: any[]) => syncArray('team', prev, next, teamToDb, 'name');
 export const syncInvoices = (prev: any[], next: any[]) => syncArray('invoices', prev, next, invoiceToDb);
 
+// Confirming a Payment Receipt (ProjectMaster's confirmReceipt) is a single discrete button click, not
+// a typing burst -- it doesn't need the 700ms debounce that setInvoices/useDebouncedArraySync applies
+// to protect against per-keystroke sync storms (see useDebouncedArraySync's comment in App.tsx). Going
+// through the debounced path only anyway meant a page refresh/close in that 700ms window silently
+// dropped the write -- the local UI showed "Received" (it's in the project's own payment_receipts
+// column) but no matching row ever reached the invoices table, so Total Collection and the Billing
+// Tracker never saw it. This fires the upsert immediately, in parallel with the existing debounced
+// setInvoices call (which still drives local/optimistic state and Realtime); the later debounced write
+// just re-upserts the same row and is a harmless no-op.
+export async function upsertInvoiceNow(inv: any) {
+  const { error } = await supabase.from('invoices').upsert(invoiceToDb(inv));
+  if (error) throw error;
+}
+export async function deleteInvoiceNow(id: string) {
+  if (!TENANT_ID) return;
+  const { error } = await supabase.from('invoices').delete().eq('id', id).eq('tenant_id', TENANT_ID);
+  if (error) throw error;
+}
+
 export async function syncTree(prevTree: any, nextTree: any) {
   const keys = new Set([...Object.keys(prevTree || {}), ...Object.keys(nextTree || {})]);
   const changed: any[] = [];
