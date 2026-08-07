@@ -244,6 +244,29 @@ export const DeliverablesDataContext = React.createContext<any>({ deliverables:[
 // `invoices` Supabase table. A cron job also inserts rows here automatically (see
 // generate_monthly_invoices in the database) — those show up the same as manually-added ones.
 export const InvoicesDataContext = React.createContext<any>({ invoices:[], setInvoices:()=>{} });
+
+// Monthly Plan (Delivery -> Monthly Plan, below Phase Management): the current month's day-by-day
+// delivery agenda per project -- what's planned, whether it's an Onsite or Offsite activity, and its
+// delivery status. Backed by the `monthly_plans` Supabase table, one row per (project, month), keyed
+// here the same way: plan[projectId][month] = rows[]. Auto-seeded from Phase Management's own
+// milestones/sub tasks due that month (see MonthlyPlan.tsx's syncFromPhases) but freely editable
+// after that -- syncing again only adds rows for items not already pulled in (tracked via each row's
+// sourceId), it never overwrites an edit already made here.
+export const MonthlyPlanDataContext = React.createContext<any>({ plan:{}, setPlan:()=>{} });
+export const ONSITE_STATUS_OPTS = ['Onsite','Offsite'];
+export const DELIVERY_STATUS_OPTS = ['Done','Pending','Cancelled','C/F'];
+export const deliveryStatusColor = (s: string) => ({
+  'Done':'bg-emerald-100 text-emerald-700', 'Pending':'bg-amber-100 text-amber-700',
+  'Cancelled':'bg-red-100 text-red-700', 'C/F':'bg-slate-100 text-slate-600',
+}[s] || 'bg-slate-100 text-slate-600');
+export const onsiteStatusColor = (s: string) => s==='Onsite' ? 'bg-violet-100 text-violet-700' : 'bg-sky-100 text-sky-700';
+// 'YYYY-MM' for any date, defaulting to the current/running month -- used to pick which month's
+// items from Phase Management belong on this month's plan, and to key plan[projectId][month].
+export const monthKeyOf = (iso?: string) => (iso || TODAY_ISO).slice(0, 7);
+export const monthLabel = (key: string) => {
+  const [y, m] = key.split('-').map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+};
 export const INVOICE_STATUSES = ['Pending','Received','Delayed','On Hold'];
 // True once a Super Admin permission-level exists for this email — the only role allowed to edit
 // a locked invoice row (see lockInvoiceIfNeeded below).
@@ -547,6 +570,7 @@ export const ICON_PATHS = {
   moon: '<path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5Z"/>',
   library: '<path d="M4 4h4v16H4z"/><path d="M10 4h4v16h-4z"/><path d="M16.5 4.6 20.2 5.7 16 20l-3.7-1.1Z"/>',
   doclibrary: '<path d="M4 4h4v16H4z"/><path d="M10 4h4v16h-4z"/><path d="M16.5 4.6 20.2 5.7 16 20l-3.7-1.1Z"/>',
+  monthlyplan: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 9h18M8 3v4M16 3v4"/><path d="M8 15l2 2 4-4"/>',
 };
 export const Icon = ({name, className}: any) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"
@@ -562,6 +586,7 @@ export const NAV = [
     { id:'projects', label:'Project Master' },
     { id:'structure', label:'Project Structure' },
     { id:'phases', label:'Phase Management' },
+    { id:'monthlyplan', label:'Monthly Plan' },
     { id:'deliverables', label:'Deliverables' },
     { id:'implementation', label:'Implementation Tracker' },
   ]},
@@ -610,6 +635,7 @@ export const NAV_MODULE: any = {
   projects: 'Project Master',
   structure: 'Phase Management',
   phases: 'Phase Management',
+  monthlyplan: 'Phase Management',
   deliverables: 'Deliverables',
   implementation: 'Deliverables',
   gantt: 'Phase Management',

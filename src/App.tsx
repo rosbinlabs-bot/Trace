@@ -10,6 +10,7 @@ import Dashboard from './screens/Dashboard';
 import ProjectMaster from './screens/ProjectMaster';
 import ProjectStructure from './screens/ProjectStructure';
 import Phases from './screens/Phases';
+import MonthlyPlan from './screens/MonthlyPlan';
 import Deliverables from './screens/Deliverables';
 import Implementation from './screens/Implementation';
 import Gantt from './screens/Gantt';
@@ -211,6 +212,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   <Route path="/projects" element={<Gate module={S.NAV_MODULE.projects} admin={admin} email={email}><ProjectMaster /></Gate>} />
                   <Route path="/structure" element={<Gate module={S.NAV_MODULE.structure} admin={admin} email={email}><ProjectStructure /></Gate>} />
                   <Route path="/phases" element={<Gate module={S.NAV_MODULE.phases} admin={admin} email={email}><Phases /></Gate>} />
+                  <Route path="/monthlyplan" element={<Gate module={S.NAV_MODULE.monthlyplan} admin={admin} email={email}><MonthlyPlan /></Gate>} />
                   <Route path="/deliverables" element={<Gate module={S.NAV_MODULE.deliverables} admin={admin} email={email}><Deliverables /></Gate>} />
                   <Route path="/implementation" element={<Gate module={S.NAV_MODULE.implementation} admin={admin} email={email}><Implementation /></Gate>} />
                   <Route path="/gantt" element={<Gate module={S.NAV_MODULE.gantt} admin={admin} email={email}><Gantt /></Gate>} />
@@ -390,6 +392,7 @@ export default function App() {
   const [libraryDocs, setLibraryDocsState] = useState<any[]>([]);
   const [deliverables, setDeliverablesState] = useState<any[]>([]);
   const [invoices, setInvoicesState] = useState<any[]>([]);
+  const [monthlyPlan, setMonthlyPlanState] = useState<any>({});
 
   // Fetch every table once a session exists AND the tenant is resolved. All data below this point
   // comes from Supabase — nothing is seeded from the in-memory mock constants in shared.tsx anymore
@@ -420,6 +423,7 @@ export default function App() {
         setLibraryDocsState(data.docs);
         setDeliverablesState(data.deliverables);
         setInvoicesState(data.invoices);
+        setMonthlyPlanState(data.monthlyPlan);
         setLoading(false);
       })
       .catch((e) => {
@@ -498,6 +502,19 @@ export default function App() {
         if (payload.eventType === 'DELETE') return;
         setSettingsState({ ...S.DEFAULT_PROJECT_SETTINGS, ...(payload.new?.data || {}) });
       },
+      monthly_plans: (payload: any) => {
+        setMonthlyPlanState((prev: any) => {
+          if (payload.eventType === 'DELETE') {
+            const pid = payload.old?.project_id, month = payload.old?.month;
+            if (!pid || !prev[pid]) return prev;
+            const nextForProj = { ...prev[pid] };
+            delete nextForProj[month];
+            return { ...prev, [pid]: nextForProj };
+          }
+          const row = payload.new;
+          return { ...prev, [row.project_id]: { ...(prev[row.project_id] || {}), [row.month]: row.rows || [] } };
+        });
+      },
     });
     return unsubscribe;
   }, [tenantId]);
@@ -512,6 +529,7 @@ export default function App() {
   const setDeliverables = wrapSetter(setDeliverablesState, db.syncDeliverables);
   const setInvoices = wrapSetter(setInvoicesState, db.syncInvoices);
   const setTeam = wrapSetter(setTeamState, db.syncTeam);
+  const setMonthlyPlan = wrapSetter(setMonthlyPlanState, db.syncMonthlyPlan);
 
   const setSettings = (updater: any) => {
     setSettingsState((prev: any) => {
@@ -621,11 +639,13 @@ export default function App() {
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>
                       <S.DeliverablesDataContext.Provider value={{ deliverables: visibleDeliverables, setDeliverables }}>
                         <S.InvoicesDataContext.Provider value={{ invoices, setInvoices }}>
-                          <S.RoleContext.Provider value={{ role, setRole:()=>{} }}>
-                            <S.CurrentUserContext.Provider value={{ email: myEmail, profile: myProfile }}>
-                              <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} />
-                            </S.CurrentUserContext.Provider>
-                          </S.RoleContext.Provider>
+                          <S.MonthlyPlanDataContext.Provider value={{ plan: monthlyPlan, setPlan: setMonthlyPlan }}>
+                            <S.RoleContext.Provider value={{ role, setRole:()=>{} }}>
+                              <S.CurrentUserContext.Provider value={{ email: myEmail, profile: myProfile }}>
+                                <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} />
+                              </S.CurrentUserContext.Provider>
+                            </S.RoleContext.Provider>
+                          </S.MonthlyPlanDataContext.Provider>
                         </S.InvoicesDataContext.Provider>
                       </S.DeliverablesDataContext.Provider>
                     </S.LibraryDataContext.Provider>

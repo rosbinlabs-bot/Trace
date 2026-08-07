@@ -99,7 +99,7 @@ const docToDb = (d: any) => ({ tenant_id: TENANT_ID, id: d.id, name: d.name, ind
 
 /* ============================ initial load ============================ */
 export async function loadAll() {
-  const [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices] = await Promise.all([
+  const [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans] = await Promise.all([
     supabase.from('projects').select('*').order('created_at'),
     supabase.from('phase_trees').select('*'),
     supabase.from('risks').select('*').order('created_at'),
@@ -113,14 +113,24 @@ export async function loadAll() {
     supabase.from('app_settings').select('*').maybeSingle(),
     supabase.from('notifications').select('*').order('created_at', { ascending: false }),
     supabase.from('invoices').select('*').order('created_at'),
+    supabase.from('monthly_plans').select('*'),
   ]);
 
-  for (const r of [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices]) {
+  for (const r of [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans]) {
     if (r.error) throw r.error;
   }
 
   const tree: any = {};
   (phaseTrees.data || []).forEach((row: any) => { tree[row.project_id] = row.tree || []; });
+
+  // Monthly Plan (Delivery -> Monthly Plan): keyed two levels deep, project then month ('YYYY-MM'),
+  // same nesting Dashboard-style screens use for tree -- one row per (project, month) in the DB,
+  // reassembled here into monthlyPlans[projectId][month] = rows[].
+  const monthlyPlan: any = {};
+  (monthlyPlans.data || []).forEach((row: any) => {
+    monthlyPlan[row.project_id] = monthlyPlan[row.project_id] || {};
+    monthlyPlan[row.project_id][row.month] = row.rows || [];
+  });
 
   // Merge over DEFAULT_ADMIN_DATA / DEFAULT_PROJECT_SETTINGS so a key with no row yet (e.g. right
   // after clearing the database) falls back to a safe empty/default shape instead of `undefined` —
@@ -142,6 +152,7 @@ export async function loadAll() {
     settings: { ...DEFAULT_PROJECT_SETTINGS, ...(settings.data?.data || {}) },
     notifications: (notifications.data || []).map(notificationFromDb),
     invoices: (invoices.data || []).map(invoiceFromDb),
+    monthlyPlan,
   };
 }
 
@@ -244,6 +255,26 @@ export async function syncTree(prevTree: any, nextTree: any) {
   }
 }
 
+// Monthly Plan: same "diff the nested object, upsert only what changed" approach as syncTree,
+// one level deeper (project -> month -> rows[]). No delete path -- clearing a month's plan down to
+// zero rows is still a real (empty) plan, upserted as `rows: []`, not a removed record.
+export async function syncMonthlyPlan(prevPlan: any, nextPlan: any) {
+  const keys = new Set<string>();
+  Object.keys(prevPlan || {}).forEach((pid) => Object.keys(prevPlan[pid] || {}).forEach((m) => keys.add(`${pid}::${m}`)));
+  Object.keys(nextPlan || {}).forEach((pid) => Object.keys(nextPlan[pid] || {}).forEach((m) => keys.add(`${pid}::${m}`)));
+  const changed: any[] = [];
+  keys.forEach((k) => {
+    const [pid, month] = k.split('::');
+    const p = prevPlan?.[pid]?.[month];
+    const n = nextPlan?.[pid]?.[month];
+    if (p !== n && n !== undefined) changed.push({ tenant_id: TENANT_ID, project_id: pid, month, rows: n });
+  });
+  if (changed.length) {
+    const { error } = await supabase.from('monthly_plans').upsert(changed);
+    if (error) throw error;
+  }
+}
+
 export async function saveAdminKey(key: string, value: any) {
   const { error } = await supabase.from('admin_data').upsert({ tenant_id: TENANT_ID, key, value });
   if (error) throw error;
@@ -316,7 +347,8 @@ async function callManageUser(payload: any) {
 // select), and the tenant_id filter below narrows the feed to just this tenant for efficiency.
 export type RealtimeTable =
   | 'projects' | 'phase_trees' | 'risks' | 'issues' | 'change_requests' | 'calendar_events'
-  | 'library_docs' | 'deliverables' | 'team' | 'admin_data' | 'app_settings' | 'notifications' | 'invoices';
+  | 'library_docs' | 'deliverables' | 'team' | 'admin_data' | 'app_settings' | 'notifications' | 'invoices'
+  | 'monthly_plans';
 
 export function subscribeRealtime(tenantId: string, handlers: Partial<Record<RealtimeTable, (payload: any) => void>>) {
   const channel = supabase.channel(`tenant-live-${tenantId}`);
