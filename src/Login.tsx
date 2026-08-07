@@ -38,6 +38,7 @@ export default function Login(){
   const [designation, setDesignation] = useState('Associate');
   const [companyCode, setCompanyCode] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [notice, setNotice] = useState('');
@@ -156,7 +157,12 @@ export default function Login(){
             </div>
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] font-medium text-slate-500 tracking-wide">Password</label>
-              <input required type="password" value={password} onChange={e=>setPassword(e.target.value)} className="border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-shadow"/>
+              <div className="relative">
+                <input required type={showPassword?'text':'password'} value={password} onChange={e=>setPassword(e.target.value)} className="w-full border border-slate-200 rounded-lg pl-3 pr-9 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-brand-500 transition-shadow"/>
+                <button type="button" onClick={()=>setShowPassword(v=>!v)} title={showPassword?'Hide password':'Show password'} aria-label={showPassword?'Hide password':'Show password'} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                  <S.Icon name={showPassword?'eyeoff':'eye'} className="w-4 h-4"/>
+                </button>
+              </div>
             </div>
             <button type="submit" disabled={busy} className="w-full bg-gradient-to-r from-brand-500 to-brand-600 hover:from-brand-600 hover:to-brand-700 disabled:opacity-50 text-white rounded-lg px-3 py-3 text-sm font-medium shadow-md shadow-brand-500/25 transition-colors mt-1">
               {busy ? (mode==='signin'?'Signing in…':'Creating account…') : (mode==='signin'?'Sign In':'Create Account')}
