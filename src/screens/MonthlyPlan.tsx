@@ -48,16 +48,16 @@ export default function MonthlyPlan(){
   });
 
   // Who's signed in, as far as THIS project's team is concerned -- same lookup Phases.tsx uses.
-  // Confirm/Approve escalate along this same team-with-levels ladder (L1 most senior), not a fixed
-  // role, so the chain matches whatever team is actually staffed on this specific project.
+  // Approval target is fixed at L2 -- the same convention Sub Task review in Phase Management uses
+  // (S.approverLevelFor) -- rather than "whoever's one level above the confirmer," which used to be
+  // able to walk all the way up to L1 when an L2-level person did the confirming. If L2 is present on
+  // this project's team, L2 approval is enough to finalize; someone already at L1 or L2 (or an
+  // Admin/Super Admin) confirming it themselves finalizes it directly, no separate approval step.
   const myTeamEntry = (projMeta.team || []).find((t: any) => t.name === myProfile?.name);
   const myLevel: string | null = myTeamEntry?.level || (role === 'admin' ? 'L1' : null);
-  const presentLevelNums: number[] = S.projectLevelNumsPresent(projMeta); // ascending, L1 = most senior
   const myLevelNum = myLevel ? S.levelNum(myLevel) : null;
-  const nextSeniorNum = myLevelNum != null
-    ? presentLevelNums.filter((n) => n < myLevelNum).sort((a, b) => b - a)[0]
-    : undefined;
-  const nextLevelLabel = nextSeniorNum != null ? `L${nextSeniorNum}` : null;
+  const planApproverLevel = S.approverLevelFor('subtask', projMeta); // targets L2, falls back sensibly if L2 isn't staffed
+  const iQualifyToFinalize = role === 'admin' || (myLevelNum != null && myLevelNum <= 2);
   const pendingLevel: string | undefined = planData.pendingLevel;
   const pendingApproverName = pendingLevel ? (projMeta.team || []).find((t: any) => t.level === pendingLevel)?.name : '';
   const iAmApprover = isPending && (role === 'admin' || myLevel === pendingLevel);
@@ -153,10 +153,10 @@ export default function MonthlyPlan(){
   };
   const confirmPlan = () => {
     if (!draftEdit || confirmStatus !== 'Draft') return;
-    if (nextLevelLabel) {
-      setPlanData((pd: any) => ({ ...pd, confirmStatus: 'Pending Approval', pendingLevel: nextLevelLabel, confirmedBy: myProfile?.name || myEmail, confirmedAt: S.TODAY_ISO }));
-    } else {
+    if (iQualifyToFinalize) {
       finalizePlan();
+    } else {
+      setPlanData((pd: any) => ({ ...pd, confirmStatus: 'Pending Approval', pendingLevel: planApproverLevel, confirmedBy: myProfile?.name || myEmail, confirmedAt: S.TODAY_ISO }));
     }
   };
   const approvePlan = () => { if (iAmApprover) finalizePlan(); };
@@ -389,15 +389,15 @@ export default function MonthlyPlan(){
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
                   <div style={{ fontSize: 12, color: '#666', fontFamily: 'inherit' }}>
                     {draftEdit
-                      ? (nextLevelLabel
-                          ? `Confirming sends this plan to ${S.designationForLevel(nextLevelLabel, admin) || nextLevelLabel} for approval.`
-                          : 'Confirming finalizes this plan — no more senior level is on this project\'s team.')
+                      ? (iQualifyToFinalize
+                          ? 'Confirming finalizes this plan directly — your level already meets the required L2 approval.'
+                          : `Confirming sends this plan to ${S.designationForLevel(planApproverLevel, admin) || planApproverLevel} for approval.`)
                       : 'Awaiting confirmation from the project team.'}
                   </div>
                   {draftEdit && (
                     <button onClick={confirmPlan} disabled={!objectives.length && !activities.length}
                       style={{ fontFamily: "'Helvetica Neue', Arial, sans-serif", background: '#3b5bdb', color: '#fff', border: 'none', borderRadius: 6, padding: '8px 16px', fontSize: 13, cursor: 'pointer', opacity: (!objectives.length && !activities.length) ? 0.4 : 1 }}>
-                      {nextLevelLabel ? 'Confirm & send for approval' : 'Confirm & finalize'}
+                      {iQualifyToFinalize ? 'Confirm & finalize' : 'Confirm & send for approval'}
                     </button>
                   )}
                 </div>
