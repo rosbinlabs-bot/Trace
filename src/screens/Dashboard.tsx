@@ -53,8 +53,10 @@ export default function Dashboard(){
   // Overloaded = at or above 100% utilization (not the >90% Team Management uses elsewhere) — this
   // dashboard's own definition, per the COO's call.
   const overloaded = team.filter((m:any)=>m.util>=100).length;
+  // "Management" is excluded from department utilization -- that department isn't billable/delivery
+  // headcount whose utilization is meaningful to track this way, per direct request.
   const deptTotals: any = {};
-  team.forEach((m:any)=>{ (deptTotals[m.dept]=deptTotals[m.dept]||[]).push(m.util); });
+  team.forEach((m:any)=>{ if (m.dept==='Management') return; (deptTotals[m.dept]=deptTotals[m.dept]||[]).push(m.util); });
   const deptAvg = Object.entries(deptTotals).map(([d,arr]: any) =>[d, Math.round(arr.reduce((a:number,b:number)=>a+b,0)/arr.length)]).sort((a:any,b:any)=>b[1]-a[1]);
 
   // ---- on-time delivery rate — replaces the old unused `margin`/`sla` legacy columns (never

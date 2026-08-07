@@ -52,8 +52,10 @@ export default function Reports(){
   const monthKey = S.CURRENT_MONTH_END.slice(0,7);
   const implementedThisMonth = implementedEntries.filter(e=>e.item.clientAcceptedDate && e.item.clientAcceptedDate.slice(0,7)===monthKey);
 
+  // "Management" is excluded from department utilization -- that department isn't billable/delivery
+  // headcount whose utilization is meaningful to track this way, per direct request.
   const deptGroups: any = {};
-  team.forEach(m=>{ (deptGroups[m.dept]=deptGroups[m.dept]||[]).push(m); });
+  team.forEach(m=>{ if (m.dept==='Management') return; (deptGroups[m.dept]=deptGroups[m.dept]||[]).push(m); });
   const deptStats = Object.entries(deptGroups).map(([d,members]: any) =>({ dept:d, avgUtil: Math.round(members.reduce((a,m)=>a+m.util,0)/members.length), count:members.length })).sort((a,b)=>b.avgUtil-a.avgUtil);
 
   const insights = S.computeInsights({ tree, risks, issues, changes, projects, team });
