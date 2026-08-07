@@ -19,6 +19,10 @@ export default function ProjectMaster(){
   const [isNew, setIsNew] = useState(false);
   const [extChooser, setExtChooser] = useState(false);   // extension With/Without billing chooser open
   const [reqMenuOpen, setReqMenuOpen] = useState(false); // special request popover open
+  // Monthly Fee / Total Collection are sensitive figures visible to everyone who can see this list
+  // (Officer level and up) -- masked by default, revealed with one click via the eye icon in the
+  // column headers. Resets to hidden on every fresh visit/reload rather than remembering a choice.
+  const [showFinancials, setShowFinancials] = useState(false);
 
   const openExisting = (p) => { setForm({ ...p }); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
   const openNew = () => {
@@ -174,7 +178,16 @@ export default function ProjectMaster(){
       <S.Card className="overflow-hidden">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200"><tr>
-            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Consulting Category</S.Th><S.Th>Project Members</S.Th><S.Th>Monthly Fee</S.Th><S.Th>Total Collection / Total Value</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
+            <S.Th>MoU No.</S.Th><S.Th>Project</S.Th><S.Th>Consulting Category</S.Th><S.Th>Project Members</S.Th>
+            <S.Th>
+              <span className="inline-flex items-center gap-1">
+                Monthly Fee
+                <button onClick={(e)=>{e.stopPropagation(); setShowFinancials(v=>!v);}} title={showFinancials?'Hide financial figures':'Show financial figures'} className="text-slate-400 hover:text-slate-600 normal-case font-normal">
+                  <S.Icon name={showFinancials?'eye':'eyeoff'} className="w-3.5 h-3.5"/>
+                </button>
+              </span>
+            </S.Th>
+            <S.Th>Total Collection / Total Value</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const collected = S.projInvoicedRevenue(p, invoices); return (
@@ -191,8 +204,8 @@ export default function ProjectMaster(){
                       {(p.clients||[]).length>1 && <span className="text-slate-400"> +{(p.clients||[]).length-1} more</span>}</div>
                   </div>
                 </S.Td>
-                <S.Td className="whitespace-nowrap">{S.inLakh(p.monthlyFee)}/mo</S.Td>
-                <S.Td className="font-medium whitespace-nowrap" title={`Collected ₹${S.fmt(collected)} of a ₹${S.fmt(S.projTargetRevenue(p))} target`}>{S.inLakh(collected)} / {S.inLakh(S.projTargetRevenue(p))}</S.Td>
+                <S.Td className="whitespace-nowrap">{showFinancials ? `${S.inLakh(p.monthlyFee)}/mo` : '••••••'}</S.Td>
+                <S.Td className="font-medium whitespace-nowrap" title={showFinancials ? `Collected ₹${S.fmt(collected)} of a ₹${S.fmt(S.projTargetRevenue(p))} target` : ''}>{showFinancials ? `${S.inLakh(collected)} / ${S.inLakh(S.projTargetRevenue(p))}` : '•••• / ••••'}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
                 <S.Td>
                   {S.needsExtension(p)
