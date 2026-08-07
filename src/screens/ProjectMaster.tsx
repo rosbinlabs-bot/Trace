@@ -252,7 +252,7 @@ export default function ProjectMaster(){
                 </button>
               </span>
             </S.Th>
-            <S.Th>Revenue Realized</S.Th><S.Th>Status</S.Th><S.Th>Days to Closure</S.Th>
+            <S.Th>Revenue Realized</S.Th><S.Th>Status</S.Th><S.Th>Start Date</S.Th><S.Th>End Date</S.Th><S.Th>Days to Closure</S.Th>
           </tr></thead>
           <tbody className="divide-y divide-slate-100">
             {rows.map(p=>{ const rem = S.remainingLabel(p.end); const owner=(p.clients||[]).find(c=>c.owner); const collected = S.projInvoicedRevenue(p, invoices); return (
@@ -265,13 +265,15 @@ export default function ProjectMaster(){
                     {(() => { const shown = (p.team||[]).filter((t:any)=>t.level==='L3'||t.level==='L4').slice().sort((a:any,b:any)=>S.levelNum(a.level)-S.levelNum(b.level)); return shown.length ? shown.map((t:any,i:number)=>(
                       <div key={i}><span className="text-slate-400">{t.level}:</span> {t.name||'—'}</div>
                     )) : <div className="text-slate-400">No L3/L4 assigned</div>; })()}
-                    <div><span className="text-slate-400">Client Owner:</span> {owner? <span className="text-emerald-700 font-medium">{owner.name}</span> : '—'}
-                      {(p.clients||[]).length>1 && <span className="text-slate-400"> +{(p.clients||[]).length-1} more</span>}</div>
+                    {owner && <div><span className="text-slate-400">Client Owner:</span> <span className="text-emerald-700 font-medium">{owner.name}</span>
+                      {(p.clients||[]).length>1 && <span className="text-slate-400"> +{(p.clients||[]).length-1} more</span>}</div>}
                   </div>
                 </S.Td>
                 <S.Td className="whitespace-nowrap">{showFinancials ? `${S.inLakh(p.monthlyFee)}/mo` : '••••••'}</S.Td>
                 <S.Td className="font-medium whitespace-nowrap" title={showFinancials ? `Collected ₹${S.fmt(collected)} of a ₹${S.fmt(S.projTargetRevenue(p))} target` : ''}>{showFinancials ? `${S.inLakh(collected)} / ${S.inLakh(S.projTargetRevenue(p))}` : '•••• / ••••'}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
+                <S.Td className="whitespace-nowrap">{p.start ? p.start.split('-').reverse().join('/') : '—'}</S.Td>
+                <S.Td className="whitespace-nowrap">{p.end ? p.end.split('-').reverse().join('/') : '—'}</S.Td>
                 <S.Td>
                   {S.needsExtension(p)
                     ? <span className="inline-flex items-center gap-1 text-red-600 font-medium whitespace-nowrap" title="End date passed while still In Progress"><S.Icon name="alert" className="w-3.5 h-3.5"/> Extension needed</span>
