@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import * as S from './shared';
 import * as db from './db';
 import { supabase } from './supabaseClient';
@@ -865,6 +866,7 @@ export default function App() {
           </S.ProjectsDataContext.Provider>
         </S.SettingsContext.Provider>
       </S.AdminDataContext.Provider>
+      <Analytics />
     </BrowserRouter>
   );
 }
