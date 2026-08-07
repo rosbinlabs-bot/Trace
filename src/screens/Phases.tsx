@@ -59,11 +59,37 @@ export default function Phases(){
   // Owner isn't something a user needs to fill in — it defaults to this project's most senior (L1) team member.
   const l1Name = (projMeta.team||[]).find((t:any)=>t.level==='L1')?.name || '';
   const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]); };
-  const removePhase = (id) => { if(!canDelete) return; setPhases(ps => ps.filter(p=>p.id!==id)); };
+  // Removing any of these three is permanent (no trash/undo) and, for a phase or milestone, takes
+  // everything nested under it -- milestones/sub tasks, their assignees, remarks and attachments --
+  // down with it. A single misclick used to do that with no warning at all; now each asks first,
+  // scoped to what that specific level actually destroys.
+  const removePhase = (id) => {
+    if(!canDelete) return;
+    const ph = phases.find((p:any)=>p.id===id);
+    const msCount = ph?.milestones?.length || 0;
+    const stCount = (ph?.milestones||[]).reduce((n:number,m:any)=>n+(m.subtasks?.length||0),0);
+    const detail = msCount ? ` along with its ${msCount} milestone${msCount===1?'':'s'}${stCount?` and ${stCount} sub task${stCount===1?'':'s'}`:''} (assignees, remarks and attachments included)` : '';
+    if (!window.confirm(`Remove phase "${ph?.name||''}"${detail}?\n\nThis cannot be undone.`)) return;
+    setPhases(ps => ps.filter(p=>p.id!==id));
+  };
   const addMs = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]})); };
-  const removeMs = (phId, msId) => { if(!canDelete) return; mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)})); };
+  const removeMs = (phId, msId) => {
+    if(!canDelete) return;
+    const ph = phases.find((p:any)=>p.id===phId);
+    const ms = ph?.milestones?.find((m:any)=>m.id===msId);
+    const stCount = ms?.subtasks?.length || 0;
+    const detail = stCount ? ` along with its ${stCount} sub task${stCount===1?'':'s'} (assignees, remarks and attachments included)` : '';
+    if (!window.confirm(`Remove milestone "${ms?.name||''}"${detail}?\n\nThis cannot be undone.`)) return;
+    mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)}));
+  };
   const addSt = (phId, msId) => { if(readOnly) return; mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]})); };
-  const removeSt = (phId, msId, stId) => { if(!canDelete) return; mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)})); };
+  const removeSt = (phId, msId, stId) => {
+    if(!canDelete) return;
+    const ph = phases.find((p:any)=>p.id===phId);
+    const st = ph?.milestones?.find((m:any)=>m.id===msId)?.subtasks?.find((s:any)=>s.id===stId);
+    if (!window.confirm(`Remove sub task "${st?.name||''}" (assignees, remarks and attachments included)?\n\nThis cannot be undone.`)) return;
+    mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)}));
+  };
 
   // ---- status changes: Not Started / In Progress / On Hold apply immediately; Completed queues review ----
   // Every Completed transition now raises a notification either way: an immediate-finalize notice
