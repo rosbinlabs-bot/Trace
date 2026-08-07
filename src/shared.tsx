@@ -7,7 +7,7 @@ import {
 
 /* ============================ MOCK DATA ============================ */
 export const fmt = (n) => Number(n||0).toLocaleString('en-IN');
-export const inLakh = (n) => '₹' + (Number(n||0)/100000).toFixed(1) + 'L';
+export const inLakh = (n) => '₹' + (Number(n||0)/100000).toFixed(2) + 'L';
 
 // Real project data lives in Supabase (see db.ts / App.tsx) — nothing is seeded here. This stays as
 // an empty array purely as the pre-load default for ProjectsDataContext below.
