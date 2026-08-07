@@ -33,6 +33,15 @@ export default function ProjectMaster(){
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
   const canEdit = form && (role === 'admin' || !form.confirmed);
+  // Financials & Billing is a real Roles & Permissions matrix module (Administration -> Roles &
+  // Permissions shows it as fully editable, defaulting to Officer:None/Manager:View/Admin:Edit/
+  // Super Admin:Full), but nothing in this screen actually checked it -- Monthly Fee, Total
+  // Collection, Payment Receipts and the Billing Tracker were all visible and editable to anyone who
+  // could open a project here at all, regardless of what the matrix said. Wiring it in for real:
+  // View unlocks seeing the figures, Edit (and the existing lock/confirmed rule) unlocks changing them.
+  const financeCap = S.capabilityFor('Financials & Billing', myEmail, admin);
+  const canViewFinancials = S.capAtLeast(financeCap, 'View');
+  const canEditFinancials = !!canEdit && S.capAtLeast(financeCap, 'Edit');
 
   // MoU No. is manually entered and must be unique — validated live, blocks save while invalid.
   const mouError = !form ? '' : (!form.id || !form.id.trim())
@@ -291,7 +300,11 @@ export default function ProjectMaster(){
               <S.SelF label="Priority" value={form.priority} canEdit={canEdit} onChange={v=>setF('priority',v)} opts={PRIORITIES} />
               <S.SelF label="Billing Type" value={form.billing} canEdit={canEdit} onChange={v=>setF('billing',v)} opts={BILLINGS} />
               <S.DateF label="Billing Due Date" value={form.billingDueDate} canEdit={canEdit} onChange={v=>setF('billingDueDate',v)} />
-              <S.NumF label="Monthly Fee (₹)" value={form.monthlyFee} canEdit={canEdit} onChange={v=>setF('monthlyFee',v)} />
+              {canViewFinancials ? (
+                <S.NumF label="Monthly Fee (₹)" value={form.monthlyFee} canEdit={canEditFinancials} onChange={v=>setF('monthlyFee',v)} />
+              ) : (
+                <div><label className="text-xs text-slate-400 block mb-1">Monthly Fee (₹)</label><div className="text-sm text-slate-300 py-1.5">Restricted</div></div>
+              )}
               <S.ReadF label="Completion %">{form.completion}%</S.ReadF>
               <S.NumF label="Onsite Visits (per Month)" value={form.visitsMonth} canEdit={canEdit} onChange={v=>setF('visitsMonth',v)} />
               <S.ReadF label="Total Visits (till date)">{form.visitsTotal}</S.ReadF>
@@ -431,21 +444,33 @@ export default function ProjectMaster(){
               </div>
             </div>
 
-            {/* Revenue auto-calc */}
+            {/* Revenue auto-calc — Monthly Fee / Total Collection / Total Value are gated by the
+                Financials & Billing capability (see canViewFinancials above), same as Payment
+                Receipts and the Billing Tracker below. Total Project Months isn't a financial figure
+                on its own, so it stays visible either way. */}
             <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-3">
               <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Total Project Months</div><div className="text-lg font-bold text-slate-800">{months.toFixed(1)}</div></S.Card>
-              <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Monthly Fee</div><div className="text-lg font-bold text-slate-800">{S.fmt(form.monthlyFee)}</div></S.Card>
-              <S.Card className="p-3 bg-emerald-50"><div className="text-xs text-emerald-600">Total Collection (actual)</div><div className="text-lg font-bold text-emerald-700">₹{S.fmt(S.projInvoicedRevenue(form, invoices))}</div></S.Card>
-              <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
+              {canViewFinancials ? (
+                <>
+                  <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Monthly Fee</div><div className="text-lg font-bold text-slate-800">{S.fmt(form.monthlyFee)}</div></S.Card>
+                  <S.Card className="p-3 bg-emerald-50"><div className="text-xs text-emerald-600">Total Collection (actual)</div><div className="text-lg font-bold text-emerald-700">₹{S.fmt(S.projInvoicedRevenue(form, invoices))}</div></S.Card>
+                  <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
+                </>
+              ) : (
+                <S.Card className="p-3 bg-slate-50 col-span-3 flex items-center justify-center text-xs text-slate-400">You don't have access to view financial figures for this project.</S.Card>
+              )}
             </div>
 
+            {canViewFinancials && (<>
             {/* Payment Receipts — Due Date / Amount / Receipt Status / Remarks; editable until the
                 tick button confirms a row as received, which locks it and writes a matching row
-                into the Billing Tracker below (and into revenue). */}
+                into the Billing Tracker below (and into revenue). Requires Financials & Billing
+                Edit+ (canEditFinancials) to add/change/confirm/remove a row -- View-only accounts
+                see the same table but every control is disabled. */}
             <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
               <div className="flex justify-between items-start gap-3 mb-2">
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide shrink-0">Payment Receipts</span>
-                {!isNew && <button onClick={addReceipt} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap shrink-0">+ Add Payment Receipt</button>}
+                {!isNew && canEditFinancials && <button onClick={addReceipt} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap shrink-0">+ Add Payment Receipt</button>}
               </div>
               <div className="text-[11px] text-slate-400 mb-2">Tick ✓ once payment is actually received — that locks the row and logs it to the Billing Tracker &amp; revenue.</div>
               {(form.paymentReceipts||[]).length>0 ? (
@@ -457,20 +482,20 @@ export default function ProjectMaster(){
                       <th className="text-left font-medium py-1.5 pr-2 w-[70px]">Confirm</th><th className="w-[28px]"></th>
                     </tr></thead>
                     <tbody>
-                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; return (
+                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; const locked = confirmed || !canEditFinancials; return (
                         <tr key={r.id} className={`border-t border-slate-200 ${confirmed?'bg-emerald-50/40':''}`}>
                           <td className="py-1.5 pr-2 align-middle">
-                            <input type="date" value={r.due} disabled={confirmed} onChange={e=>setReceipt(i,'due',e.target.value)}
-                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${confirmed?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
+                            <input type="date" value={r.due} disabled={locked} onChange={e=>setReceipt(i,'due',e.target.value)}
+                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${locked?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
                           </td>
                           <td className="pr-2 align-middle">
-                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={r.amount===''||r.amount==null?'':String(r.amount)} disabled={confirmed}
+                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={r.amount===''||r.amount==null?'':String(r.amount)} disabled={locked}
                               onChange={e=>{ const d=e.target.value.replace(/[^0-9]/g,''); setReceipt(i,'amount', d===''?'':Number(d)); }}
-                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${confirmed?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
+                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${locked?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
                           </td>
                           <td className="pr-2 align-middle">
                             <div className="h-7 flex items-center">
-                              {confirmed ? <S.Badge cls="bg-emerald-100 text-emerald-700">Received</S.Badge> : (
+                              {confirmed ? <S.Badge cls="bg-emerald-100 text-emerald-700">Received</S.Badge> : !canEditFinancials ? <span className="text-slate-500">{r.status}</span> : (
                                 <select value={r.status} onChange={e=>setReceipt(i,'status',e.target.value)}
                                   className="h-7 w-full border border-slate-200 bg-white rounded px-2 text-xs leading-none focus:outline-none focus:border-brand-400">
                                   {RECEIPT_STATUSES.map(o=><option key={o}>{o}</option>)}
@@ -479,8 +504,8 @@ export default function ProjectMaster(){
                             </div>
                           </td>
                           <td className="pr-2 align-middle">
-                            <input value={r.remarks} disabled={confirmed} onChange={e=>setReceipt(i,'remarks',e.target.value)} placeholder="Remarks"
-                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${confirmed?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
+                            <input value={r.remarks} disabled={locked} onChange={e=>setReceipt(i,'remarks',e.target.value)} placeholder="Remarks"
+                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${locked?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
                           </td>
                           <td className="pr-2 align-middle">
                             <div className="h-7 flex items-center">
@@ -488,16 +513,16 @@ export default function ProjectMaster(){
                                 <div className="inline-flex items-center text-emerald-600" title={`Confirmed by ${r.confirmedBy||'—'} on ${new Date(r.confirmedAt).toLocaleString()}`}>
                                   <S.Icon name="checkcircle" className="w-4 h-4"/>
                                 </div>
-                              ) : (
+                              ) : canEditFinancials ? (
                                 <button onClick={()=>confirmReceipt(i)} title="Mark as received" className="w-6 h-6 rounded-full border border-emerald-300 text-emerald-500 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 flex items-center justify-center transition-colors">
                                   <S.Icon name="checkcircle" className="w-4 h-4"/>
                                 </button>
-                              )}
+                              ) : null}
                             </div>
                           </td>
                           <td className="align-middle">
                             <div className="h-7 flex items-center">
-                              {!confirmed && <button onClick={()=>removeReceipt(i)} className="text-red-400 hover:text-red-600">✕</button>}
+                              {!confirmed && canEditFinancials && <button onClick={()=>removeReceipt(i)} className="text-red-400 hover:text-red-600">✕</button>}
                             </div>
                           </td>
                         </tr>
@@ -514,7 +539,9 @@ export default function ProjectMaster(){
                 automatically: either from ticking a Payment Receipt as received above, or from the
                 database's generate_monthly_invoices cron job (see the "auto" badge), which fires on
                 the same day-of-month every month based on the project's Billing Due Date. Nothing is
-                entered here directly. */}
+                entered here directly. Viewing this section requires Financials & Billing View+
+                (already gated by the canViewFinancials wrapper around this whole block); removing a
+                row stays Super-Admin-only regardless of the matrix, same as before. */}
             <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
               <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Billing Tracker</span>
               <div className="text-[11px] text-slate-400 mb-2">Read-only history of confirmed receipts &amp; auto-generated invoices — timestamped when logged.</div>
@@ -555,6 +582,7 @@ export default function ProjectMaster(){
                 <div className="text-xs text-slate-400">{isNew ? 'Save the project first — invoices appear once a payment receipt is confirmed.' : 'No invoices logged yet — confirm a Payment Receipt above to log one.'}</div>
               )}
             </div>
+            </>)}
 
             {/* Actions */}
             <div className="mt-5 pt-4 border-t border-slate-100 flex items-end justify-between gap-3 flex-wrap">
