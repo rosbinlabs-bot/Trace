@@ -76,6 +76,13 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   }, []);
   const displayName = myProfile?.name || email;
   const initials = displayName.split(/\s+/).map((x:string)=>x[0]).filter(Boolean).slice(0,2).join('').toUpperCase() || 'U';
+  // RoleContext's `role` is a collapsed 5-value bucket used for routing/gating (both Admin and Super
+  // Admin permission levels resolve to role==='admin' -- see S.deriveRole), so it isn't precise enough
+  // to show someone their actual standing. For display, show their real designation (Strategic Lead,
+  // Project Head, Project Manager, Associate) plus their real permission level (Officer/Manager/Admin/
+  // Super Admin, via S.effectivePermissionLevel) instead -- that's what actually drives their access.
+  const myDesignation = role==='client' ? 'Client' : (myProfile?.designation || S.ROLE_LABELS[role] || role);
+  const myPermLevel = role==='client' ? 'Client' : (S.effectivePermissionLevel(myProfile, admin) || S.ROLE_LABELS[role] || role);
   React.useEffect(() => {
     try {
       typeof localStorage !== 'undefined' && localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -165,7 +172,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold shrink-0">{initials}</div>
                   <span className="hidden sm:block text-left leading-tight">
                     <span className="block text-xs font-medium text-slate-700 truncate max-w-[140px]">{displayName}</span>
-                    <span className="block text-[10px] text-slate-400">{S.ROLE_LABELS[role]||role}</span>
+                    <span className="block text-[10px] text-slate-400">{myDesignation}</span>
                   </span>
                 </button>
                 {menuOpen && (
@@ -173,7 +180,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                     <div className="px-2 py-1.5 mb-1 border-b border-slate-100">
                       <div className="text-sm font-medium text-slate-800 truncate">{displayName}</div>
                       <div className="text-xs text-slate-400 truncate">{email}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5">{myProfile?.designation||'—'} · {S.ROLE_LABELS[role]||role}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">{myDesignation}{role!=='client' ? ` · ${myPermLevel}` : ''}</div>
                     </div>
                     <button onClick={onSignOut} className="w-full text-left text-sm text-red-600 hover:bg-red-50 rounded-lg px-2 py-1.5">Sign Out</button>
                   </div>
