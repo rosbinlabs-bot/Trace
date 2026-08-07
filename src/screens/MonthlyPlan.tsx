@@ -212,6 +212,13 @@ export default function MonthlyPlan(){
       headStyles: { fillColor: [189, 215, 238], textColor: 0 },
       columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 24 } },
     });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    doc.setFontSize(9);
+    doc.setTextColor(150);
+    doc.text('HSJB Business Solutions', pageWidth / 2, pageHeight - 10, { align: 'center' });
+
     doc.save(`Monthly-Plan-${(projMeta.name || 'project').replace(/[^a-z0-9]+/gi, '-')}-${monthKey}.pdf`);
   };
 
@@ -408,6 +415,10 @@ export default function MonthlyPlan(){
                   Confirmed by {planData.confirmedBy || '—'}{planData.confirmedAt ? ` on ${fmtDDMY(planData.confirmedAt)}` : ''}, approved and finalized by {planData.approvedBy || '—'}{planData.approvedAt ? ` on ${fmtDDMY(planData.approvedAt)}` : ''}. Only Admin/Super Admin can edit this plan now.
                 </div>
               )}
+            </div>
+
+            <div style={{ textAlign: 'center', fontSize: 11, color: '#999', marginTop: 24, paddingTop: 12, borderTop: '1px solid #eee', fontFamily: 'inherit' }}>
+              HSJB Business Solutions
             </div>
           </div>
         </>
