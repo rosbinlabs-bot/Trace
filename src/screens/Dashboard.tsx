@@ -94,10 +94,9 @@ export default function Dashboard(){
     if (!mss.length) return null;
     return [...mss].sort((a:any,b:any)=>a.deadline<b.deadline?-1:1)[0];
   };
-  // Whoever on THIS project's team sits at the level Administration -> Roles & Permissions maps to
-  // "Project Manager" (admin-editable, so this stays correct even if that mapping isn't L3 for a
-  // given tenant) — replaces the old "Lead" column, which only ever showed the L1 (Strategic Lead).
-  const projectManagerFor = (p:any) => (p.team||[]).find((t:any)=>S.designationForLevel(t.level, admin)==='Project Manager')?.name || '—';
+  // Project Manager = operational lead / primary responsible person for a project (per the COO) —
+  // S.projectManagerName, shared with Implementation Tracker and Reports so all three agree.
+  const projectManagerFor = (p:any) => S.projectManagerName(p, admin) || '—';
 
   const risksOpenCount = openRisks.length;
   const issuesOpen = issues.filter((i:any)=>i.status==='Open'||i.status==='In Progress');
@@ -263,7 +262,7 @@ export default function Dashboard(){
                     <span className="text-xs text-slate-400 truncate">{p.client}</span>
                   </div>
                   <div className="flex items-center gap-3 text-xs whitespace-nowrap">
-                    <span className="text-slate-500">Lead: <b className="text-slate-700">{S.projectLeadName(p)||'—'}</b></span>
+                    <span className="text-slate-500">PM: <b className="text-slate-700">{S.projectManagerName(p, admin)||'—'}</b></span>
                     <span className="text-slate-400">Due {p.billingDueDate}</span>
                     <span className={`font-medium ${d<0?'text-red-600':'text-amber-600'}`}>{d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`in ${d}d`}</span>
                   </div>

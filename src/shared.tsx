@@ -133,6 +133,13 @@ export const isOnProjectTeam = (project: any, name: string): boolean => (project
 // display is needed (Dashboard billing widget, Reports portfolio table, Implementation Tracker
 // summary) in place of the old fixed "Project Manager" field.
 export const projectLeadName = (project: any): string => (project?.team||[]).find((t:any)=>t.level==='L1')?.name || '';
+// The Project Manager is the operational lead and primary responsible person for a project — every
+// "who's in charge here" display (Dashboard, Implementation Tracker, Reports) reads this rather than
+// projectLeadName/L1 (Strategic Lead), which stays purely an approval-chain concept (Milestones/
+// Phases still need L1 sign-off — that's unchanged). Looked up the same way as the Project Health
+// Matrix's "Project Manager" column: whoever on this project's team sits at the level Administration
+// -> Roles & Permissions currently maps to the "Project Manager" designation.
+export const projectManagerName = (project: any, admin?: any): string => (project?.team||[]).find((t:any)=>designationForLevel(t.level, admin)==='Project Manager')?.name || '';
 
 export const buildRoster = (project: any, admin?: any) => (project?.team||[]).map((t:any) => {
   const designation = admin ? designationForLevel(t.level, admin) : '';

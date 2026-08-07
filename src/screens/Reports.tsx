@@ -8,6 +8,7 @@ export default function Reports(){
   const { team } = React.useContext(S.TeamDataContext);
   const { deliverables } = React.useContext(S.DeliverablesDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
+  const { admin } = React.useContext(S.AdminDataContext);
   const [openGroup, setOpenGroup] = useState(Object.keys(S.REPORT_CATALOG)[0]);
   const [selectedReport, setSelectedReport] = useState('portfolio');
 
@@ -103,7 +104,7 @@ export default function Reports(){
             <tr key={p.id}>
               <S.Td className="font-medium">{p.name}</S.Td>
               <S.Td>{p.client}</S.Td>
-              <S.Td>{S.projectLeadName(p)||'—'}</S.Td>
+              <S.Td>{S.projectManagerName(p, admin)||'—'}</S.Td>
               <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
               <S.Td>
                 <div className="flex items-center gap-2">
@@ -113,7 +114,7 @@ export default function Reports(){
               </S.Td>
               <S.Td><S.Badge cls={S.statusColor(p.risk==='High'?'At Risk':'In Progress')}>{p.risk}</S.Badge></S.Td>
             </tr>
-          )), ['Project','Client','Lead','Status','Milestone Completion','Risk']
+          )), ['Project','Client','Project Manager','Status','Milestone Completion','Risk']
         );
       case 'revenue':
         return (
