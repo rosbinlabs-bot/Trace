@@ -3,6 +3,19 @@ import * as S from '../shared';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
+// Visual model matches a real client-facing monthly plan document (confirmed via mockup, see
+// project memory): a printed-page look with two tables --
+//   1. Major Objectives -- a short strategic summary for the month, with report due dates
+//      in-house and at the client site. Entered by hand; not derived from anything.
+//   2. A day-by-day table (Date / Day / Activity / Onsite-Offsite / Status) covering every
+//      calendar day of the month, weekends blocked out unless the team explicitly logs something
+//      on one. This is what previously rendered as a grouped-by-date agenda -- restyled here to
+//      the document layout, with the old "Responsible Person" column swapped for Status.
+const cellBase: React.CSSProperties = { border: '1px solid #000', padding: '6px 8px', verticalAlign: 'top', fontSize: 12 };
+const headOrange: React.CSSProperties = { ...cellBase, background: '#ED7D31', fontWeight: 'bold', textAlign: 'center' };
+const headBlue: React.CSSProperties = { ...cellBase, background: '#BDD7EE', fontWeight: 'bold', textAlign: 'center' };
+const plainField: React.CSSProperties = { border: 'none', borderBottom: '1px dotted #bbb', background: 'transparent', fontFamily: 'inherit', fontSize: 12, width: '100%', outline: 'none', padding: 0, color: 'inherit' };
+
 export default function MonthlyPlan(){
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { tree } = React.useContext(S.PhaseDataContext);
@@ -13,30 +26,32 @@ export default function MonthlyPlan(){
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
-  const projMeta = projects.find((p:any)=>p.id===activeProj) || {};
+  const projMeta = projects.find((p: any) => p.id === activeProj) || {};
   const [monthKey, setMonthKey] = useState(S.monthKeyOf());
 
   // Same edit gate Phase Management uses (Phases.tsx's `readOnly`): Admin/Super Admin always gets
   // full edit rights; everyone else needs to actually be on THIS project's team. A Client never
   // reaches this screen at all -- Administration -> Roles & Permissions has Client:'None' on Phase
   // Management, and this route is gated on that same capability (see App.tsx).
-  const readOnly = role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
+  const readOnly = role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
   const canEdit = !readOnly;
 
   const phases = tree[activeProj] || [];
-  const rows: any[] = (plan[activeProj] && plan[activeProj][monthKey]) || [];
   const hasPlan = !!(plan[activeProj] && plan[activeProj][monthKey]);
-  const setRows = (updater: any) => setPlan((pl: any) => {
+  const planData = (plan[activeProj] && plan[activeProj][monthKey]) || { objectives: [], activities: [] };
+  const objectives: any[] = planData.objectives || [];
+  const activities: any[] = planData.activities || [];
+  const setPlanData = (updater: any) => setPlan((pl: any) => {
     const forProj = pl[activeProj] || {};
-    const prevRows = forProj[monthKey] || [];
-    const nextRows = typeof updater === 'function' ? updater(prevRows) : updater;
-    return { ...pl, [activeProj]: { ...forProj, [monthKey]: nextRows } };
+    const prev = forProj[monthKey] || { objectives: [], activities: [] };
+    const next = typeof updater === 'function' ? updater(prev) : updater;
+    return { ...pl, [activeProj]: { ...forProj, [monthKey]: next } };
   });
 
   // Pull every Milestone/Sub Task across this project's Phase Management tree whose deadline falls
-  // in the viewed month -- the "major deliverables for the month" -- and add one row per item not
-  // already on the plan (tracked by sourceId). A re-sync never duplicates or overwrites a row already
-  // here, so editing a synced row's activity text/onsite/status sticks even after syncing again.
+  // in the viewed month -- the "major deliverables for the month" -- and add one activity per item
+  // not already on the plan (tracked by sourceId). A re-sync never duplicates or overwrites an
+  // activity already here, so an edit made after syncing sticks even after syncing again.
   const syncFromPhases = () => {
     if (!canEdit) return;
     const found: any[] = [];
@@ -52,20 +67,22 @@ export default function MonthlyPlan(){
         });
       });
     });
-    setRows((rs: any[]) => {
-      const have = new Set(rs.map((r) => r.sourceId).filter(Boolean));
+    setPlanData((pd: any) => {
+      const acts = pd.activities || [];
+      const have = new Set(acts.map((r: any) => r.sourceId).filter(Boolean));
       const fresh = found.filter((f) => !have.has(f.sourceId)).map((f) => ({
         id: S.uid('MP'), date: f.date, activity: f.activity, phase: f.phase,
         sourceId: f.sourceId, sourceType: f.sourceType, onsite: 'Offsite',
-        deliveryStatus: f.done ? 'Done' : 'Pending',
+        status: f.done ? 'Done' : 'Pending',
       }));
-      return fresh.length ? [...rs, ...fresh] : rs;
+      return fresh.length ? { ...pd, activities: [...acts, ...fresh] } : pd;
     });
   };
 
-  // Auto-fill: the first time this project/month combination is opened (no plan record for it yet),
-  // seed it straight from Phase Management -- matches "automatically filled from the phases" in the
-  // request. Runs once per project/month (hasPlan flips true right after, even if it turned out empty).
+  // Auto-fill: the first time this project/month combination is opened (no plan record for it
+  // yet), seed its activities straight from Phase Management -- matches "automatically filled from
+  // the phases" in the original request. Major Objectives are never auto-filled -- there's nothing
+  // in Phase Management that corresponds to a strategic monthly objective, that's entered by hand.
   React.useEffect(() => {
     if (canEdit && !hasPlan && activeProj) syncFromPhases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -77,61 +94,147 @@ export default function MonthlyPlan(){
     setMonthKey(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
   };
 
+  const addRef = React.useRef<HTMLInputElement>(null);
   const [newDate, setNewDate] = useState(monthKey === S.monthKeyOf() ? S.TODAY_ISO : `${monthKey}-01`);
   const [newActivity, setNewActivity] = useState('');
   const [newOnsite, setNewOnsite] = useState('Offsite');
   React.useEffect(() => { setNewDate(monthKey === S.monthKeyOf() ? S.TODAY_ISO : `${monthKey}-01`); }, [monthKey]);
 
-  const addRow = () => {
+  const jumpToAdd = (dateIso: string) => {
+    if (!canEdit) return;
+    setNewDate(dateIso);
+    requestAnimationFrame(() => addRef.current?.focus());
+  };
+  const addActivity = () => {
     if (!canEdit || !newActivity.trim() || !newDate) return;
-    setRows((rs: any[]) => [...rs, {
+    setPlanData((pd: any) => ({ ...pd, activities: [...(pd.activities || []), {
       id: S.uid('MP'), date: newDate, activity: newActivity.trim(), onsite: newOnsite,
-      deliveryStatus: 'Pending', sourceId: null, sourceType: 'Custom', phase: '',
-    }]);
+      status: 'Pending', sourceId: null, sourceType: 'Custom', phase: '',
+    }] }));
     setNewActivity('');
   };
-  const removeRow = (id: string) => { if (canEdit) setRows((rs: any[]) => rs.filter((r) => r.id !== id)); };
-  const patchRow = (id: string, patch: any) => { if (canEdit) setRows((rs: any[]) => rs.map((r) => r.id === id ? { ...r, ...patch } : r)); };
+  const removeActivity = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).filter((r: any) => r.id !== id) })); };
+  const patchActivity = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).map((r: any) => r.id === id ? { ...r, ...patch } : r) })); };
 
-  const fmtDate = (iso: string) => {
+  const addObjective = () => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: [...(pd.objectives || []), { id: S.uid('OBJ'), text: '', dueInHouse: '', dueClient: '' }] })); };
+  const removeObjective = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).filter((o: any) => o.id !== id) })); };
+  const patchObjective = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).map((o: any) => o.id === id ? { ...o, ...patch } : o) })); };
+
+  const fmtDDMY = (iso: string) => {
     if (!iso) return '—';
-    const d = new Date(iso + 'T00:00:00');
-    if (isNaN(d.getTime())) return iso;
-    return d.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short' });
+    const [y, m, d] = iso.split('-').map(Number);
+    if (!y || !m || !d) return '—';
+    return `${d}-${m}-${String(y).slice(2)}`;
   };
 
-  const byDate: Record<string, any[]> = {};
-  rows.forEach((r) => { const k = r.date || '__unscheduled__'; (byDate[k] = byDate[k] || []).push(r); });
-  const dateKeys = Object.keys(byDate).filter((k) => k !== '__unscheduled__').sort();
-  if (byDate['__unscheduled__']) dateKeys.unshift('__unscheduled__');
+  const [y, m] = monthKey.split('-').map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const isWeekend = (day: number) => { const dow = new Date(y, m - 1, day).getDay(); return dow === 0 || dow === 6; };
+  const dayName = (day: number) => new Date(y, m - 1, day).toLocaleDateString('en-US', { weekday: 'long' });
 
-  const total = rows.length;
-  const doneCount = rows.filter((r) => r.deliveryStatus === 'Done').length;
-  const pendingCount = rows.filter((r) => r.deliveryStatus === 'Pending').length;
-  const onsiteCount = rows.filter((r) => r.onsite === 'Onsite').length;
+  const total = activities.length;
+  const onsiteCount = activities.filter((r: any) => r.onsite === 'Onsite').length;
+  const doneCount = activities.filter((r: any) => r.status === 'Done').length;
+  const pendingCount = activities.filter((r: any) => r.status === 'Pending').length;
 
   const exportPdf = () => {
-    const doc = new jsPDF();
+    const doc: any = new jsPDF();
     doc.setFontSize(14);
     doc.text(`Monthly Plan — ${projMeta.name || ''}`, 14, 15);
     doc.setFontSize(10);
     doc.setTextColor(110);
     doc.text(`${S.monthLabel(monthKey)}${projMeta.client ? ' · ' + projMeta.client : ''}`, 14, 21);
-    const sorted = [...rows].sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+
+    let nextY = 27;
+    if (objectives.length) {
+      autoTable(doc, {
+        startY: nextY,
+        head: [['Sl. No', 'Major objectives', 'Report submitted in-house', 'Report submitted at client site']],
+        body: objectives.map((o: any, i: number) => [i + 1, o.text, fmtDDMY(o.dueInHouse), fmtDDMY(o.dueClient)]),
+        styles: { fontSize: 9, cellPadding: 2.5 },
+        headStyles: { fillColor: [237, 125, 49], textColor: 0 },
+      });
+      nextY = doc.lastAutoTable.finalY + 8;
+    }
+
+    const dayBody: any[] = [];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const dateIso = `${monthKey}-${String(day).padStart(2, '0')}`;
+      const lines = activities.filter((r: any) => r.date === dateIso);
+      if (isWeekend(day) && !lines.length) { dayBody.push([day, dayName(day), '', '', '']); continue; }
+      if (!lines.length) { dayBody.push([day, dayName(day), '', '', '']); continue; }
+      lines.forEach((r: any, i: number) => dayBody.push([i === 0 ? day : '', i === 0 ? dayName(day) : '', r.activity, r.onsite, r.status]));
+    }
     autoTable(doc, {
-      startY: 27,
-      head: [['Date', 'Activity', 'Onsite / Offsite', 'Delivery Status']],
-      body: sorted.map((r) => [r.date ? fmtDate(r.date) : 'No date set', r.activity, r.onsite, r.deliveryStatus]),
-      styles: { fontSize: 9, cellPadding: 2.5 },
-      headStyles: { fillColor: [59, 91, 219], textColor: 255 },
-      columnStyles: { 0: { cellWidth: 32 } },
+      startY: nextY,
+      head: [['Date', 'Day', 'Activity', 'Onsite / Offsite', 'Status']],
+      body: dayBody,
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [189, 215, 238], textColor: 0 },
+      columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 24 } },
     });
     doc.save(`Monthly-Plan-${(projMeta.name || 'project').replace(/[^a-z0-9]+/gi, '-')}-${monthKey}.pdf`);
   };
 
+  // ---- day-by-day table rows ----
+  const dayRows: React.ReactNode[] = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateIso = `${monthKey}-${String(day).padStart(2, '0')}`;
+    const lines = activities.filter((r: any) => r.date === dateIso);
+    const weekend = isWeekend(day);
+    if (weekend && !lines.length) {
+      dayRows.push(
+        <tr key={dateIso} style={{ background: '#ED7D31' }}>
+          <td style={{ ...cellBase, textAlign: 'center' }}>{day}</td>
+          <td style={cellBase}>{dayName(day)}</td>
+          <td style={cellBase} colSpan={3}></td>
+        </tr>
+      );
+      continue;
+    }
+    const lineCount = Math.max(lines.length, 1);
+    for (let i = 0; i < lineCount; i++) {
+      const r = lines[i];
+      dayRows.push(
+        <tr key={dateIso + '-' + i}>
+          {i === 0 && <td rowSpan={lineCount} style={{ ...cellBase, textAlign: 'center' }}>{day}</td>}
+          {i === 0 && <td rowSpan={lineCount} style={cellBase}>{dayName(day)}</td>}
+          {r ? (
+            <>
+              <td style={cellBase}>{canEdit ? <textarea rows={2} style={{ ...plainField, resize: 'vertical' }} value={r.activity} onChange={(e) => patchActivity(r.id, { activity: e.target.value })} /> : r.activity}</td>
+              <td style={{ ...cellBase, textAlign: 'center', color: r.onsite === 'Onsite' ? '#C55A11' : '#888' }}>
+                {canEdit ? (
+                  <select style={{ ...plainField, textAlign: 'center', color: r.onsite === 'Onsite' ? '#C55A11' : '#888' }} value={r.onsite} onChange={(e) => patchActivity(r.id, { onsite: e.target.value })}>
+                    {S.ONSITE_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
+                  </select>
+                ) : r.onsite}
+              </td>
+              <td style={{ ...cellBase, textAlign: 'center' }}>
+                {canEdit ? (
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 4, justifyContent: 'center' }}>
+                    <select className={S.deliveryStatusColor(r.status)} style={{ ...plainField, width: 'auto', textAlign: 'center', borderRadius: 4, padding: '1px 4px' }} value={r.status} onChange={(e) => patchActivity(r.id, { status: e.target.value })}>
+                      {S.DELIVERY_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
+                    </select>
+                    <button onClick={() => removeActivity(r.id)} title="Remove" style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999', fontSize: 12, lineHeight: 1 }}>×</button>
+                  </span>
+                ) : <S.Badge cls={S.deliveryStatusColor(r.status)}>{r.status}</S.Badge>}
+              </td>
+            </>
+          ) : (
+            <>
+              <td style={{ ...cellBase, color: '#bbb', fontStyle: 'italic', cursor: canEdit ? 'pointer' : 'default' }} onClick={() => jumpToAdd(dateIso)}>{canEdit ? 'Click to add…' : '—'}</td>
+              <td style={cellBase}></td>
+              <td style={cellBase}></td>
+            </>
+          )}
+        </tr>
+      );
+    }
+  }
+
   return (
     <div>
-      <S.SectionTitle sub="Each project's day-by-day delivery agenda for the month — major deliverables auto-filled from Phase Management, plus Onsite/Offsite and delivery status you track here.">Monthly Plan</S.SectionTitle>
+      <S.SectionTitle sub="A client-ready monthly engagement plan per project — major objectives plus a day-by-day activity table, auto-filled from Phase Management and editable by the team.">Monthly Plan</S.SectionTitle>
 
       <div className="flex gap-1 border-b border-slate-200 mb-3 overflow-x-auto">
         {projects.map((p: any) => (
@@ -154,7 +257,7 @@ export default function MonthlyPlan(){
             </div>
             <div className="flex items-center gap-2">
               {canEdit && <button onClick={syncFromPhases} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"><S.Icon name="refresh" className="w-3.5 h-3.5" />Sync from Phases</button>}
-              <button onClick={exportPdf} disabled={!rows.length} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"><S.Icon name="filepdf" className="w-3.5 h-3.5" />Export PDF</button>
+              <button onClick={exportPdf} disabled={!activities.length && !objectives.length} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"><S.Icon name="filepdf" className="w-3.5 h-3.5" />Export PDF</button>
             </div>
           </div>
 
@@ -169,70 +272,59 @@ export default function MonthlyPlan(){
 
           {canEdit && (
             <div className="flex flex-wrap items-center gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
-              <input type="date" className={S.gInp + ' w-auto'} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+              <input ref={addRef} type="date" className={S.gInp + ' w-auto'} value={newDate} onChange={(e) => setNewDate(e.target.value)} />
               <input placeholder="Activity description" className={S.gInp + ' flex-1 min-w-[180px]'} value={newActivity}
-                onChange={(e) => setNewActivity(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addRow(); }} />
+                onChange={(e) => setNewActivity(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addActivity(); }} />
               <select className={S.gInp + ' w-auto'} value={newOnsite} onChange={(e) => setNewOnsite(e.target.value)}>
                 {S.ONSITE_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
               </select>
-              <button onClick={addRow} disabled={!newActivity.trim()} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Activity</button>
+              <button onClick={addActivity} disabled={!newActivity.trim()} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Activity</button>
             </div>
           )}
 
-          <S.Card className="p-5">
-            {dateKeys.length === 0 && (
-              <div className="text-sm text-slate-400 text-center py-10">
-                No activities planned for {S.monthLabel(monthKey)} yet.{canEdit && ' Add one above, or use "Sync from Phases".'}
-              </div>
-            )}
-            {dateKeys.map((k) => (
-              <div key={k} className="mb-4 last:mb-0">
-                <div className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center gap-2">
-                  {k === '__unscheduled__' ? 'No Date Set' : fmtDate(k)}
-                  <span className="text-slate-300 font-normal normal-case">({byDate[k].length})</span>
-                </div>
-                <div className="border border-slate-100 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <S.Th>Date</S.Th><S.Th>Activity</S.Th><S.Th>Source</S.Th><S.Th>Onsite / Offsite</S.Th><S.Th>Delivery Status</S.Th>{canEdit && <th className="w-8"></th>}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {byDate[k].map((r) => (
-                        <tr key={r.id}>
-                          <S.Td className="whitespace-nowrap">
-                            {canEdit ? <input type="date" className={S.gInp + ' w-auto'} value={r.date || ''} onChange={(e) => patchRow(r.id, { date: e.target.value })} /> : (r.date ? fmtDate(r.date) : '—')}
-                          </S.Td>
-                          <S.Td>
-                            {canEdit ? <input className={S.gInp} value={r.activity} onChange={(e) => patchRow(r.id, { activity: e.target.value })} /> : r.activity}
-                          </S.Td>
-                          <S.Td>
-                            <span title={r.phase ? `Phase: ${r.phase}` : ''} className="text-xs text-slate-400 whitespace-nowrap">{r.sourceType || 'Custom'}</span>
-                          </S.Td>
-                          <S.Td>
-                            {canEdit ? (
-                              <select className={S.gInp + ' w-auto ' + S.onsiteStatusColor(r.onsite)} value={r.onsite} onChange={(e) => patchRow(r.id, { onsite: e.target.value })}>
-                                {S.ONSITE_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
-                              </select>
-                            ) : <S.Badge cls={S.onsiteStatusColor(r.onsite)}>{r.onsite}</S.Badge>}
-                          </S.Td>
-                          <S.Td>
-                            {canEdit ? (
-                              <select className={S.gInp + ' w-auto ' + S.deliveryStatusColor(r.deliveryStatus)} value={r.deliveryStatus} onChange={(e) => patchRow(r.id, { deliveryStatus: e.target.value })}>
-                                {S.DELIVERY_STATUS_OPTS.map((o) => <option key={o}>{o}</option>)}
-                              </select>
-                            ) : <S.Badge cls={S.deliveryStatusColor(r.deliveryStatus)}>{r.deliveryStatus}</S.Badge>}
-                          </S.Td>
-                          {canEdit && <S.Td><button onClick={() => removeRow(r.id)} className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-4 h-4" /></button></S.Td>}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            ))}
-          </S.Card>
+          <div style={{ background: '#fff', color: '#1a1a1a', border: '1px solid #d0d0d0', borderRadius: 2, padding: '28px 32px', fontFamily: "Georgia, 'Times New Roman', serif", maxWidth: 900, margin: '0 auto' }}>
+            <div style={{ fontSize: 14, fontWeight: 'bold', textAlign: 'center', marginBottom: 16 }}>
+              Monthly Plan — {projMeta.name || 'Project'} — {S.monthLabel(monthKey)}
+            </div>
+
+            <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
+              <thead>
+                <tr>
+                  <th style={{ ...headOrange, width: 44 }}>Sl. No</th>
+                  <th style={{ ...headOrange, textAlign: 'left' }}>Major objectives</th>
+                  <th style={{ ...headOrange, width: 120 }}>Report submitted in-house</th>
+                  <th style={{ ...headOrange, width: 120 }}>Report submitted at client site</th>
+                  {canEdit && <th style={{ ...headOrange, width: 24 }}></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {objectives.map((o: any, i: number) => (
+                  <tr key={o.id}>
+                    <td style={{ ...cellBase, textAlign: 'center' }}>{i + 1}</td>
+                    <td style={cellBase}>{canEdit ? <input style={plainField} placeholder="Objective" value={o.text} onChange={(e) => patchObjective(o.id, { text: e.target.value })} /> : o.text}</td>
+                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueInHouse || ''} onChange={(e) => patchObjective(o.id, { dueInHouse: e.target.value })} /> : fmtDDMY(o.dueInHouse)}</td>
+                    <td style={{ ...cellBase, textAlign: 'center' }}>{canEdit ? <input type="date" style={{ ...plainField, textAlign: 'center' }} value={o.dueClient || ''} onChange={(e) => patchObjective(o.id, { dueClient: e.target.value })} /> : fmtDDMY(o.dueClient)}</td>
+                    {canEdit && <td style={{ ...cellBase, textAlign: 'center' }}><button onClick={() => removeObjective(o.id)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#999' }}>×</button></td>}
+                  </tr>
+                ))}
+                {!objectives.length && <tr><td colSpan={canEdit ? 5 : 4} style={{ ...cellBase, textAlign: 'center', color: '#999', fontStyle: 'italic' }}>No major objectives added yet.</td></tr>}
+              </tbody>
+            </table>
+            {canEdit && <button onClick={addObjective} style={{ fontSize: 12, color: '#C55A11', background: 'none', border: 'none', cursor: 'pointer', marginBottom: 22, padding: 0 }}>+ Add objective</button>}
+
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr>
+                  <th style={{ ...headBlue, width: 34 }}>Date</th>
+                  <th style={{ ...headBlue, width: 90 }}>Day</th>
+                  <th style={{ ...headBlue, textAlign: 'left' }}>Activity</th>
+                  <th style={{ ...headBlue, width: 110 }}>Onsite / Offsite</th>
+                  <th style={{ ...headBlue, width: 130 }}>Status</th>
+                </tr>
+              </thead>
+              <tbody>{dayRows}</tbody>
+            </table>
+          </div>
         </>
       )}
     </div>
