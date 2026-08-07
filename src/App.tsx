@@ -1,30 +1,37 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
 import * as S from './shared';
 import * as db from './db';
 import { supabase } from './supabaseClient';
 import Login from './Login';
-import SuperAdminPanel from './screens/SuperAdminPanel';
 
-import Dashboard from './screens/Dashboard';
-import ProjectMaster from './screens/ProjectMaster';
-import ProjectStructure from './screens/ProjectStructure';
-import Phases from './screens/Phases';
-import MonthlyPlan from './screens/MonthlyPlan';
-import Deliverables from './screens/Deliverables';
-import Implementation from './screens/Implementation';
-import Gantt from './screens/Gantt';
-import CalendarScreen from './screens/Calendar';
-import Approvals from './screens/Approvals';
-import Documents from './screens/Documents';
-import DocumentLibrary from './screens/DocumentLibrary';
-import Risks from './screens/Risks';
-import Issues from './screens/Issues';
-import Changes from './screens/Changes';
-import Team from './screens/Team';
-import Portal from './screens/Portal';
-import Reports from './screens/Reports';
-import Administration from './screens/Administration';
+// Every screen below is only needed once a session exists AND the person navigates to it, so each is
+// its own lazily-fetched chunk instead of being bundled into the one script every visitor has to
+// download+parse+execute before anything (even the Login screen) can render. This was the single
+// biggest lever on cold-load time -- previously all 19 screens (plus Administration, Reports' charts,
+// etc.) shipped in one ~1.7MB chunk regardless of which single screen someone actually landed on.
+// Login and the route <Suspense> fallback stay as regular top-level imports since they're needed
+// immediately, before any lazy chunk would even start fetching.
+const SuperAdminPanel = lazy(() => import('./screens/SuperAdminPanel'));
+const Dashboard = lazy(() => import('./screens/Dashboard'));
+const ProjectMaster = lazy(() => import('./screens/ProjectMaster'));
+const ProjectStructure = lazy(() => import('./screens/ProjectStructure'));
+const Phases = lazy(() => import('./screens/Phases'));
+const MonthlyPlan = lazy(() => import('./screens/MonthlyPlan'));
+const Deliverables = lazy(() => import('./screens/Deliverables'));
+const Implementation = lazy(() => import('./screens/Implementation'));
+const Gantt = lazy(() => import('./screens/Gantt'));
+const CalendarScreen = lazy(() => import('./screens/Calendar'));
+const Approvals = lazy(() => import('./screens/Approvals'));
+const Documents = lazy(() => import('./screens/Documents'));
+const DocumentLibrary = lazy(() => import('./screens/DocumentLibrary'));
+const Risks = lazy(() => import('./screens/Risks'));
+const Issues = lazy(() => import('./screens/Issues'));
+const Changes = lazy(() => import('./screens/Changes'));
+const Team = lazy(() => import('./screens/Team'));
+const Portal = lazy(() => import('./screens/Portal'));
+const Reports = lazy(() => import('./screens/Reports'));
+const Administration = lazy(() => import('./screens/Administration'));
 
 const THEME_STORAGE_KEY = 'rosbinTrace.theme.v1';
 const loadTheme = (): 'light' | 'dark' => {
@@ -190,6 +197,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
             </div>
           </header>
           <main className="flex-1 overflow-y-auto p-5 bg-slate-100">
+            <Suspense fallback={<div className="flex items-center justify-center py-24"><S.Icon name="logo" className="w-8 h-8 text-brand-300 animate-pulse"/></div>}>
             <Routes>
               {role === 'client' ? (
                 // Hard restriction: a client account can reach exactly these two paths, no matter
@@ -231,6 +239,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                 </>
               )}
             </Routes>
+            </Suspense>
           </main>
         </div>
       </div>
@@ -830,7 +839,7 @@ export default function App() {
   if (platformUserError) return <ErrorScreen message={platformUserError} />;
   if (platformUser === undefined) return <LoadingScreen />;
   if (platformUser === null) return <CompanyCodeScreen meta={session.user.user_metadata} onSubmit={provisionCompanyCode} onSignOut={signOut} />;
-  if (platformUser.is_platform_superadmin) return <SuperAdminPanel email={myEmail} onSignOut={signOut} />;
+  if (platformUser.is_platform_superadmin) return <Suspense fallback={<LoadingScreen />}><SuperAdminPanel email={myEmail} onSignOut={signOut} /></Suspense>;
   if (loading) return <LoadingScreen />;
   if (loadError) return <ErrorScreen message={loadError} />;
   if (myProfile && myProfile.status === 'Pending Approval') return <PendingApprovalScreen onSignOut={signOut} />;

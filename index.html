@@ -4,6 +4,10 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Warms up the TLS connection to Supabase in parallel with JS download/parse, instead of only
+         starting once the bundle executes and the client library makes its first request. -->
+    <link rel="preconnect" href="https://eqnfgixhzyvxfdpoijwt.supabase.co" crossorigin />
+    <link rel="dns-prefetch" href="https://eqnfgixhzyvxfdpoijwt.supabase.co" />
     <title>Trace PMT — Cloud Project Delivery Management</title>
   </head>
   <body>
