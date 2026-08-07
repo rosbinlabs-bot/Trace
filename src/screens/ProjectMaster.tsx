@@ -75,9 +75,31 @@ export default function ProjectMaster(){
     : rows.some(r => r._key!==form._key && r.id && r.id.trim().toLowerCase()===form.id.trim().toLowerCase())
       ? 'This MoU No. is already used by another project.' : '';
 
+  // The database's own primary key for a project IS this MoU No. (a historical shortcut -- there's
+  // no separate stable internal id), and the Billing Tracker (invoices), Phase Management tree, and
+  // Monthly Plan rows all reference a project by that same key with ON DELETE CASCADE. So editing an
+  // EXISTING project's MoU No. isn't an in-place rename under the hood -- it deletes the old row
+  // (cascading away its invoices/phase data/monthly plan) and inserts a new one under the new MoU No.
+  // Payment Receipts themselves are safe (they live on the project record itself, which carries over),
+  // but everything in those three linked tables for this project is gone, silently, the moment this
+  // saves. Until that's replaced with a real stable key, the only safe thing to do here is stop and
+  // make the person confirm they understand the cost before it happens.
   const save = (extra={}) => {
     if(mouError) return;
     const next = { ...form, ...extra };
+    if (!isNew) {
+      const original = rows.find(r => r._key === next._key);
+      if (original && (original.id||'') !== (next.id||'')) {
+        const ok = window.confirm(
+          `You're changing the MoU No. from "${original.id}" to "${next.id}".\n\n` +
+          `This will PERMANENTLY DELETE this project's Billing Tracker (invoice/collection) history, ` +
+          `Phase Management data, and Monthly Plan for "${original.id}" -- they do not carry over to ` +
+          `the new MoU No. and this cannot be undone.\n\n` +
+          `Payment Receipts themselves are safe. Continue anyway?`
+        );
+        if (!ok) return;
+      }
+    }
     setRows(rs => isNew ? [...rs, next] : rs.map(r => r._key===next._key ? next : r));
     close();
   };
