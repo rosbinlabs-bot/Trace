@@ -23,6 +23,9 @@ export default function MonthlyPlan(){
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
+  // Administration -> Company Settings, not a hardcoded string -- Legal Name first (what the
+  // reference-style footer/branding line traditionally shows), falling back to Display Name.
+  const companyName = admin?.company?.legalName || admin?.company?.displayName || '';
 
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
@@ -213,11 +216,13 @@ export default function MonthlyPlan(){
       columnStyles: { 0: { cellWidth: 14 }, 1: { cellWidth: 24 } },
     });
 
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    doc.setFontSize(9);
-    doc.setTextColor(150);
-    doc.text('HSJB Business Solutions', pageWidth / 2, pageHeight - 10, { align: 'center' });
+    if (companyName) {
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      doc.setFontSize(9);
+      doc.setTextColor(150);
+      doc.text(companyName, pageWidth / 2, pageHeight - 10, { align: 'center' });
+    }
 
     doc.save(`Monthly-Plan-${(projMeta.name || 'project').replace(/[^a-z0-9]+/gi, '-')}-${monthKey}.pdf`);
   };
@@ -417,9 +422,11 @@ export default function MonthlyPlan(){
               )}
             </div>
 
-            <div style={{ textAlign: 'center', fontSize: 11, color: '#999', marginTop: 24, paddingTop: 12, borderTop: '1px solid #eee', fontFamily: 'inherit' }}>
-              HSJB Business Solutions
-            </div>
+            {companyName && (
+              <div style={{ textAlign: 'center', fontSize: 11, color: '#999', marginTop: 24, paddingTop: 12, borderTop: '1px solid #eee', fontFamily: 'inherit' }}>
+                {companyName}
+              </div>
+            )}
           </div>
         </>
       )}
