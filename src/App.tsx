@@ -243,7 +243,11 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
 // state immediately (optimistic), synced in the background. A sync failure is logged, not thrown,
 // so a flaky network doesn't crash the screen; the local UI state is still correct, it just didn't
 // make it to the database that round (matches the "best effort, not a transactional system" nature
-// of this prototype).
+// of this prototype). Every synced setter used to be wrapped this way; they've all since moved to
+// useDebouncedSync/useDebouncedArraySync below (a per-keystroke text field wired to an immediate
+// sync + an unguarded Realtime echo could roll back characters mid-type -- see those functions'
+// comments), but this is kept as the simple building block in case a future data type is genuinely
+// fine syncing immediately (e.g. something only ever changed by a single discrete button click).
 function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>) {
   return (updater: React.SetStateAction<T>) => {
     setState((prev) => {
@@ -256,8 +260,8 @@ function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: 
 
 // Same idea as wrapSetter, but for the two data types stored as one big JSON blob per key (Phase
 // Management's tree per project, Monthly Plan's rows per project+month) instead of one row per
-// record. Every keystroke in a subtask/milestone/objective/activity text field calls this, and
-// wrapSetter used to turn each one into an immediate full-blob upload to Supabase -- on a live
+// record. Every keystroke in a subtask/milestone/objective/activity text field calls this, and an
+// immediate wrapSetter-style sync turns each one into a full-blob upload to Supabase -- on a live
 // project with a real amount of content that's a network round trip PER CHARACTER, which is exactly
 // what felt like typing lag. Local state still updates instantly here (typing is never blocked on
 // the network); only the outbound Supabase write is debounced, batched to fire `delay` ms after the
@@ -290,6 +294,36 @@ function changedKeys(prev: any, next: any): string[] {
   const out: string[] = [];
   keys.forEach((k) => { if (prev?.[k] !== next?.[k]) out.push(k); });
   return out;
+}
+
+// Same debounce-then-diff idea as useDebouncedSync, generalized to the one-row-per-record tables
+// (risks, issues, projects, etc.) that go through db.ts's syncArray + App.tsx's Realtime mergeById,
+// rather than the one-blob-per-key tables above. A handful of screens (Risks.tsx/Issues.tsx/
+// Changes.tsx detail fields, ProjectMaster's Payment Receipts) write straight to these setters on
+// every keystroke, same underlying pattern that caused the Phase Management typing-lag/reversal bug
+// -- this closes it for every table at once instead of one screen at a time. `echoBucket` is a plain
+// object (a slot inside recentLocalEditRef, passed by reference so mutating it here is visible to the
+// Realtime handler below without needing a re-render) that gets stamped per changed row id,
+// undebounced, on every call.
+function useDebouncedArraySync<T extends { [k: string]: any }>(setState: React.Dispatch<React.SetStateAction<T[]>>, sync: (prev: T[], next: T[]) => Promise<void>, idKey: string, echoBucket: Record<string, number>, delay = 700) {
+  const pendingRef = React.useRef<{ base: T[]; timer: any } | null>(null);
+  return (updater: React.SetStateAction<T[]>) => {
+    setState((prev) => {
+      const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+      const prevMap = new Map(prev.map((x) => [x[idKey], x]));
+      const nextMap = new Map(next.map((x: T) => [x[idKey], x]));
+      const ids = new Set([...prevMap.keys(), ...nextMap.keys()]);
+      ids.forEach((id) => { if (prevMap.get(id) !== nextMap.get(id)) echoBucket[id] = Date.now(); });
+      if (!pendingRef.current) pendingRef.current = { base: prev, timer: null };
+      if (pendingRef.current.timer) clearTimeout(pendingRef.current.timer);
+      const base = pendingRef.current.base;
+      pendingRef.current.timer = setTimeout(() => {
+        pendingRef.current = null;
+        sync(base, next).catch((e) => console.error('Supabase sync failed:', e));
+      }, delay);
+      return next;
+    });
+  };
 }
 
 function LoadingScreen() {
@@ -484,11 +518,25 @@ export default function App() {
   const [invoices, setInvoicesState] = useState<any[]>([]);
   const [monthlyPlan, setMonthlyPlanState] = useState<any>({});
 
-  // Timestamps of our own most recent local edit to each phase-tree project / monthly-plan
-  // project+month, so the Realtime handlers below can tell "this update is just Supabase echoing
-  // back the write we just made" apart from "someone else changed this" and skip the former — see
-  // useDebouncedSync/changedKeys above for why this is needed.
-  const recentLocalEditRef = React.useRef<{ tree: Record<string, number>; monthlyPlan: Record<string, number> }>({ tree: {}, monthlyPlan: {} });
+  // Timestamps of our own most recent local edit, one bucket per synced data type (keyed by
+  // whatever identifies a "row" for that type: project id for the phase tree, project+month for
+  // Monthly Plan, admin_data key for Company/Billing/etc., a fixed slot for the single app_settings
+  // row, and record id -- or name, for team -- for every other table). The Realtime handlers below
+  // use this to tell "this update is just Supabase echoing back the write we just made" apart from
+  // "someone else changed this" and skip the former -- see useDebouncedSync/useDebouncedArraySync/
+  // changedKeys above for why this exists. Applied uniformly to every synced setter, not just the
+  // two (Phase Management / Monthly Plan) where the "text reverses while typing" symptom was first
+  // reported -- any text field wired straight to a synced setter had the same underlying race.
+  const recentLocalEditRef = React.useRef<{
+    tree: Record<string, number>;
+    monthlyPlan: Record<string, number>;
+    admin: Record<string, number>;
+    settings: number;
+    rows: Record<string, Record<string, number>>;
+  }>({
+    tree: {}, monthlyPlan: {}, admin: {}, settings: 0,
+    rows: { projects: {}, risks: {}, issues: {}, changes: {}, calendarEvents: {}, libraryDocs: {}, deliverables: {}, invoices: {}, team: {} },
+  });
   const SELF_ECHO_WINDOW_MS = 2500;
 
   // Fetch every table once a session exists AND the tenant is resolved. All data below this point
@@ -544,13 +592,19 @@ export default function App() {
   // subscription and its one-time fetch don't have to wait on each other.
   useEffect(() => {
     if (!tenantId) return;
-    const mergeById = (setState: any, fromDb: (r: any) => any, idKey = 'id') => (payload: any) => {
+    // echoBucket (optional): a slot in recentLocalEditRef.current.rows -- if we ourselves edited
+    // this row within SELF_ECHO_WINDOW_MS, skip applying the incoming payload (see
+    // useDebouncedArraySync above). notifications is intentionally NOT passed one -- nothing ever
+    // edits an existing notification's text after the fact, only appends new ones, so there's no
+    // keystroke race to guard against there.
+    const mergeById = (setState: any, fromDb: (r: any) => any, idKey = 'id', echoBucket?: Record<string, number>) => (payload: any) => {
       setState((prev: any[]) => {
         if (payload.eventType === 'DELETE') {
           const oldId = payload.old?.[idKey];
           return prev.filter((x) => x[idKey] !== oldId);
         }
         const row = fromDb(payload.new);
+        if (echoBucket && Date.now() - (echoBucket[row[idKey]] || 0) < SELF_ECHO_WINDOW_MS) return prev;
         const idx = prev.findIndex((x) => x[idKey] === row[idKey]);
         if (idx === -1) return [...prev, row];
         const next = prev.slice();
@@ -558,16 +612,17 @@ export default function App() {
         return next;
       });
     };
+    const echo = recentLocalEditRef.current.rows;
     const unsubscribe = db.subscribeRealtime(tenantId, {
-      projects: mergeById(setProjectsState, db.projectFromDb),
-      risks: mergeById(setRisksState, db.riskFromDb),
-      issues: mergeById(setIssuesState, db.issueFromDb),
-      change_requests: mergeById(setChangesState, db.changeFromDb),
-      calendar_events: mergeById(setCalendarEventsState, db.eventFromDb),
-      library_docs: mergeById(setLibraryDocsState, db.docFromDb),
-      deliverables: mergeById(setDeliverablesState, db.deliverableFromDb),
-      invoices: mergeById(setInvoicesState, db.invoiceFromDb),
-      team: mergeById(setTeamState, db.teamFromDb, 'name'),
+      projects: mergeById(setProjectsState, db.projectFromDb, 'id', echo.projects),
+      risks: mergeById(setRisksState, db.riskFromDb, 'id', echo.risks),
+      issues: mergeById(setIssuesState, db.issueFromDb, 'id', echo.issues),
+      change_requests: mergeById(setChangesState, db.changeFromDb, 'id', echo.changes),
+      calendar_events: mergeById(setCalendarEventsState, db.eventFromDb, 'id', echo.calendarEvents),
+      library_docs: mergeById(setLibraryDocsState, db.docFromDb, 'id', echo.libraryDocs),
+      deliverables: mergeById(setDeliverablesState, db.deliverableFromDb, 'id', echo.deliverables),
+      invoices: mergeById(setInvoicesState, db.invoiceFromDb, 'id', echo.invoices),
+      team: mergeById(setTeamState, db.teamFromDb, 'name', echo.team),
       notifications: mergeById(setNotifications, db.notificationFromDb),
       phase_trees: (payload: any) => {
         setPhaseTreeState((prev: any) => {
@@ -598,11 +653,15 @@ export default function App() {
             return next;
           }
           const row = payload.new;
+          // Same self-echo guard as phase_trees/monthly_plans -- Company/Billing/Project Settings
+          // etc. are each one JSON blob per admin_data key, same architecture, same race.
+          if (Date.now() - (recentLocalEditRef.current.admin[row.key] || 0) < SELF_ECHO_WINDOW_MS) return prev;
           return { ...prev, [row.key]: row.value };
         });
       },
       app_settings: (payload: any) => {
         if (payload.eventType === 'DELETE') return;
+        if (Date.now() - recentLocalEditRef.current.settings < SELF_ECHO_WINDOW_MS) return;
         setSettingsState({ ...S.DEFAULT_PROJECT_SETTINGS, ...(payload.new?.data || {}) });
       },
       monthly_plans: (payload: any) => {
@@ -625,21 +684,25 @@ export default function App() {
     return unsubscribe;
   }, [tenantId]);
 
-  const setProjects = wrapSetter(setProjectsState, db.syncProjects);
-  // Debounced (not immediate, unlike wrapSetter) -- see useDebouncedSync above. markEdited stamps
-  // recentLocalEditRef immediately on every keystroke (even though the actual network write is
-  // delayed), so the Realtime self-echo guard above knows this key was just touched by us.
+  // All debounced (not immediate, unlike the old wrapSetter) -- see useDebouncedArraySync/
+  // useDebouncedSync above. Local state still updates every keystroke; only the outbound Supabase
+  // write and its Realtime echo are delayed/guarded. Applied to every synced setter uniformly, not
+  // just the screens that had a confirmed report, since any of them could be wired to a live-typing
+  // field today or in the future (Risks.tsx/Issues.tsx/Changes.tsx detail fields and ProjectMaster's
+  // Payment Receipts already were).
+  const echo = recentLocalEditRef.current.rows;
+  const setProjects = useDebouncedArraySync(setProjectsState, db.syncProjects, 'id', echo.projects);
   const setPhaseTree = useDebouncedSync(setPhaseTreeState, db.syncTree, (prev, next) => {
     changedKeys(prev, next).forEach((k) => { recentLocalEditRef.current.tree[k] = Date.now(); });
   });
-  const setRisks = wrapSetter(setRisksState, db.syncRisks);
-  const setIssues = wrapSetter(setIssuesState, db.syncIssues);
-  const setChanges = wrapSetter(setChangesState, db.syncChanges);
-  const setCalendarEvents = wrapSetter(setCalendarEventsState, db.syncEvents);
-  const setLibraryDocs = wrapSetter(setLibraryDocsState, db.syncDocs);
-  const setDeliverables = wrapSetter(setDeliverablesState, db.syncDeliverables);
-  const setInvoices = wrapSetter(setInvoicesState, db.syncInvoices);
-  const setTeam = wrapSetter(setTeamState, db.syncTeam);
+  const setRisks = useDebouncedArraySync(setRisksState, db.syncRisks, 'id', echo.risks);
+  const setIssues = useDebouncedArraySync(setIssuesState, db.syncIssues, 'id', echo.issues);
+  const setChanges = useDebouncedArraySync(setChangesState, db.syncChanges, 'id', echo.changes);
+  const setCalendarEvents = useDebouncedArraySync(setCalendarEventsState, db.syncEvents, 'id', echo.calendarEvents);
+  const setLibraryDocs = useDebouncedArraySync(setLibraryDocsState, db.syncDocs, 'id', echo.libraryDocs);
+  const setDeliverables = useDebouncedArraySync(setDeliverablesState, db.syncDeliverables, 'id', echo.deliverables);
+  const setInvoices = useDebouncedArraySync(setInvoicesState, db.syncInvoices, 'id', echo.invoices);
+  const setTeam = useDebouncedArraySync(setTeamState, db.syncTeam, 'name', echo.team);
   // Same debouncing + self-echo stamping as setPhaseTree above, keyed by project+month.
   const setMonthlyPlan = useDebouncedSync(setMonthlyPlanState, db.syncMonthlyPlan, (prev, next) => {
     const keys = new Set<string>();
@@ -651,20 +714,39 @@ export default function App() {
     });
   });
 
+  // Single app_settings row -- debounced the same way, stamping a plain counter (no per-key map
+  // needed, there's only ever one row) rather than reusing useDebouncedSync's diff-by-key logic.
+  const settingsPendingRef = React.useRef<{ timer: any } | null>(null);
   const setSettings = (updater: any) => {
     setSettingsState((prev: any) => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      db.saveSettings(next).catch((e) => console.error('Supabase sync failed:', e));
+      recentLocalEditRef.current.settings = Date.now();
+      if (settingsPendingRef.current?.timer) clearTimeout(settingsPendingRef.current.timer);
+      settingsPendingRef.current = { timer: setTimeout(() => {
+        settingsPendingRef.current = null;
+        db.saveSettings(next).catch((e) => console.error('Supabase sync failed:', e));
+      }, 700) };
       return next;
     });
   };
 
   // Administration: roles/permissions, users, company, billing, notifications — one row per key,
   // patched by key, mirroring the original localStorage-backed "one object, patched by key" shape.
+  // Debounced per-key (Company/Billing/Project Settings text fields can be edited on every keystroke;
+  // Roles & Permissions dropdowns and one-off admin actions are unaffected since a single click still
+  // flushes after `delay` ms with nothing to batch it against) -- a separate pending-write timer per
+  // key so editing e.g. Company and Billing in quick succession doesn't make either wait on the other.
+  const adminPendingRef = React.useRef<Record<string, { base: any; timer: any } | undefined>>({});
   const patchAdmin = (key: string, updater: any) => {
     setAdminState((a: any) => {
       const nextVal = typeof updater === 'function' ? updater(a[key]) : updater;
-      db.saveAdminKey(key, nextVal).catch((e) => console.error('Supabase sync failed:', e));
+      recentLocalEditRef.current.admin[key] = Date.now();
+      const pending = adminPendingRef.current[key];
+      if (pending?.timer) clearTimeout(pending.timer);
+      adminPendingRef.current[key] = { base: pending?.base ?? a[key], timer: setTimeout(() => {
+        adminPendingRef.current[key] = undefined;
+        db.saveAdminKey(key, nextVal).catch((e) => console.error('Supabase sync failed:', e));
+      }, 700) };
       return { ...a, [key]: nextVal };
     });
   };
