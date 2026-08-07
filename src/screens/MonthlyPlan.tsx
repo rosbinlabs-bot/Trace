@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import * as S from '../shared';
-import { jsPDF } from 'jspdf';
-import autoTable from 'jspdf-autotable';
+// jsPDF + jspdf-autotable (~445KB together) are dynamically imported inside exportPdf() below,
+// not statically here -- a static import made this screen's own chunk 445KB even for the vast
+// majority of visits that never click Export PDF. Deferring the fetch to the moment it's actually
+// needed keeps navigating to Monthly Plan itself fast; the PDF libraries only load on export.
 
 // Visual model matches a real client-facing monthly plan document (confirmed via mockup, see
 // project memory): a printed-page look with two tables --
@@ -181,7 +183,17 @@ export default function MonthlyPlan(){
   const doneCount = activities.filter((r: any) => r.status === 'Done').length;
   const pendingCount = activities.filter((r: any) => r.status === 'Pending').length;
 
-  const exportPdf = () => {
+  const [exporting, setExporting] = useState(false);
+  const exportPdf = async () => {
+    setExporting(true);
+    try {
+      const [{ jsPDF }, { default: autoTable }] = await Promise.all([import('jspdf'), import('jspdf-autotable')]);
+      await buildAndSavePdf(jsPDF, autoTable);
+    } finally {
+      setExporting(false);
+    }
+  };
+  const buildAndSavePdf = async (jsPDF: any, autoTable: any) => {
     const doc: any = new jsPDF();
     doc.setFontSize(14);
     doc.text(`Monthly Plan — ${projMeta.name || ''}`, 14, 15);
@@ -319,7 +331,7 @@ export default function MonthlyPlan(){
             </div>
             <div className="flex items-center gap-2">
               {draftEdit && confirmStatus === 'Draft' && <button onClick={syncFromPhases} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50"><S.Icon name="refresh" className="w-3.5 h-3.5" />Sync from Phases</button>}
-              <button onClick={exportPdf} disabled={!activities.length && !objectives.length} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"><S.Icon name="filepdf" className="w-3.5 h-3.5" />Export PDF</button>
+              <button onClick={exportPdf} onMouseEnter={() => { import('jspdf'); import('jspdf-autotable'); }} disabled={exporting || (!activities.length && !objectives.length)} className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white"><S.Icon name="filepdf" className="w-3.5 h-3.5" />{exporting ? 'Preparing…' : 'Export PDF'}</button>
             </div>
           </div>
 

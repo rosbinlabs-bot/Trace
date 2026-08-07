@@ -12,26 +12,54 @@ import Login from './Login';
 // etc.) shipped in one ~1.7MB chunk regardless of which single screen someone actually landed on.
 // Login and the route <Suspense> fallback stay as regular top-level imports since they're needed
 // immediately, before any lazy chunk would even start fetching.
+//
+// The tradeoff: the FIRST visit to any given screen in a session now pays a network round trip for
+// that chunk (the brief logo spinner) before it can render, instead of already having the code. Kept
+// as one named import() function per screen (rather than inlining into lazy() below) so the exact
+// same function reference can be handed to the sidebar's hover/focus prefetch below -- calling
+// import() again for something already loading/loaded just resolves the same cached promise, so
+// prefetching is free/safe to fire redundantly on every hover.
+const importScreen = {
+  dashboard: () => import('./screens/Dashboard'),
+  projects: () => import('./screens/ProjectMaster'),
+  structure: () => import('./screens/ProjectStructure'),
+  phases: () => import('./screens/Phases'),
+  monthlyplan: () => import('./screens/MonthlyPlan'),
+  deliverables: () => import('./screens/Deliverables'),
+  implementation: () => import('./screens/Implementation'),
+  gantt: () => import('./screens/Gantt'),
+  calendar: () => import('./screens/Calendar'),
+  approvals: () => import('./screens/Approvals'),
+  documents: () => import('./screens/Documents'),
+  doclibrary: () => import('./screens/DocumentLibrary'),
+  risks: () => import('./screens/Risks'),
+  issues: () => import('./screens/Issues'),
+  changes: () => import('./screens/Changes'),
+  team: () => import('./screens/Team'),
+  portal: () => import('./screens/Portal'),
+  reports: () => import('./screens/Reports'),
+  admin: () => import('./screens/Administration'),
+};
 const SuperAdminPanel = lazy(() => import('./screens/SuperAdminPanel'));
-const Dashboard = lazy(() => import('./screens/Dashboard'));
-const ProjectMaster = lazy(() => import('./screens/ProjectMaster'));
-const ProjectStructure = lazy(() => import('./screens/ProjectStructure'));
-const Phases = lazy(() => import('./screens/Phases'));
-const MonthlyPlan = lazy(() => import('./screens/MonthlyPlan'));
-const Deliverables = lazy(() => import('./screens/Deliverables'));
-const Implementation = lazy(() => import('./screens/Implementation'));
-const Gantt = lazy(() => import('./screens/Gantt'));
-const CalendarScreen = lazy(() => import('./screens/Calendar'));
-const Approvals = lazy(() => import('./screens/Approvals'));
-const Documents = lazy(() => import('./screens/Documents'));
-const DocumentLibrary = lazy(() => import('./screens/DocumentLibrary'));
-const Risks = lazy(() => import('./screens/Risks'));
-const Issues = lazy(() => import('./screens/Issues'));
-const Changes = lazy(() => import('./screens/Changes'));
-const Team = lazy(() => import('./screens/Team'));
-const Portal = lazy(() => import('./screens/Portal'));
-const Reports = lazy(() => import('./screens/Reports'));
-const Administration = lazy(() => import('./screens/Administration'));
+const Dashboard = lazy(importScreen.dashboard);
+const ProjectMaster = lazy(importScreen.projects);
+const ProjectStructure = lazy(importScreen.structure);
+const Phases = lazy(importScreen.phases);
+const MonthlyPlan = lazy(importScreen.monthlyplan);
+const Deliverables = lazy(importScreen.deliverables);
+const Implementation = lazy(importScreen.implementation);
+const Gantt = lazy(importScreen.gantt);
+const CalendarScreen = lazy(importScreen.calendar);
+const Approvals = lazy(importScreen.approvals);
+const Documents = lazy(importScreen.documents);
+const DocumentLibrary = lazy(importScreen.doclibrary);
+const Risks = lazy(importScreen.risks);
+const Issues = lazy(importScreen.issues);
+const Changes = lazy(importScreen.changes);
+const Team = lazy(importScreen.team);
+const Portal = lazy(importScreen.portal);
+const Reports = lazy(importScreen.reports);
+const Administration = lazy(importScreen.admin);
 
 const THEME_STORAGE_KEY = 'rosbinTrace.theme.v1';
 const loadTheme = (): 'light' | 'dark' => {
@@ -110,6 +138,20 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
     .filter((g: any) => g.items.length > 0);
   const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
 
+  // Once the shell has actually rendered and the browser is idle (i.e. after the current screen's
+  // own chunk + data are done, not competing with them), quietly fetch every other sidebar screen's
+  // chunk in the background. This gets back most of the "instant navigation" feel of one big bundle
+  // (which is what shipped before code-splitting) without its cost of blocking first paint on
+  // everyone else's code -- by the time someone actually clicks a second sidebar item, its chunk has
+  // usually already arrived via this idle prefetch, on top of the hover/focus prefetch below.
+  React.useEffect(() => {
+    const ric = (typeof (window as any).requestIdleCallback === 'function') ? (window as any).requestIdleCallback : (cb: any) => setTimeout(cb, 1500);
+    const ids = navGroups.flatMap((g: any) => g.items).map((i: any) => i.id);
+    const handle = ric(() => { ids.forEach((id: string) => importScreen[id]?.()); });
+    return () => { if (typeof (window as any).cancelIdleCallback === 'function') (window as any).cancelIdleCallback(handle); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
       <div className="flex h-screen overflow-hidden bg-slate-100">
@@ -139,6 +181,14 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                     key={item.id}
                     to={`/${item.id}`}
                     title={item.label}
+                    // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
+                    // click lands, so by the time the route actually changes the code is usually already
+                    // there and the loading spinner doesn't show at all. Calling the same import()
+                    // again for a screen that's already loading/loaded is a no-op (module cache), so
+                    // this is safe to fire redundantly every time.
+                    onMouseEnter={() => importScreen[item.id]?.()}
+                    onFocus={() => importScreen[item.id]?.()}
+                    onTouchStart={() => importScreen[item.id]?.()}
                     className={({ isActive }) =>
                       `w-full flex items-center gap-3 px-4 py-2 text-sm transition-colors ${
                         isActive
