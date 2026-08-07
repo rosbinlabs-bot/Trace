@@ -736,6 +736,8 @@ export const computeInsights = ({ tree, risks, issues, changes, projects, team }
 // Pastel icon badge per notification type, shown in the Dashboard's Project Activity feed.
 export const NOTIF_TONE = {
   'Milestone Completed':        { icon:'phases',       bg:'bg-emerald-50', text:'text-emerald-500' },
+  'Sub Task Completed':         { icon:'checkcircle',  bg:'bg-emerald-50', text:'text-emerald-500' },
+  'Pending Review':             { icon:'clock',         bg:'bg-amber-50',   text:'text-amber-500'   },
   'Phase Completed':            { icon:'checkcircle',  bg:'bg-emerald-50', text:'text-emerald-500' },
   'Calendar Reminder':          { icon:'calendar',     bg:'bg-blue-50',    text:'text-blue-500'    },
   'Calendar Cancelled':         { icon:'ban',           bg:'bg-red-50',     text:'text-red-500'     },

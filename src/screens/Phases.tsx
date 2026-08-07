@@ -66,15 +66,42 @@ export default function Phases(){
   const removeSt = (phId, msId, stId) => { if(!canDelete) return; mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)})); };
 
   // ---- status changes: Not Started / In Progress / On Hold apply immediately; Completed queues review ----
+  // Every Completed transition now raises a notification either way: an immediate-finalize notice
+  // when the actor's own level already qualifies (S.actorQualifies), or a "Pending Review" heads-up
+  // naming the approver level (S.approverLevelFor) when it queues instead — previously Sub Tasks
+  // raised no notification at all, and Milestones only notified on immediate finalize, so a reviewer
+  // had no way to know something was waiting on them short of opening Phase Management themselves.
   const setMsStatus = (phId, msId, val) => {
     mutMs(phId, msId, m => S.applyStatus(m, val, 'milestone', actor));
-    if(val==='Completed' && S.actorQualifies('milestone', actor)){
+    if(val==='Completed'){
       const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
-      if(ph && ms) notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
-        message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
+      if(!ph || !ms) return;
+      if(S.actorQualifies('milestone', actor)){
+        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
+          message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
+      } else {
+        const approverLvl = S.approverLevelFor('milestone', projMeta);
+        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Pending Review',
+          message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
+      }
     }
   };
-  const setStStatus = (phId, msId, stId, val) => mutSt(phId, msId, stId, s => S.applyStatus(s, val, 'subtask', actor));
+  const setStStatus = (phId, msId, stId, val) => {
+    mutSt(phId, msId, stId, s => S.applyStatus(s, val, 'subtask', actor));
+    if(val==='Completed'){
+      const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+      const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
+      if(!ph || !ms || !st) return;
+      if(S.actorQualifies('subtask', actor)){
+        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Sub Task Completed',
+          message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
+      } else {
+        const approverLvl = S.approverLevelFor('subtask', projMeta);
+        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Pending Review',
+          message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
+      }
+    }
+  };
 
   // ---- review decisions: up to L2 decides Sub Tasks, L1 decides Milestones (S.approverLevelFor) ----
   const decideMs = (ph, ms, decision) => {
@@ -84,9 +111,17 @@ export default function Phases(){
     if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
       message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
-  const decideSt = (phId, msId, stId, decision) => mutSt(phId, msId, stId, s => decision==='Approved'
-    ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:''})
-    : ({...s, status:'In Progress', review:'', approved:false, reviewSince:''}));
+  const decideSt = (phId, msId, stId, decision) => {
+    mutSt(phId, msId, stId, s => decision==='Approved'
+      ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:''})
+      : ({...s, status:'In Progress', review:'', approved:false, reviewSince:''}));
+    if(decision==='Approved'){
+      const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+      const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
+      if(ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Sub Task Completed',
+        message:`Sub Task "${st.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
+    }
+  };
 
   // ---- "Implemented" escalation: sequential chain from whoever marked it up to L1 (S.implementChainFor
   // walks every level actually present on this project's team, skipping any that are missing), then the
