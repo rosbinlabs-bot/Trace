@@ -394,7 +394,7 @@ export const implementChainFor = (project: any, actorLevel: string): string[] =>
   const actorNum = levelNum(actorLevel);
   return projectLevelNumsPresent(project).filter(n => n < actorNum).sort((a, b) => b - a).map(n => `L${n}`);
 };
-export const PERMISSION_MODULES = ['Project Master','Phase Management','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
+export const PERMISSION_MODULES = ['Project Master','Phase Management','Monthly Plan','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
 export const CAPABILITY_COLOR: any = { 'None':'bg-slate-100 text-slate-400','View':'bg-blue-100 text-blue-700','Edit':'bg-amber-100 text-amber-700','Approve':'bg-violet-100 text-violet-700','Full':'bg-emerald-100 text-emerald-700' };
 // Client is NOT one of the four staff PERMISSION_LEVELS (it isn't reachable via any DESIGNATIONS ->
@@ -408,6 +408,7 @@ export const MATRIX_COLUMNS = [...PERMISSION_LEVELS, 'Client'];
 export const DEFAULT_PERMISSION_MATRIX: any = {
   'Project Master':          { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
   'Phase Management':        { Officer:'Edit', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
+  'Monthly Plan':            { Officer:'Edit', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
   'Deliverables':            { Officer:'Edit', Manager:'Approve', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
   'Financials & Billing':    { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
   'Risk / Issue / Change':   { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
@@ -667,7 +668,7 @@ export const NAV_MODULE: any = {
   projects: 'Project Master',
   structure: 'Phase Management',
   phases: 'Phase Management',
-  monthlyplan: 'Phase Management',
+  monthlyplan: 'Monthly Plan',
   deliverables: 'Deliverables',
   implementation: 'Deliverables',
   gantt: 'Phase Management',

@@ -326,6 +326,58 @@ function CompanyCodeScreen({ meta, onSubmit, onSignOut }: { meta: any; onSubmit:
   );
 }
 
+// Forced password change -- blocks entry for any account the manage-user Edge Function just handed
+// an admin-chosen password (brand-new user, or an existing login Super Admin/Admin just reset via
+// Administration -> Users), flagged via Auth user_metadata.mustChangePassword (see manage-user/
+// index.ts). Self sign-ups (Login.tsx "Create Account", where the person already chose their own
+// password) are never stamped, so they skip this screen entirely. supabase.auth.updateUser both sets
+// the new password AND clears the flag in one call -- session/onAuthStateChange picks up the cleared
+// metadata automatically, so nothing else has to be told this happened.
+function ForceChangePasswordScreen({ email, metadata, onSignOut }: { email: string; metadata: any; onSignOut: () => void }) {
+  const [pw1, setPw1] = useState('');
+  const [pw2, setPw2] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const submit = async (e: any) => {
+    e.preventDefault();
+    setErr('');
+    if (pw1.length < 8) { setErr('Password must be at least 8 characters.'); return; }
+    if (pw1 !== pw2) { setErr('Passwords do not match.'); return; }
+    setBusy(true);
+    try {
+      const { mustChangePassword, ...restMeta } = metadata || {};
+      const { error } = await supabase.auth.updateUser({ password: pw1, data: { ...restMeta, mustChangePassword: false } });
+      if (error) throw error;
+    } catch (e: any) {
+      setErr(e.message || 'Could not update your password.');
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="h-screen flex items-center justify-center bg-slate-100 p-6">
+      <div className="max-w-sm w-full bg-white border border-brand-200 rounded-xl p-5 text-sm">
+        <div className="font-semibold text-slate-800 mb-1">Set a new password</div>
+        <div className="text-slate-500 mb-4">For security, you need to set your own password before continuing — this replaces the one an admin gave you ({email}).</div>
+        {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</div>}
+        <form onSubmit={submit} className="space-y-3">
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-slate-500 tracking-wide">New Password</label>
+            <input required type="password" autoFocus value={pw1} onChange={e=>setPw1(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] font-medium text-slate-500 tracking-wide">Confirm New Password</label>
+            <input required type="password" value={pw2} onChange={e=>setPw2(e.target.value)} className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500" />
+          </div>
+          <button type="submit" disabled={busy} className="w-full bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 text-sm font-medium">{busy?'Updating…':'Set Password & Continue'}</button>
+        </form>
+        <button onClick={onSignOut} className="text-xs text-slate-400 hover:text-slate-600 mt-4">Sign out</button>
+      </div>
+    </div>
+  );
+}
+
 function PendingApprovalScreen({ onSignOut }: { onSignOut: () => void }) {
   return (
     <div className="h-screen flex items-center justify-center bg-slate-100 p-6">
@@ -618,6 +670,7 @@ export default function App() {
 
   if (session === undefined) return <LoadingScreen />;
   if (!session) return <Login />;
+  if (session.user?.user_metadata?.mustChangePassword) return <ForceChangePasswordScreen email={myEmail} metadata={session.user.user_metadata} onSignOut={signOut} />;
   if (platformUserError) return <ErrorScreen message={platformUserError} />;
   if (platformUser === undefined) return <LoadingScreen />;
   if (platformUser === null) return <CompanyCodeScreen meta={session.user.user_metadata} onSubmit={provisionCompanyCode} onSignOut={signOut} />;

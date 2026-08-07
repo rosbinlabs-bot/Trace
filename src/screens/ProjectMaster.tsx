@@ -33,6 +33,11 @@ export default function ProjectMaster(){
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
   const canEdit = form && (role === 'admin' || !form.confirmed);
+  // Who can create a brand-new project: anyone with Edit+ on the 'Project Master' capability-matrix
+  // module -- under the default matrix that's Manager/Admin/Super Admin, and excludes Officer (View
+  // only by default) and Client (None), exactly "anyone except Officer-level users" while staying
+  // configurable from Administration -> Roles & Permissions rather than a hardcoded role check.
+  const canCreateProject = S.capAtLeast(S.capabilityFor('Project Master', myEmail, admin), 'Edit');
   // Financials & Billing is a real Roles & Permissions matrix module (Administration -> Roles &
   // Permissions shows it as fully editable, defaulting to Officer:None/Manager:View/Admin:Edit/
   // Super Admin:Full), but nothing in this screen actually checked it -- Monthly Fee, Total
@@ -182,7 +187,7 @@ export default function ProjectMaster(){
     <div>
       <div className="flex justify-between items-center mb-4">
         <S.SectionTitle sub="Click a project to view & edit. Confirmed projects can only be edited by an admin.">Project Master</S.SectionTitle>
-        <button onClick={openNew} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2 rounded-lg">+ New Project</button>
+        {canCreateProject && <button onClick={openNew} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2 rounded-lg">+ New Project</button>}
       </div>
       <S.Card className="overflow-hidden">
         <table className="w-full text-sm">

@@ -63,10 +63,13 @@ export default function MonthlyPlan(){
   const iAmApprover = isPending && (role === 'admin' || myLevel === pendingLevel);
 
   // Same edit gate Phase Management uses when the plan is still a draft (Phases.tsx's `readOnly`):
-  // Admin/Super Admin always gets full rights; everyone else needs to be on THIS project's team.
-  // Once sent for approval, only the approver (or Admin/Super Admin) can still touch it -- and once
-  // Final, editing is restricted to Admin/Super Admin only, exactly as requested.
-  const draftEdit = role === 'admin' || S.isOnProjectTeam(projMeta, myProfile?.name);
+  // Admin/Super Admin always gets full rights; everyone else needs to be on THIS project's team AND
+  // hold Edit+ on the 'Monthly Plan' capability-matrix module (Administration -> Roles & Permissions
+  // -> Capability Matrix), which used to just piggyback on 'Phase Management' -- now configurable on
+  // its own. Once sent for approval, only the approver (or Admin/Super Admin) can still touch it --
+  // and once Final, editing is restricted to Admin/Super Admin only, exactly as requested.
+  const monthlyPlanCap = S.capabilityFor('Monthly Plan', myEmail, admin);
+  const draftEdit = role === 'admin' || (S.capAtLeast(monthlyPlanCap, 'Edit') && S.isOnProjectTeam(projMeta, myProfile?.name));
   const canEdit = isFinal ? role === 'admin' : isPending ? iAmApprover : draftEdit;
   const readOnly = !canEdit;
 
