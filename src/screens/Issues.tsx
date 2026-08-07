@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
 
 const STATUS_OPTS = ['Open', 'In Progress', 'Resolved', 'Closed'];
 
@@ -66,18 +67,26 @@ export default function Issues() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = visibleIssues.find((i: any) => i.id === detailId) || null;
 
-  const addIssue = () => {
-    if (!canAddIssue) return;
-    const proj = myTeamProjects[0] || projects[0];
-    const id = S.nextSeqId('IS', issues);
-    const fresh = {
-      id, project: proj?.name || '', desc: 'New issue', raisedBy: myName, assignee: '', tags: [],
-      severity: 'Medium', due: '', status: 'Open', pendingStatus: null,
-      addedBy: myName, addedAt: new Date().toISOString(), remarks: [],
-    };
-    setIssues((is: any[]) => [...is, fresh]);
-    setDetailId(id);
-    notifyIssue(fresh, { type: 'Issue Raised', message: `${myName} raised a new issue: "${fresh.desc}" (${id}) in ${fresh.project}. Assign an owner to get it moving.` });
+  // ID reserved atomically in the database (db.nextSeqId) rather than computed from the currently-
+  // loaded list -- two people clicking "+ Add Issue" at the same moment used to be able to land on
+  // the same IS-NNN number, and since writes are upsert-by-id the second one would silently
+  // overwrite the first person's brand new issue.
+  const [addingIssue, setAddingIssue] = useState(false);
+  const addIssue = async () => {
+    if (!canAddIssue || addingIssue) return;
+    setAddingIssue(true);
+    try {
+      const proj = myTeamProjects[0] || projects[0];
+      const id = await db.nextSeqId('IS');
+      const fresh = {
+        id, project: proj?.name || '', desc: 'New issue', raisedBy: myName, assignee: '', tags: [],
+        severity: 'Medium', due: '', status: 'Open', pendingStatus: null,
+        addedBy: myName, addedAt: new Date().toISOString(), remarks: [],
+      };
+      setIssues((is: any[]) => [...is, fresh]);
+      setDetailId(id);
+      notifyIssue(fresh, { type: 'Issue Raised', message: `${myName} raised a new issue: "${fresh.desc}" (${id}) in ${fresh.project}. Assign an owner to get it moving.` });
+    } finally { setAddingIssue(false); }
   };
   const removeIssue = (id: string) => {
     if (!canDelete) return;
@@ -151,8 +160,8 @@ export default function Issues() {
     <div>
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <S.SectionTitle sub="Track, assign and resolve project issues — only whoever raised, is assigned, or is tagged on an issue (plus Admin/L1) can see it.">Issue Management</S.SectionTitle>
-        <button onClick={addIssue} disabled={!canAddIssue} title={!canAddIssue ? "You need to be on a project's team to raise an issue." : ''}
-          className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">+ Add Issue</button>
+        <button onClick={addIssue} disabled={!canAddIssue || addingIssue} title={!canAddIssue ? "You need to be on a project's team to raise an issue." : ''}
+          className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">{addingIssue ? 'Adding…' : '+ Add Issue'}</button>
       </div>
 
       <S.Card className="overflow-hidden">

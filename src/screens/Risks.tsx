@@ -2,14 +2,6 @@ import React, { useState } from 'react';
 import * as S from '../shared';
 import * as db from '../db';
 
-// Simple sequential display ID (R-001, R-002, ...) instead of the old S.uid('RK') random string --
-// tenant-wide, computed from the highest existing R-NNN suffix currently loaded.
-const nextRiskId = (risks: any[]) => {
-  let max = 0;
-  (risks || []).forEach((r: any) => { const m = /^R-(\d+)$/.exec(r.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10)); });
-  return 'R-' + String(max + 1).padStart(3, '0');
-};
-
 const STATUS_OPTS = ['Open', 'In Progress', 'Mitigated', 'Closed'];
 
 export default function Risks() {
@@ -60,18 +52,26 @@ export default function Risks() {
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = risks.find((r: any) => r.id === detailId) || null;
 
-  const addRisk = () => {
-    if (!canAddRisk) return;
-    const proj = myTeamProjects[0] || projects[0];
-    const id = nextRiskId(risks);
-    const fresh = {
-      id, project: proj?.name || '', desc: 'New risk', supportBy: '',
-      addedBy: myProfile?.name || myEmail, addedAt: new Date().toISOString(),
-      prob: 'Medium', impact: 'Medium', mitigation: '', target: '', status: 'Open',
-      remarks: [], docs: [],
-    };
-    setRisks((rs: any[]) => [...rs, fresh]);
-    setDetailId(id);
+  // Reserved atomically in the database (db.nextSeqId -> next_seq_id() RPC) rather than computed
+  // from the currently-loaded list -- two people clicking "+ Add Risk" at the same moment used to
+  // be able to land on the same R-NNN number, and since writes are upsert-by-id the second one
+  // would silently overwrite the first person's brand new risk.
+  const [addingRisk, setAddingRisk] = useState(false);
+  const addRisk = async () => {
+    if (!canAddRisk || addingRisk) return;
+    setAddingRisk(true);
+    try {
+      const proj = myTeamProjects[0] || projects[0];
+      const id = await db.nextSeqId('R');
+      const fresh = {
+        id, project: proj?.name || '', desc: 'New risk', supportBy: '',
+        addedBy: myProfile?.name || myEmail, addedAt: new Date().toISOString(),
+        prob: 'Medium', impact: 'Medium', mitigation: '', target: '', status: 'Open',
+        remarks: [], docs: [],
+      };
+      setRisks((rs: any[]) => [...rs, fresh]);
+      setDetailId(id);
+    } finally { setAddingRisk(false); }
   };
   const removeRisk = (id: string) => {
     if (!canDelete) return;
@@ -145,8 +145,8 @@ export default function Risks() {
       {docErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{docErr}</div>}
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <S.SectionTitle sub="Risk register with probability, impact, mitigation and escalation. Visible to everyone tagged to a project's team — not to clients.">Project Risk Management</S.SectionTitle>
-        <button onClick={addRisk} disabled={!canAddRisk} title={!canAddRisk ? "You need to be on a project's team to log a risk." : ''}
-          className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">+ Add Risk</button>
+        <button onClick={addRisk} disabled={!canAddRisk || addingRisk} title={!canAddRisk ? "You need to be on a project's team to log a risk." : ''}
+          className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm px-4 py-2 rounded-lg whitespace-nowrap">{addingRisk ? 'Adding…' : '+ Add Risk'}</button>
       </div>
 
       {/* Mini dashboard */}

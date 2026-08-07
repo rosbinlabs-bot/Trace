@@ -15,6 +15,17 @@
 import { supabase } from './supabaseClient';
 import { DEFAULT_PROJECT_SETTINGS, DEFAULT_ADMIN_DATA } from './shared';
 
+// Atomically reserves the next sequential display ID for this account's tenant (e.g. 'R-004',
+// 'IS-012') via the next_seq_id() Postgres function -- a real per-tenant counter row locked and
+// incremented server-side, instead of the old client-side "scan the loaded list, pick max+1"
+// approach, which could hand two people creating a record at the same moment the same next number
+// (and since writes are upsert-by-id, the second one would silently overwrite the first).
+export async function nextSeqId(prefix: string): Promise<string> {
+  const { data, error } = await supabase.rpc('next_seq_id', { p_prefix: prefix });
+  if (error) throw error;
+  return data as string;
+}
+
 /* ============================ tenant context ============================ */
 // Set once per session (App.tsx, right after resolving the signed-in user's platform_users row) and
 // read by every toDb mapper below so new rows always carry the caller's own tenant_id -- Postgres

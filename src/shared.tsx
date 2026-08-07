@@ -153,15 +153,12 @@ export const buildRosterWithClients = (project: any, admin?: any) => [
   ...buildRoster(project, admin),
   ...((project?.clients||[]).map((c:any) => ({ name: c.name, level: 'Client', label: c.owner ? 'Client · Owner' : 'Client' }))),
 ];
-// Simple sequential display ID scoped to a prefix (e.g. nextSeqId('IS', issues) -> 'IS-004'),
-// generalizing the pattern Risks.tsx already used locally (nextRiskId) so Issue Management and
-// anything raised straight from Client Portal share the same numbering.
-export const nextSeqId = (prefix: string, list: any[]): string => {
-  let max = 0;
-  const re = new RegExp(`^${prefix}-(\\d+)$`);
-  (list || []).forEach((x: any) => { const m = re.exec(x.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10)); });
-  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
-};
+// Sequential display IDs (e.g. 'IS-004') are now reserved server-side -- see db.nextSeqId(), which
+// calls the next_seq_id() Postgres function. A client-side "scan the loaded list, pick max+1"
+// version used to live here, but two people creating a record at the same moment could get handed
+// the same next number that way, and since writes are upsert-by-id the second write would silently
+// overwrite the first person's brand new record. db.nextSeqId() reserves the number atomically in
+// the database instead.
 
 // Company-wide master lists that power several New Project form dropdowns (Category, Industry,
 // Consulting Category, Engagement Type). Editable from Administration -> Project Settings and

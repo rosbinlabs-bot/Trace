@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
 
 export default function Portal(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
@@ -24,6 +25,7 @@ export default function Portal(){
   // unconditionally on every render, same as every other useState above -- the early "no projects"
   // return right below this would otherwise skip it on some renders and violate the Rules of Hooks.
   const [issueDraft, setIssueDraft] = useState({ desc:'', severity:'Medium' });
+  const [raisingIssue, setRaisingIssue] = useState(false);
 
   // Reached with no projects when a Client-type account's tagged project has since been removed (or
   // was never set) -- ProjectsDataContext is filtered to just their one project for that role (see
@@ -48,18 +50,23 @@ export default function Portal(){
   // isn't itself a named client contact.
   const myClientName = myProfile?.name || clientOwner?.name || email;
   const myIssues = issues.filter(i => i.project===projMeta.name && (i.raisedBy===myClientName || (i.tags||[]).includes(myClientName)));
-  const raiseIssue = () => {
-    if(!canAct || !issueDraft.desc.trim()) return;
-    const id = S.nextSeqId('IS', issues);
-    const fresh = {
-      id, project: projMeta.name, desc: issueDraft.desc.trim(), raisedBy: myClientName, assignee: '', tags: [],
-      severity: issueDraft.severity, due: '', status: 'Open', pendingStatus: null,
-      addedBy: myClientName, addedAt: new Date().toISOString(), remarks: [],
-    };
-    setIssues((is:any[]) => [...is, fresh]);
-    notifyProject({ level:'issue', itemName:fresh.desc, type:'Issue Raised',
-      message:`${myClientName} raised a new issue: "${fresh.desc}" (${id}) in ${projMeta.name}. Assign an owner to get it moving.` });
-    setIssueDraft({ desc:'', severity:'Medium' });
+  // ID reserved atomically in the database (db.nextSeqId) so two people raising an issue at the
+  // same moment can't be handed the same IS-NNN number (see Issues.tsx for the same fix).
+  const raiseIssue = async () => {
+    if(!canAct || !issueDraft.desc.trim() || raisingIssue) return;
+    setRaisingIssue(true);
+    try {
+      const id = await db.nextSeqId('IS');
+      const fresh = {
+        id, project: projMeta.name, desc: issueDraft.desc.trim(), raisedBy: myClientName, assignee: '', tags: [],
+        severity: issueDraft.severity, due: '', status: 'Open', pendingStatus: null,
+        addedBy: myClientName, addedAt: new Date().toISOString(), remarks: [],
+      };
+      setIssues((is:any[]) => [...is, fresh]);
+      notifyProject({ level:'issue', itemName:fresh.desc, type:'Issue Raised',
+        message:`${myClientName} raised a new issue: "${fresh.desc}" (${id}) in ${projMeta.name}. Assign an owner to get it moving.` });
+      setIssueDraft({ desc:'', severity:'Medium' });
+    } finally { setRaisingIssue(false); }
   };
 
   // Pipeline: only items whose internal level-approval chain (Phase Management -> Mark Implemented,
@@ -206,7 +213,7 @@ export default function Portal(){
                 {S.RAG.map(o=><option key={o}>{o}</option>)}
               </select>
             </div>
-            <button onClick={raiseIssue} disabled={!issueDraft.desc.trim()} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap">Raise Issue</button>
+            <button onClick={raiseIssue} disabled={!issueDraft.desc.trim() || raisingIssue} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap">{raisingIssue ? 'Raising…' : 'Raise Issue'}</button>
           </div>
         ) : (
           <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">This account has view-only access — raising an issue is disabled.</div>
