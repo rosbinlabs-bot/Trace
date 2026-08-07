@@ -137,8 +137,9 @@ export default function DocumentLibrary(){
             <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Name of the Document</S.Th><S.Th>Industry</S.Th><S.Th>Used In</S.Th><S.Th>Function</S.Th><S.Th>Status</S.Th><S.Th>Uploaded</S.Th><S.Th></S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
               {filtered.map(d=>{ const pending = d.status==='Pending Approval'; return (
-                <tr key={d.id} className={`hover:bg-slate-50 ${pending?'bg-amber-50/30':''}`}>
-                  <S.Td className="font-medium"><span className="inline-flex items-center gap-1.5"><S.Icon name="library" className="w-3.5 h-3.5 shrink-0 text-brand-500"/>{d.name}</span></S.Td>
+                <tr key={d.id} className={`hover:bg-slate-50 ${pending?'bg-amber-50/30':''} ${d.filePath?'cursor-pointer':''}`}
+                  onClick={()=>d.filePath && downloadDoc(d)} title={d.filePath?'Click to download':'No file on record'}>
+                  <S.Td className="font-medium"><span className="inline-flex items-center gap-1.5"><S.Icon name="library" className="w-3.5 h-3.5 shrink-0 text-brand-500"/><span className={d.filePath?'hover:underline hover:text-brand-700':''}>{d.name}</span></span></S.Td>
                   <S.Td>{d.industry||'—'}</S.Td>
                   <S.Td>{d.usedIn||'—'}</S.Td>
                   <S.Td><S.Badge cls="bg-brand-50 text-brand-700">{d.function}</S.Badge></S.Td>
@@ -151,16 +152,16 @@ export default function DocumentLibrary(){
                   <S.Td>
                     <div className="flex items-center gap-2 whitespace-nowrap">
                       {pending && iAmSuperAdmin && (
-                        <button onClick={()=>approveDoc(d.id)} title="Approve" className="text-emerald-500 hover:text-emerald-700">
+                        <button onClick={(e)=>{e.stopPropagation();approveDoc(d.id);}} title="Approve" className="text-emerald-500 hover:text-emerald-700">
                           <S.Icon name="checkcircle" className="w-3.5 h-3.5"/>
                         </button>
                       )}
                       {d.filePath && (
-                        <button onClick={()=>downloadDoc(d)} disabled={downloadingId===d.id} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
+                        <button onClick={(e)=>{e.stopPropagation();downloadDoc(d);}} disabled={downloadingId===d.id} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
                           <S.Icon name={downloadingId===d.id?'refresh':'download'} className="w-3.5 h-3.5"/>
                         </button>
                       )}
-                      {canDelete && <button onClick={()=>removeDoc(d)} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
+                      {canDelete && <button onClick={(e)=>{e.stopPropagation();removeDoc(d);}} title="Remove" className="text-slate-300 hover:text-red-500"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>}
                     </div>
                   </S.Td>
                 </tr>

@@ -15,6 +15,10 @@ const STATUS_OPTS = ['Open', 'In Progress', 'Mitigated', 'Closed'];
 export default function Risks() {
   const { risks, setRisks } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  // Same shared project-activity feed Phase Management posts to (S.PhaseDataContext wraps
+  // GovernanceDataContext in App.tsx, so it's available here too) — used below to alert everyone
+  // tagged to the project when someone is newly tagged Supporting By on a risk.
+  const { addNotification } = React.useContext(S.PhaseDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
@@ -38,6 +42,20 @@ export default function Risks() {
 
   const projectByName = (name: string) => projects.find((p: any) => p.name === name);
   const mut = (id: string, patch: any) => setRisks((rs: any[]) => rs.map(r => r.id === id ? { ...r, ...patch } : r));
+
+  // Posts to the same shared notification feed the header bell / Dashboard activity panel read —
+  // it's a project-wide feed everyone tagged to the project sees (not a per-user inbox), so naming
+  // the newly-tagged person in the message is what both "notifies them" and "informs all other
+  // stakeholders" in one shot, same pattern Phase Management's notifyProject already uses.
+  const notifySupportTagged = (r: any, name: string) => {
+    const proj = projectByName(r.project);
+    const roster = S.buildRoster(proj, admin);
+    addNotification({
+      projectId: proj?.id, project: r.project, tags: roster.map((p: any) => p.name), priority: 'high',
+      level: 'risk', itemName: r.desc, type: 'Risk Support Assigned',
+      message: `${name} has been tagged as Supporting By on risk "${r.desc}" (${r.id}) in ${r.project} — please review and begin addressing it. All project stakeholders have been notified.`,
+    });
+  };
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = risks.find((r: any) => r.id === detailId) || null;
@@ -223,7 +241,11 @@ export default function Risks() {
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-slate-400">Supporting By</label>
                   {editGeneral ? (
-                    <select className={S.gInp} value={r.supportBy || ''} onChange={e => mut(r.id, { supportBy: e.target.value })}>
+                    <select className={S.gInp} value={r.supportBy || ''} onChange={e => {
+                      const name = e.target.value;
+                      mut(r.id, { supportBy: name });
+                      if (name && name !== r.supportBy) notifySupportTagged(r, name);
+                    }}>
                       <option value="">— Select —</option>
                       {roster.map((p: any) => <option key={p.name} value={p.name}>{p.name}{p.label ? ` (${p.label})` : ''}</option>)}
                     </select>

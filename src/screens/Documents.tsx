@@ -1,11 +1,26 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as db from '../db';
 
 export default function Documents(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const [activeProj, setActiveProj] = useState('ALL');
   const scopedProjects = activeProj==='ALL' ? projects : projects.filter(p=>p.id===activeProj);
+
+  // Every teammate who can reach this page (any active staff account with at least View on the
+  // Documents module — see NAV_MODULE/DEFAULT_PERMISSION_MATRIX) can open/download any file here,
+  // same as Document Library — this is a cross-project aggregate view, not gated by project team
+  // membership the way editing in Phase Management is.
+  const [err, setErr] = useState('');
+  const [downloadingId, setDownloadingId] = useState<string|null>(null);
+  const openDoc = async (d:any) => {
+    if(!d?.path) return;
+    setErr(''); setDownloadingId(d.id||d.path);
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path), '_blank'); }
+    catch(e:any) { setErr(e.message || 'Could not generate a download link.'); }
+    setDownloadingId(null);
+  };
 
   const allDocs = [];
   scopedProjects.forEach(p=>{
@@ -45,24 +60,33 @@ export default function Documents(){
 
       <div className="text-xs text-slate-400 mb-3">{totalDocsAllProjects} document(s) attached across all projects{activeProj!=='ALL' && ` · ${allDocs.length} shown for this project`}</div>
 
+      {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{err}</div>}
+
       <S.Card className="overflow-hidden">
         {allDocs.length===0 ? (
           <div className="p-6 text-center text-sm text-slate-400">No documents attached yet — attach a file to a milestone or sub task from Phase Management's "+ Attach" control to see it listed here.</div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Document Name</S.Th><S.Th>Project</S.Th><S.Th>Industry</S.Th><S.Th>Phase</S.Th><S.Th>Attached To</S.Th><S.Th>Level</S.Th><S.Th>Status</S.Th></tr></thead>
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Document Name</S.Th><S.Th>Project</S.Th><S.Th>Industry</S.Th><S.Th>Phase</S.Th><S.Th>Attached To</S.Th><S.Th>Level</S.Th><S.Th>Status</S.Th><S.Th></S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {allDocs.map((d,i)=>(
-                <tr key={i} className="hover:bg-slate-50">
-                  <S.Td className="font-medium"><span className="inline-flex items-center gap-1.5"><S.Icon name={S.docIcon(d.doc.n)} className={`w-3.5 h-3.5 shrink-0 ${S.docIconTone(d.doc.n)}`}/>{d.doc.n}</span></S.Td>
+              {allDocs.map((d,i)=>{ const busy = downloadingId===(d.doc.id||d.doc.path); return (
+                <tr key={i} className={`hover:bg-slate-50 ${d.doc.path?'cursor-pointer':''}`} onClick={()=>openDoc(d.doc)} title={d.doc.path?'Click to download':'No file on record'}>
+                  <S.Td className="font-medium"><span className="inline-flex items-center gap-1.5"><S.Icon name={busy?'refresh':S.docIcon(d.doc.n)} className={`w-3.5 h-3.5 shrink-0 ${busy?'text-brand-500':S.docIconTone(d.doc.n)}`}/><span className={d.doc.path?'hover:underline hover:text-brand-700':''}>{d.doc.n}</span></span></S.Td>
                   <S.Td>{d.project}</S.Td>
                   <S.Td>{d.industry||'—'}</S.Td>
                   <S.Td>{d.phase}</S.Td>
                   <S.Td>{d.item}</S.Td>
                   <S.Td>{d.level}</S.Td>
                   <S.Td><S.Badge cls={S.statusColor(d.status)}>{d.status}</S.Badge></S.Td>
+                  <S.Td>
+                    {d.doc.path && (
+                      <button onClick={(e)=>{ e.stopPropagation(); openDoc(d.doc); }} disabled={busy} title="Download" className="text-slate-400 hover:text-brand-600 disabled:opacity-50">
+                        <S.Icon name={busy?'refresh':'download'} className="w-3.5 h-3.5"/>
+                      </button>
+                    )}
+                  </S.Td>
                 </tr>
-              ))}
+              );})}
             </tbody>
           </table>
         )}
