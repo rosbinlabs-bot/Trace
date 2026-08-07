@@ -707,8 +707,40 @@ export const payColor = (s) => ({ 'Received':'bg-emerald-100 text-emerald-700','
 // A project's end date has passed but it's still marked In Progress and no extension has been recorded yet.
 export const isProjectOverdue = (p) => daysLeft(p.end) < 0;
 export const needsExtension = (p) => isProjectOverdue(p) && p.status==='In Progress' && !p.extension;
-// Billing due within the next 7 days (or already overdue) — needs a highlight/alert.
-export const billingDueSoon = (p) => p.billingDueDate && daysLeft(p.billingDueDate) <= 7;
+// Format a Date object as a local 'YYYY-MM-DD' string (matches how every other date in this app is
+// stored/compared) — avoids the classic new Date(iso).toISOString() timezone-shift bug.
+const isoOfLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+
+// Monthly billing is recorded as a full DATE (billingDueDate, set from Project Master's Billing Day
+// field), but only its DAY OF MONTH is meaningful — the same convention the database's
+// generate_monthly_invoices() function already uses (extract(day from billing_due_date), clamped to
+// the shorter month's last day). The stored date's own month/year is just wherever the day was first
+// anchored (see ProjectMaster.tsx) — what actually matters, and what this computes, is the NEXT real
+// occurrence of that day on or after today. Without this, Dashboard/Reports/notifications would keep
+// showing the original one-time date forever, getting more "overdue" every month even though the
+// project is really billing fine, on schedule, every month.
+// One Time / Phase Wise billing isn't recurring, so their billingDueDate is returned unchanged — it
+// really is a single literal due date. Once a project is closed (Completed/Terminated/Dropped),
+// there's nothing left to bill, so this returns null rather than an ever-more-overdue date.
+export const nextBillingDueDate = (p: any): string | null => {
+  if (!p?.billingDueDate) return null;
+  if (p.billing !== 'Monthly') return p.billingDueDate;
+  if (['Completed', 'Terminated', 'Dropped'].includes(p.status)) return null;
+  const parts = String(p.billingDueDate).slice(0, 10).split('-').map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return p.billingDueDate;
+  const targetDay = parts[2];
+  const today = new Date(TODAY_ISO + 'T00:00:00');
+  const dueInMonth = (year: number, monthIndex: number) => {
+    const lastDay = new Date(year, monthIndex + 1, 0).getDate();
+    return new Date(year, monthIndex, Math.min(targetDay, lastDay));
+  };
+  let candidate = dueInMonth(today.getFullYear(), today.getMonth());
+  if (candidate < today) candidate = dueInMonth(today.getFullYear(), today.getMonth() + 1);
+  return isoOfLocalDate(candidate);
+};
+// Billing due within the next 7 days (or already overdue) — needs a highlight/alert. Reads the
+// recurring next-occurrence date above, not the raw stored billingDueDate.
+export const billingDueSoon = (p: any) => { const d = nextBillingDueDate(p); return !!d && daysLeft(d) <= 7; };
 
 // Deterministic, rule-based "AI Insights" generator — reads the same live tree/governance/team
 // data used across the Dashboard and Reports, and turns it into a short prioritized list of

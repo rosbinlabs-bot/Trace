@@ -9,7 +9,7 @@ export default function Dashboard(){
   const { invoices } = React.useContext(S.InvoicesDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
-  const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(a.billingDueDate)-S.daysLeft(b.billingDueDate));
+  const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
   // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
   // of records behind its number, so a number is never a dead end.
@@ -255,7 +255,7 @@ export default function Dashboard(){
           </button>
           {billingDuesOpen && (
             <div className="px-4 pb-4 space-y-1.5">
-              {dueBillings.map((p:any)=>{ const d = S.daysLeft(p.billingDueDate); return (
+              {dueBillings.map((p:any)=>{ const due = S.nextBillingDueDate(p); const d = S.daysLeft(due!); return (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-sm bg-white rounded-lg px-3 py-2 border border-amber-100">
                   <div className="flex items-center gap-2 min-w-0">
                     <span className="font-medium text-slate-700 truncate">{p.name}</span>
@@ -263,7 +263,7 @@ export default function Dashboard(){
                   </div>
                   <div className="flex items-center gap-3 text-xs whitespace-nowrap">
                     <span className="text-slate-500">PM: <b className="text-slate-700">{S.projectManagerName(p, admin)||'—'}</b></span>
-                    <span className="text-slate-400">Due {p.billingDueDate}</span>
+                    <span className="text-slate-400">Due {due}{p.billing==='Monthly' && <span className="text-slate-300"> (monthly, day {due?.slice(8,10)})</span>}</span>
                     <span className={`font-medium ${d<0?'text-red-600':'text-amber-600'}`}>{d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`in ${d}d`}</span>
                   </div>
                 </div>

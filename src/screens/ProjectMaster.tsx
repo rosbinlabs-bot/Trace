@@ -32,6 +32,26 @@ export default function ProjectMaster(){
   const close = () => { setForm(null); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
+  // Billing Due Date is stored as a full DATE, but for Monthly billing only its DAY OF MONTH is ever
+  // read (see S.nextBillingDueDate / the database's generate_monthly_invoices() function, which both
+  // extract just the day, clamped to the shorter month's last day, to recur the due date every
+  // month). Asking for a full calendar date here was misleading -- it looked like a one-time due
+  // date, and the rest of the app used to treat it that way too, so a project just got more
+  // "overdue" every month forever instead of billing on schedule. For Monthly billing this now asks
+  // only for the day (1st-31st); the underlying stored value is still a real date (anchored to this
+  // project's Start Date, or today if unset) so the database column and its existing cron function
+  // need no changes. One Time / Phase Wise billing still gets a real literal due date, since those
+  // aren't recurring.
+  const billingDayOf = (iso) => { const d = Number(String(iso||'').slice(8,10)); return Number.isFinite(d) && d>=1 && d<=31 ? d : null; };
+  const setBillingDay = (day) => {
+    const anchor = (form.start || S.TODAY_ISO).slice(0,7);
+    const [y,m] = anchor.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const clamped = Math.min(day, lastDay);
+    setF('billingDueDate', `${y}-${String(m).padStart(2,'0')}-${String(clamped).padStart(2,'0')}`);
+  };
+  const ordinal = (n) => { const s=['th','st','nd','rd'], v=n%100; return n+(s[(v-20)%10]||s[v]||s[0]); };
+
   const canEdit = form && (role === 'admin' || !form.confirmed);
   // Who can create a brand-new project: anyone with Edit+ on the 'Project Master' capability-matrix
   // module -- under the default matrix that's Manager/Admin/Super Admin, and excludes Officer (View
@@ -306,7 +326,18 @@ export default function ProjectMaster(){
               </div>
               <S.SelF label="Priority" value={form.priority} canEdit={canEdit} onChange={v=>setF('priority',v)} opts={PRIORITIES} />
               <S.SelF label="Billing Type" value={form.billing} canEdit={canEdit} onChange={v=>setF('billing',v)} opts={BILLINGS} />
-              <S.DateF label="Billing Due Date" value={form.billingDueDate} canEdit={canEdit} onChange={v=>setF('billingDueDate',v)} />
+              {form.billing==='Monthly' ? (
+                <div>
+                  <label className="text-xs text-slate-400 block mb-1">Billing Day of Month</label>
+                  <select value={billingDayOf(form.billingDueDate)||''} disabled={!canEdit} onChange={e=>setBillingDay(Number(e.target.value))} className={S.fieldCls(canEdit)}>
+                    <option value="" disabled>Select a day…</option>
+                    {Array.from({length:31},(_,i)=>i+1).map(d=><option key={d} value={d}>{ordinal(d)}</option>)}
+                  </select>
+                  <div className="text-[11px] text-slate-400 mt-1">Bills every month on this day until the project closes (clamped to the last day in shorter months).{S.nextBillingDueDate(form) ? ` Next due: ${S.nextBillingDueDate(form)}.` : ''}</div>
+                </div>
+              ) : (
+                <S.DateF label="Billing Due Date" value={form.billingDueDate} canEdit={canEdit} onChange={v=>setF('billingDueDate',v)} />
+              )}
               {canViewFinancials ? (
                 <S.NumF label="Monthly Fee (₹)" value={form.monthlyFee} canEdit={canEditFinancials} onChange={v=>setF('monthlyFee',v)} />
               ) : (

@@ -92,7 +92,7 @@ export default function Reports(){
   }));
 
   const marginRanked = [...projects].sort((a,b)=>(a.margin||0)-(b.margin||0));
-  const billingRanked = [...projects].sort((a,b)=>S.daysLeft(a.billingDueDate)-S.daysLeft(b.billingDueDate));
+  const billingRanked = [...projects].sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)||a.end)-S.daysLeft(S.nextBillingDueDate(b)||b.end));
   const timelineRanked = [...projects].sort((a,b)=>S.daysLeft(a.end)-S.daysLeft(b.end));
 
   const miniTable = (rows, cols) => (
@@ -182,11 +182,11 @@ export default function Reports(){
         );
       case 'billingsummary':
         return miniTable(
-          billingRanked.map(p=>{ const d=S.daysLeft(p.billingDueDate); return (
+          billingRanked.map(p=>{ const due=S.nextBillingDueDate(p); const d=due?S.daysLeft(due):null; return (
             <tr key={p.id}>
               <S.Td className="font-medium">{p.name}</S.Td><S.Td>{p.client}</S.Td><S.Td>{p.billing}</S.Td>
-              <S.Td>{p.billingDueDate||'—'}</S.Td>
-              <S.Td className={d<0?'text-red-600 font-medium':d<=7?'text-amber-600 font-medium':'text-slate-500'}>{d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`${d}d left`}</S.Td>
+              <S.Td>{due||'—'}</S.Td>
+              <S.Td className={d==null?'text-slate-400':d<0?'text-red-600 font-medium':d<=7?'text-amber-600 font-medium':'text-slate-500'}>{d==null?'—':d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`${d}d left`}</S.Td>
               <S.Td><S.Badge cls={S.payColor(projPaymentStatus(p))}>{projPaymentStatus(p)}</S.Badge></S.Td>
             </tr>
           );}), ['Project','Client','Billing Type','Due Date','Status','Payment']

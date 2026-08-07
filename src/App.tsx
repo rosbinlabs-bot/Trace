@@ -765,18 +765,24 @@ export default function App() {
 
   // Billing due soon (within 7 days, or already overdue) — was previously only a Dashboard banner
   // with nothing in the notification feed/bell. Raises one real notification per project per
-  // billing_due_date, deduped against notifications already on record (including ones loaded from a
-  // previous session) so it doesn't spam a fresh one on every reload/re-render.
+  // occurrence of S.nextBillingDueDate (the recurring monthly due date, not the raw one-time
+  // billingDueDate field — see shared.tsx), deduped against notifications already on record
+  // (including ones loaded from a previous session) so it doesn't spam a fresh one on every
+  // reload/re-render. Keying the dedup on the computed due date means a NEW notification correctly
+  // fires each month once the due date rolls forward, instead of only ever firing once for the
+  // project's original signup date.
   useEffect(() => {
     if (loading || !tenantId) return;
     projects.filter(S.billingDueSoon).forEach((p: any) => {
-      const already = notifications.some((n: any) => n.type === 'Billing Due Soon' && n.projectId === p.id && n.dueDate === p.billingDueDate);
+      const due = S.nextBillingDueDate(p);
+      if (!due) return;
+      const already = notifications.some((n: any) => n.type === 'Billing Due Soon' && n.projectId === p.id && n.dueDate === due);
       if (already) return;
-      const d = S.daysLeft(p.billingDueDate);
+      const d = S.daysLeft(due);
       addNotification({
-        type: 'Billing Due Soon', projectId: p.id, project: p.name, dueDate: p.billingDueDate,
+        type: 'Billing Due Soon', projectId: p.id, project: p.name, dueDate: due,
         priority: d < 0 ? 'high' : 'normal',
-        message: `${p.name}'s billing is ${d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? 'due today' : `due in ${d}d`} (due ${p.billingDueDate}).`,
+        message: `${p.name}'s billing is ${d < 0 ? `${Math.abs(d)}d overdue` : d === 0 ? 'due today' : `due in ${d}d`} (due ${due}).`,
       });
     });
   }, [loading, tenantId, projects, notifications]);
