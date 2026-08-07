@@ -254,6 +254,44 @@ function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: 
   };
 }
 
+// Same idea as wrapSetter, but for the two data types stored as one big JSON blob per key (Phase
+// Management's tree per project, Monthly Plan's rows per project+month) instead of one row per
+// record. Every keystroke in a subtask/milestone/objective/activity text field calls this, and
+// wrapSetter used to turn each one into an immediate full-blob upload to Supabase -- on a live
+// project with a real amount of content that's a network round trip PER CHARACTER, which is exactly
+// what felt like typing lag. Local state still updates instantly here (typing is never blocked on
+// the network); only the outbound Supabase write is debounced, batched to fire `delay` ms after the
+// last edit in a burst, diffed against the state from BEFORE the burst started (not the
+// second-to-last keystroke) so nothing in between is lost. `markEdited` runs on every call,
+// undebounced, to stamp recentLocalEditRef (see below) immediately.
+function useDebouncedSync<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>, markEdited: (prev: T, next: T) => void, delay = 700) {
+  const pendingRef = React.useRef<{ base: T; timer: any } | null>(null);
+  return (updater: React.SetStateAction<T>) => {
+    setState((prev) => {
+      const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
+      markEdited(prev, next);
+      if (!pendingRef.current) pendingRef.current = { base: prev, timer: null };
+      if (pendingRef.current.timer) clearTimeout(pendingRef.current.timer);
+      const base = pendingRef.current.base;
+      pendingRef.current.timer = setTimeout(() => {
+        pendingRef.current = null;
+        sync(base, next).catch((e) => console.error('Supabase sync failed:', e));
+      }, delay);
+      return next;
+    });
+  };
+}
+
+// Which top-level keys differ between two { key: value } snapshots -- used both to stamp
+// recentLocalEditRef (below) and mirrors the same diff db.syncTree/db.syncMonthlyPlan do server-side,
+// just cheaply on the client so we know which keys were just touched without waiting for the network.
+function changedKeys(prev: any, next: any): string[] {
+  const keys = new Set([...Object.keys(prev || {}), ...Object.keys(next || {})]);
+  const out: string[] = [];
+  keys.forEach((k) => { if (prev?.[k] !== next?.[k]) out.push(k); });
+  return out;
+}
+
 function LoadingScreen() {
   return (
     <div className="h-screen flex items-center justify-center bg-slate-100 text-slate-400 text-sm">
@@ -446,6 +484,13 @@ export default function App() {
   const [invoices, setInvoicesState] = useState<any[]>([]);
   const [monthlyPlan, setMonthlyPlanState] = useState<any>({});
 
+  // Timestamps of our own most recent local edit to each phase-tree project / monthly-plan
+  // project+month, so the Realtime handlers below can tell "this update is just Supabase echoing
+  // back the write we just made" apart from "someone else changed this" and skip the former — see
+  // useDebouncedSync/changedKeys above for why this is needed.
+  const recentLocalEditRef = React.useRef<{ tree: Record<string, number>; monthlyPlan: Record<string, number> }>({ tree: {}, monthlyPlan: {} });
+  const SELF_ECHO_WINDOW_MS = 2500;
+
   // Fetch every table once a session exists AND the tenant is resolved. All data below this point
   // comes from Supabase — nothing is seeded from the in-memory mock constants in shared.tsx anymore
   // (those still exist and are used to *generate* the seed data that was inserted into the database,
@@ -534,6 +579,12 @@ export default function App() {
             return next;
           }
           const row = payload.new;
+          // Self-echo guard: if we ourselves edited this project's tree within the last
+          // SELF_ECHO_WINDOW_MS, this incoming row is almost certainly Supabase confirming that same
+          // write arriving back over Realtime -- applying it anyway can roll back whatever's been
+          // typed since the write was queued (the "reverses while typing" symptom). Skip it; the next
+          // genuine Realtime event (or the debounced write that's about to fire) will catch up.
+          if (Date.now() - (recentLocalEditRef.current.tree[row.project_id] || 0) < SELF_ECHO_WINDOW_MS) return prev;
           return { ...prev, [row.project_id]: row.tree || [] };
         });
       },
@@ -564,6 +615,9 @@ export default function App() {
             return { ...prev, [pid]: nextForProj };
           }
           const row = payload.new;
+          // Same self-echo guard as phase_trees above, keyed by project+month.
+          const key = `${row.project_id}::${row.month}`;
+          if (Date.now() - (recentLocalEditRef.current.monthlyPlan[key] || 0) < SELF_ECHO_WINDOW_MS) return prev;
           return { ...prev, [row.project_id]: { ...(prev[row.project_id] || {}), [row.month]: row.rows || [] } };
         });
       },
@@ -572,7 +626,12 @@ export default function App() {
   }, [tenantId]);
 
   const setProjects = wrapSetter(setProjectsState, db.syncProjects);
-  const setPhaseTree = wrapSetter(setPhaseTreeState, db.syncTree);
+  // Debounced (not immediate, unlike wrapSetter) -- see useDebouncedSync above. markEdited stamps
+  // recentLocalEditRef immediately on every keystroke (even though the actual network write is
+  // delayed), so the Realtime self-echo guard above knows this key was just touched by us.
+  const setPhaseTree = useDebouncedSync(setPhaseTreeState, db.syncTree, (prev, next) => {
+    changedKeys(prev, next).forEach((k) => { recentLocalEditRef.current.tree[k] = Date.now(); });
+  });
   const setRisks = wrapSetter(setRisksState, db.syncRisks);
   const setIssues = wrapSetter(setIssuesState, db.syncIssues);
   const setChanges = wrapSetter(setChangesState, db.syncChanges);
@@ -581,7 +640,16 @@ export default function App() {
   const setDeliverables = wrapSetter(setDeliverablesState, db.syncDeliverables);
   const setInvoices = wrapSetter(setInvoicesState, db.syncInvoices);
   const setTeam = wrapSetter(setTeamState, db.syncTeam);
-  const setMonthlyPlan = wrapSetter(setMonthlyPlanState, db.syncMonthlyPlan);
+  // Same debouncing + self-echo stamping as setPhaseTree above, keyed by project+month.
+  const setMonthlyPlan = useDebouncedSync(setMonthlyPlanState, db.syncMonthlyPlan, (prev, next) => {
+    const keys = new Set<string>();
+    Object.keys(prev || {}).forEach((pid) => Object.keys(prev[pid] || {}).forEach((m) => keys.add(`${pid}::${m}`)));
+    Object.keys(next || {}).forEach((pid) => Object.keys(next[pid] || {}).forEach((m) => keys.add(`${pid}::${m}`)));
+    keys.forEach((k) => {
+      const [pid, month] = k.split('::');
+      if (prev?.[pid]?.[month] !== next?.[pid]?.[month]) recentLocalEditRef.current.monthlyPlan[k] = Date.now();
+    });
+  });
 
   const setSettings = (updater: any) => {
     setSettingsState((prev: any) => {
