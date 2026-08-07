@@ -262,9 +262,9 @@ export default function ProjectMaster(){
                 <S.Td>{p.consultingCategory||'—'}</S.Td>
                 <S.Td>
                   <div className="text-xs leading-relaxed min-w-[200px]">
-                    {(p.team||[]).length ? (p.team||[]).slice().sort((a:any,b:any)=>S.levelNum(a.level)-S.levelNum(b.level)).map((t:any,i:number)=>(
+                    {(() => { const shown = (p.team||[]).filter((t:any)=>t.level==='L3'||t.level==='L4').slice().sort((a:any,b:any)=>S.levelNum(a.level)-S.levelNum(b.level)); return shown.length ? shown.map((t:any,i:number)=>(
                       <div key={i}><span className="text-slate-400">{t.level}:</span> {t.name||'—'}</div>
-                    )) : <div className="text-slate-400">No team assigned</div>}
+                    )) : <div className="text-slate-400">No L3/L4 assigned</div>; })()}
                     <div><span className="text-slate-400">Client Owner:</span> {owner? <span className="text-emerald-700 font-medium">{owner.name}</span> : '—'}
                       {(p.clients||[]).length>1 && <span className="text-slate-400"> +{(p.clients||[]).length-1} more</span>}</div>
                   </div>
