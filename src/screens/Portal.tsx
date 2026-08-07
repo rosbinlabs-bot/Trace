@@ -5,7 +5,11 @@ export default function Portal(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
-  const { email } = React.useContext(S.CurrentUserContext);
+  const { email, profile: myProfile } = React.useContext(S.CurrentUserContext);
+  // Issue Management: a client can raise an issue on their own project the same way a teammate can
+  // (see screens/Issues.tsx) -- and see only the issues they raised or were tagged on, same
+  // visibility rule Issues.tsx enforces for staff.
+  const { issues, setIssues } = React.useContext(S.GovernanceDataContext);
   // Same Client Portal capability whether this is a Client-type login or a staff account previewing
   // the portal (both reach this screen only once App.tsx's route Gate confirms capability >= View) --
   // Edit or above unlocks the sign-off actions below; exactly View means read-only: the timeline is
@@ -16,6 +20,10 @@ export default function Portal(){
   const [openMs, setOpenMs] = useState({});
   const [remarkDraft, setRemarkDraft] = useState({});
   const [expandedApproval, setExpandedApproval] = useState(null);
+  // Declared here (not below, alongside the rest of the issue-raising logic) so it's called
+  // unconditionally on every render, same as every other useState above -- the early "no projects"
+  // return right below this would otherwise skip it on some renders and violate the Rules of Hooks.
+  const [issueDraft, setIssueDraft] = useState({ desc:'', severity:'Medium' });
 
   // Reached with no projects when a Client-type account's tagged project has since been removed (or
   // was never set) -- ProjectsDataContext is filtered to just their one project for that role (see
@@ -34,6 +42,25 @@ export default function Portal(){
   const roster = S.buildRoster(projMeta, admin);
   const clientOwner = (projMeta.clients||[]).find(c=>c.owner);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
+
+  // My name as far as the issue register is concerned -- matches how it's recorded in
+  // project.clients[] (see Project Master), falling back to the Client Owner label if this login
+  // isn't itself a named client contact.
+  const myClientName = myProfile?.name || clientOwner?.name || email;
+  const myIssues = issues.filter(i => i.project===projMeta.name && (i.raisedBy===myClientName || (i.tags||[]).includes(myClientName)));
+  const raiseIssue = () => {
+    if(!canAct || !issueDraft.desc.trim()) return;
+    const id = S.nextSeqId('IS', issues);
+    const fresh = {
+      id, project: projMeta.name, desc: issueDraft.desc.trim(), raisedBy: myClientName, assignee: '', tags: [],
+      severity: issueDraft.severity, due: '', status: 'Open', pendingStatus: null,
+      addedBy: myClientName, addedAt: new Date().toISOString(), remarks: [],
+    };
+    setIssues((is:any[]) => [...is, fresh]);
+    notifyProject({ level:'issue', itemName:fresh.desc, type:'Issue Raised',
+      message:`${myClientName} raised a new issue: "${fresh.desc}" (${id}) in ${projMeta.name}. Assign an owner to get it moving.` });
+    setIssueDraft({ desc:'', severity:'Medium' });
+  };
 
   // Pipeline: only items whose internal level-approval chain (Phase Management -> Mark Implemented,
   // see S.implementChainFor) is fully complete show up here —
@@ -156,6 +183,47 @@ export default function Portal(){
                 )}
               </div>
             );})}
+          </div>
+        )}
+      </S.Card>
+
+      {/* Issues -- raise one, and see only the ones you raised or were tagged on (same visibility
+          rule Issue Management enforces for staff, see screens/Issues.tsx) */}
+      <S.Card className="p-4 mb-5">
+        <div className="font-semibold text-slate-800 mb-3">Issues</div>
+        {canAct ? (
+          <div className="flex flex-wrap items-end gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <div className="flex-1 min-w-[200px] flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400">Describe the issue</label>
+              <input value={issueDraft.desc} onChange={e=>setIssueDraft(d=>({...d,desc:e.target.value}))} placeholder="What's going wrong?"
+                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"
+                onKeyDown={e=>{ if(e.key==='Enter') raiseIssue(); }}/>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] text-slate-400">Severity</label>
+              <select value={issueDraft.severity} onChange={e=>setIssueDraft(d=>({...d,severity:e.target.value}))}
+                className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
+                {S.RAG.map(o=><option key={o}>{o}</option>)}
+              </select>
+            </div>
+            <button onClick={raiseIssue} disabled={!issueDraft.desc.trim()} className="bg-brand-500 hover:bg-brand-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs px-3 py-2 rounded-lg whitespace-nowrap">Raise Issue</button>
+          </div>
+        ) : (
+          <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">This account has view-only access — raising an issue is disabled.</div>
+        )}
+        {myIssues.length===0 ? (
+          <div className="text-sm text-slate-400">No issues raised or tagged to you yet.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {myIssues.map((i:any)=>(
+              <div key={i.id} className="flex items-center justify-between gap-2 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                <div className="min-w-0">
+                  <div className="font-medium text-slate-700 truncate">{i.desc}</div>
+                  <div className="text-[10px] text-slate-400">{i.id} · Raised by {i.raisedBy}{i.assignee?` · Assigned to ${i.assignee}`:''}</div>
+                </div>
+                <S.Badge cls={S.statusColor(i.pendingStatus ? 'Pending Sign-off' : i.status)}>{i.pendingStatus ? `Pending Sign-off (${i.pendingStatus})` : i.status}</S.Badge>
+              </div>
+            ))}
           </div>
         )}
       </S.Card>

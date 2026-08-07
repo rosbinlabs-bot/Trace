@@ -145,6 +145,23 @@ export const buildRoster = (project: any, admin?: any) => (project?.team||[]).ma
   const designation = admin ? designationForLevel(t.level, admin) : '';
   return { name: t.name, level: t.level, label: designation ? `${t.level} · ${designation}` : t.level };
 });
+// Same as buildRoster, but also offers this project's client contacts (Project Master's
+// project.clients[]) as selectable people -- Issue Management needs client names pickable in its
+// Raised By dropdown (clients can raise issues too, via Client Portal), which plain buildRoster
+// (staff team only) doesn't cover.
+export const buildRosterWithClients = (project: any, admin?: any) => [
+  ...buildRoster(project, admin),
+  ...((project?.clients||[]).map((c:any) => ({ name: c.name, level: 'Client', label: c.owner ? 'Client · Owner' : 'Client' }))),
+];
+// Simple sequential display ID scoped to a prefix (e.g. nextSeqId('IS', issues) -> 'IS-004'),
+// generalizing the pattern Risks.tsx already used locally (nextRiskId) so Issue Management and
+// anything raised straight from Client Portal share the same numbering.
+export const nextSeqId = (prefix: string, list: any[]): string => {
+  let max = 0;
+  const re = new RegExp(`^${prefix}-(\\d+)$`);
+  (list || []).forEach((x: any) => { const m = re.exec(x.id || ''); if (m) max = Math.max(max, parseInt(m[1], 10)); });
+  return `${prefix}-${String(max + 1).padStart(3, '0')}`;
+};
 
 // Company-wide master lists that power several New Project form dropdowns (Category, Industry,
 // Consulting Category, Engagement Type). Editable from Administration -> Project Settings and
@@ -344,6 +361,21 @@ export const projectLevelNumsPresent = (project: any): number[] =>
 // project's team, escalate to the next more senior level that IS present (e.g. no L2 -> L1); if
 // nobody senior enough is on the team at all, fall back to whoever's most senior present so there's
 // always a real approver rather than a dead end.
+// Whether an Issue Management record is visible to a given signed-in account -- only whoever raised
+// it, is assigned to it, is tagged on it, is Admin/Super Admin, or holds this project's L1 sign-off
+// role can see it (nobody else, not even other teammates on the same project). Shared by Issues.tsx
+// and anywhere else in the app that surfaces issue content (Calendar deadline markers, Reports'
+// portfolio mini-table) so a locked-down issue's description can't leak out through a different
+// screen than the one that actually enforces the restriction.
+export const issueVisibleTo = (issue: any, project: any, role: string, myName: string): boolean => {
+  if (role === 'admin') return true;
+  if (!myName) return false;
+  if (issue.raisedBy === myName || issue.assignee === myName) return true;
+  if ((issue.tags || []).includes(myName)) return true;
+  const entry = (project?.team || []).find((t: any) => t.name === myName);
+  const lvl = entry?.level;
+  return !!lvl && lvl === approverLevelFor('phase', project);
+};
 export const approverLevelFor = (kind: 'subtask' | 'milestone' | 'phase', project: any): string => {
   const targetNum = kind === 'subtask' ? 2 : 1;
   const present = projectLevelNumsPresent(project);
@@ -494,6 +526,7 @@ export const statusColor = (s) => ({
   'Yet to Start':'bg-slate-100 text-slate-500','Dropped':'bg-rose-100 text-rose-700',
   'Implemented':'bg-violet-600 text-white',
   'Resolved':'bg-emerald-100 text-emerald-700','Closed':'bg-slate-200 text-slate-600',
+  'Pending Sign-off':'bg-amber-100 text-amber-700',
 }[s] || 'bg-slate-100 text-slate-600');
 
 export const priorityColor = (p) => ({ 'High':'text-red-600','Medium':'text-amber-600','Low':'text-emerald-600','Normal':'text-emerald-600' }[p] || 'text-slate-600');
@@ -739,6 +772,12 @@ export const NOTIF_TONE = {
   'Sub Task Completed':         { icon:'checkcircle',  bg:'bg-emerald-50', text:'text-emerald-500' },
   'Pending Review':             { icon:'clock',         bg:'bg-amber-50',   text:'text-amber-500'   },
   'Risk Support Assigned':      { icon:'userplus',      bg:'bg-amber-50',   text:'text-amber-500'   },
+  'Issue Raised':                { icon:'issues',        bg:'bg-red-50',     text:'text-red-500'     },
+  'Issue Assigned':              { icon:'userplus',      bg:'bg-blue-50',    text:'text-blue-500'    },
+  'Issue Tagged':                { icon:'userplus',      bg:'bg-blue-50',    text:'text-blue-500'    },
+  'Issue Pending Sign-off':      { icon:'clock',         bg:'bg-amber-50',   text:'text-amber-500'   },
+  'Issue Resolved':              { icon:'checkcircle',   bg:'bg-emerald-50', text:'text-emerald-500' },
+  'Issue Closed':                { icon:'checkcircle',   bg:'bg-emerald-50', text:'text-emerald-500' },
   'Phase Completed':            { icon:'checkcircle',  bg:'bg-emerald-50', text:'text-emerald-500' },
   'Calendar Reminder':          { icon:'calendar',     bg:'bg-blue-50',    text:'text-blue-500'    },
   'Calendar Cancelled':         { icon:'ban',           bg:'bg-red-50',     text:'text-red-500'     },

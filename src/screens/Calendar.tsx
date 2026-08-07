@@ -7,6 +7,7 @@ export default function Calendar(){
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { team } = React.useContext(S.TeamDataContext);
   const { profile: myProfile } = React.useContext(S.CurrentUserContext);
+  const { role } = React.useContext(S.RoleContext);
   // Risks and Issues carry their own target/due dates and are just as much "items applicable to this
   // user" as a milestone deadline -- pulled in here alongside phase/milestone/sub task deadlines so
   // the calendar is a complete picture of everything on this person's plate, not just Phase Management
@@ -70,7 +71,11 @@ export default function Calendar(){
   (issues||[]).forEach(i=>{
     if(!myTaggedProjectNames.has(i.project)) return;
     if(projFilter!=='All' && i.project!==projFilterName) return;
-    addDeadline(i.due, `Issue: ${i.root||i.id}`, i.project, 'issue');
+    // Same restriction Issues.tsx enforces -- only whoever raised/is assigned/is tagged (plus
+    // Admin/L1) sees an issue's content, so being on the project team alone isn't enough here either.
+    const proj = myTaggedProjects.find((p:any)=>p.name===i.project);
+    if(!S.issueVisibleTo(i, proj, role, myProfile?.name)) return;
+    addDeadline(i.due, `Issue: ${i.desc||i.id}`, i.project, 'issue');
   });
 
   // User-created calendar events, filtered by the project dropdown (events with no project always

@@ -9,6 +9,12 @@ export default function Reports(){
   const { deliverables } = React.useContext(S.DeliverablesDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
+  const { role } = React.useContext(S.RoleContext);
+  const { profile: myProfile } = React.useContext(S.CurrentUserContext);
+  const myName = myProfile?.name;
+  // Same restriction Issues.tsx enforces -- only whoever raised/is assigned/is tagged (plus
+  // Admin/L1) sees an issue's content, so it can't leak into this portfolio table for anyone else.
+  const visibleIssues = issues.filter((i: any) => S.issueVisibleTo(i, projects.find((p: any) => p.name === i.project), role, myName));
   const [openGroup, setOpenGroup] = useState(Object.keys(S.REPORT_CATALOG)[0]);
   const [selectedReport, setSelectedReport] = useState('portfolio');
 
@@ -148,14 +154,14 @@ export default function Reports(){
                 <S.Td>{r.supportBy}</S.Td><S.Td><S.Badge cls={S.statusColor(r.status)}>{r.status}</S.Badge></S.Td>
               </tr>
             )), ['ID','Project','Description','Impact','Supporting By','Status'])}
-            <div className="text-xs text-slate-400 mt-4 mb-1.5 uppercase tracking-wide">Issues</div>
-            {miniTable(issues.map(i=>(
+            <div className="text-xs text-slate-400 mt-4 mb-1.5 uppercase tracking-wide">Issues {role!=='admin' && <span className="normal-case text-slate-300">(only issues you raised, are assigned, or are tagged on)</span>}</div>
+            {miniTable(visibleIssues.map(i=>(
               <tr key={i.id}>
-                <S.Td className="font-mono text-xs">{i.id}</S.Td><S.Td>{i.project}</S.Td><S.Td>{i.root}</S.Td>
+                <S.Td className="font-mono text-xs">{i.id}</S.Td><S.Td>{i.project}</S.Td><S.Td>{i.desc}</S.Td>
                 <S.Td><S.Badge cls={S.statusColor(i.severity==='High'?'At Risk':'In Progress')}>{i.severity}</S.Badge></S.Td>
-                <S.Td>{i.assignee}</S.Td><S.Td><S.Badge cls={S.statusColor(i.status)}>{i.status}</S.Badge></S.Td>
+                <S.Td>{i.assignee}</S.Td><S.Td><S.Badge cls={S.statusColor(i.pendingStatus?'Pending Sign-off':i.status)}>{i.pendingStatus?`Pending Sign-off (${i.pendingStatus})`:i.status}</S.Badge></S.Td>
               </tr>
-            )), ['ID','Project','Root Cause','Severity','Assignee','Status'])}
+            )), ['ID','Project','Description','Severity','Assignee','Status'])}
           </div>
         );
       case 'margin':
