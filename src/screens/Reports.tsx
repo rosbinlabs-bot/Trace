@@ -255,7 +255,6 @@ export default function Reports(){
               perProjectCompletion.map(({p,pct}: any)=>(
                 <tr key={p.id}>
                   <S.Td className="font-medium">{p.name}</S.Td>
-                  <S.Td>{p.client}</S.Td>
                   <S.Td>{S.projectManagerName(p, admin)||'—'}</S.Td>
                   <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
                   <S.Td>
@@ -266,7 +265,7 @@ export default function Reports(){
                   </S.Td>
                   <S.Td><S.Badge cls={S.statusColor(p.risk==='High'?'At Risk':'In Progress')}>{p.risk}</S.Badge></S.Td>
                 </tr>
-              )), ['Project','Client','Project Manager','Status','Milestone Completion','Risk']
+              )), ['Project','Project Manager','Status','Milestone Completion','Risk']
             )}
           </div>
         );
@@ -357,7 +356,7 @@ export default function Reports(){
             {miniTable(
               marginRanked.map(p=>(
                 <tr key={p.id}>
-                  <S.Td className="font-medium">{p.name}</S.Td><S.Td>{p.client}</S.Td>
+                  <S.Td className="font-medium">{p.name}</S.Td>
                   <S.Td>{S.inLakh(p.monthlyFee)}/mo</S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2">
@@ -367,7 +366,7 @@ export default function Reports(){
                   </S.Td>
                   <S.Td><S.Badge cls={p.margin<25?'bg-red-100 text-red-700':p.margin<35?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}>{p.margin<25?'Thin':p.margin<35?'Watch':'Healthy'}</S.Badge></S.Td>
                 </tr>
-              )), ['Project','Client','Monthly Fee','Margin','Health']
+              )), ['Project','Monthly Fee','Margin','Health']
             )}
           </div>
         );
@@ -378,12 +377,12 @@ export default function Reports(){
             {miniTable(
               billingRanked.map(p=>{ const due=S.nextBillingDueDate(p); const d=due?S.daysLeft(due):null; return (
                 <tr key={p.id}>
-                  <S.Td className="font-medium">{p.name}</S.Td><S.Td>{p.client}</S.Td><S.Td>{p.billing}</S.Td>
+                  <S.Td className="font-medium">{p.name}</S.Td><S.Td>{p.billing}</S.Td>
                   <S.Td>{due||'—'}</S.Td>
                   <S.Td className={d==null?'text-slate-400':d<0?'text-red-600 font-medium':d<=7?'text-amber-600 font-medium':'text-slate-500'}>{d==null?'—':d<0?`${Math.abs(d)}d overdue`:d===0?'Due today':`${d}d left`}</S.Td>
                   <S.Td><S.Badge cls={S.payColor(projPaymentStatus(p))}>{projPaymentStatus(p)}</S.Badge></S.Td>
                 </tr>
-              );}), ['Project','Client','Billing Type','Due Date','Status','Payment']
+              );}), ['Project','Billing Type','Due Date','Status','Payment']
             )}
           </div>
         );
@@ -505,12 +504,12 @@ export default function Reports(){
             {miniTable(
               timelineRanked.map(p=>{ const d=S.daysLeft(p.end); return (
                 <tr key={p.id}>
-                  <S.Td className="font-medium">{p.name}</S.Td><S.Td>{p.client}</S.Td>
+                  <S.Td className="font-medium">{p.name}</S.Td>
                   <S.Td>{p.start}</S.Td><S.Td>{p.end}</S.Td>
                   <S.Td className={d<0?'text-red-600 font-medium':d<=30?'text-amber-600 font-medium':'text-slate-500'}>{d<0?`${Math.abs(d)}d overdue`:`${d}d left`}</S.Td>
                   <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
                 </tr>
-              );}), ['Project','Client','Start','End','Time Remaining','Status']
+              );}), ['Project','Start','End','Time Remaining','Status']
             )}
           </div>
         );
