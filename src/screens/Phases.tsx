@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 export default function Phases(){
+  const location = useLocation();
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
@@ -276,6 +278,24 @@ export default function Phases(){
   const detailSt = detailMs ? (detailMs.subtasks||[]).find(s=>s.id===detailStIds!.stId) : null;
   const [remarkDraft, setRemarkDraft] = useState('');
   React.useEffect(() => { setRemarkDraft(''); }, [detailStIds]);
+
+  // Deep link from the Dashboard's Approval Bottlenecks widget (and its KPI/Decisions-Needed
+  // echoes) — router state carries which project/phase/milestone/sub task was clicked, so it opens
+  // straight to that item instead of dropping the user on whatever project happened to load first.
+  // Keyed on location.key (not just mount) so clicking a second bottleneck while already on this
+  // screen re-jumps instead of being a no-op.
+  React.useEffect(() => {
+    const deepLink: any = location.state;
+    if (!deepLink || !deepLink.projectId) return;
+    setActiveProj(deepLink.projectId);
+    setSelectedPhaseId(deepLink.phaseId || null);
+    setSelectedMsId(deepLink.msId || null);
+    if (deepLink.stId && deepLink.phaseId && deepLink.msId) {
+      setDetailStIds({ phId: deepLink.phaseId, msId: deepLink.msId, stId: deepLink.stId });
+    } else {
+      setDetailStIds(null);
+    }
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const dotColor = (s) => ({
     'Not Started':'bg-slate-300','Yet to Start':'bg-slate-300','In Progress':'bg-brand-500','On Hold':'bg-amber-400',
     'Completed':'bg-emerald-500','Implemented':'bg-violet-500','Dropped':'bg-red-400','Terminated':'bg-red-500'

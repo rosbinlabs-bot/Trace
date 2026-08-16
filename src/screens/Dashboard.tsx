@@ -1,7 +1,9 @@
 import React from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import * as S from '../shared';
 
 export default function Dashboard(){
+  const navigate = useNavigate();
   const { tree } = React.useContext(S.PhaseDataContext);
   const { risks, issues, changes } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
@@ -9,6 +11,12 @@ export default function Dashboard(){
   const { invoices } = React.useContext(S.InvoicesDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
+  const { profile: myProfile } = React.useContext(S.CurrentUserContext);
+  // Personalized, not org-wide -- items genuinely awaiting THIS signed-in account's own approval
+  // decision right now (milestone/sub task review, the Implemented chain, phase confirmation), across
+  // every project they can see. Distinct from the "Approvals Pending"/"Approval Bottlenecks" widgets
+  // below, which are the COO's org-wide view of who's sitting on what.
+  const myApprovals = S.myPendingApprovals(projects, tree, myProfile, admin);
   const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
   // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
@@ -23,8 +31,8 @@ export default function Dashboard(){
   projects.forEach((p:any)=>{
     (tree[p.id]||[]).forEach((ph:any)=>{
       ph.milestones.forEach((ms:any)=>{
-        allEntries.push({ item:ms, project:p.name, level:'Milestone' });
-        (ms.subtasks||[]).forEach((s:any)=> allEntries.push({ item:s, project:p.name, level:'Sub Task' }));
+        allEntries.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });
+        (ms.subtasks||[]).forEach((s:any)=> allEntries.push({ item:s, project:p.name, level:'Sub Task', projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id }));
       });
     });
   });
@@ -124,6 +132,9 @@ export default function Dashboard(){
     .sort((a,b)=>(b.days??-1)-(a.days??-1));
   const bottlenecks = allBottlenecks.slice(0,5);
   const oldestPending = bottlenecks[0];
+  // Clicking a bottleneck jumps straight to that item in Phase Management — same project, phase and
+  // milestone selected there, sub task detail modal opened too if that's the level that's stuck.
+  const goToBottleneck = (b:any) => { setOpenKpi(null); navigate('/phases', { state:{ projectId:b.projectId, phaseId:b.phaseId, msId:b.msId, stId:b.level==='Sub Task'?b.stId:undefined } }); };
 
   // ---- collections aging — real, from Billing Tracker invoices (dueDate/amount/status), not
   // reconstructed from anywhere else. ----
@@ -202,6 +213,28 @@ export default function Dashboard(){
     <div>
       <S.SectionTitle sub="Executive view of complete organizational delivery performance, live from Project Master, Phase Management, Billing, Risk Management and Team Management">Executive Dashboard</S.SectionTitle>
 
+      {/* My Pending Approvals — personalized to the signed-in account, not the org-wide COO widgets
+          further down. Only renders when something is actually waiting on this specific person. */}
+      {myApprovals.length>0 && (
+        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-brand-400">
+          <div className="px-4 py-3 bg-brand-50/40 flex items-center gap-2 flex-wrap">
+            <S.Icon name="approvals" className="w-4 h-4 text-brand-500"/>
+            <span className="font-semibold text-slate-800">My Pending Approvals</span>
+            <S.Badge cls="bg-brand-100 text-brand-700">{myApprovals.length}</S.Badge>
+            <Link to="/phases" className="text-xs text-brand-600 hover:text-brand-700 ml-auto whitespace-nowrap">Open Phase Management →</Link>
+          </div>
+          <div className="px-4 pb-3 divide-y divide-slate-100">
+            {myApprovals.slice(0,8).map((a:any,i:number)=>(
+              <div key={i} className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+                <span className="text-slate-700">{a.label}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{a.project}</span>
+              </div>
+            ))}
+            {myApprovals.length>8 && <div className="text-xs text-slate-400 pt-2">+{myApprovals.length-8} more — open Phase Management to see all.</div>}
+          </div>
+        </S.Card>
+      )}
+
       {/* Decisions needed — the handful of things that actually need a COO call right now, each
           pointing at the item and where to act on it. Everything here is a real live query, not a
           separate tracked list. */}
@@ -219,10 +252,10 @@ export default function Dashboard(){
               </div>
             )}
             {oldestPending && oldestPending.days!==null && oldestPending.days>=3 && (
-              <div className="flex flex-wrap justify-between gap-2 py-2 text-sm">
+              <button type="button" onClick={()=>goToBottleneck(oldestPending)} className="w-full flex flex-wrap justify-between gap-2 py-2 text-sm text-left hover:bg-red-50/60 rounded-lg px-1 -mx-1 transition-colors">
                 <span className="text-slate-700">Approval stuck {oldestPending.days}d on {oldestPending.approver.name} ({oldestPending.approver.level}) — {(oldestPending.item as any).name}, {oldestPending.project}</span>
-                <span className="text-xs text-slate-400 whitespace-nowrap">Phase Management</span>
-              </div>
+                <span className="text-xs text-slate-400 whitespace-nowrap">Phase Management →</span>
+              </button>
             )}
             {totalOverdue>0 && (
               <div className="flex flex-wrap justify-between gap-2 py-2 text-sm">
@@ -359,10 +392,10 @@ export default function Dashboard(){
               )) : <div className="text-sm text-slate-400">No open risks.</div>)}
 
               {openKpi==='Approvals Pending' && (allBottlenecks.length ? allBottlenecks.map((b,i)=>(
-                <div key={i} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                <button key={i} type="button" onClick={()=>goToBottleneck(b)} title="Open in Phase Management" className="w-full flex justify-between items-center text-sm bg-slate-50 hover:bg-brand-50 hover:ring-1 hover:ring-brand-200 rounded-lg px-3 py-2 text-left transition-colors">
                   <span className="text-slate-700 truncate">{(b.item as any).name} <span className="text-slate-400">— {b.project}</span></span>
                   <span className="text-xs text-slate-500 whitespace-nowrap">{b.approver.name} · {b.days!==null?`${b.days}d`:'pending'}</span>
-                </div>
+                </button>
               )) : <div className="text-sm text-slate-400">No approvals waiting right now.</div>)}
             </div>
           </div>
@@ -429,10 +462,10 @@ export default function Dashboard(){
           <div className="font-semibold text-slate-800 mb-3">Approval Bottlenecks</div>
           <div className="space-y-1.5">
             {bottlenecks.map((b,i)=>(
-              <div key={i} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+              <button key={i} type="button" onClick={()=>goToBottleneck(b)} title="Open in Phase Management" className="w-full flex justify-between items-center text-sm bg-slate-50 hover:bg-brand-50 hover:ring-1 hover:ring-brand-200 rounded-lg px-3 py-2 text-left transition-colors">
                 <span className="text-slate-700 truncate">{(b.item as any).name} <span className="text-slate-400">— {b.project}</span></span>
                 <span className="text-xs text-slate-500 whitespace-nowrap">{b.approver.name} · {b.days!==null?`${b.days}d`:'pending'}</span>
-              </div>
+              </button>
             ))}
             {bottlenecks.length===0 && <div className="text-sm text-slate-400">No approvals waiting right now.</div>}
           </div>

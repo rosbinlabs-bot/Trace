@@ -102,6 +102,13 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   const [collapsed, setCollapsed] = useState(false);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
+  const { tree } = React.useContext(S.PhaseDataContext);
+  const { projects } = React.useContext(S.ProjectsDataContext);
+  // Total items anywhere in the approval pipeline across every project this account can see -- shown
+  // as a small notification badge on the Phase Management and Client Approval sidebar tabs, so the
+  // count of outstanding approvals is visible without opening either screen. Clients never see these
+  // two tabs (CLIENT_NAV omits them), so there's nothing to compute for that role.
+  const pendingApprovalsBadge = role==='client' ? 0 : S.totalPendingApprovals(projects, tree);
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -176,11 +183,16 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                     {group.group}
                   </div>
                 )}
-                {group.items.map((item: any) => (
+                {group.items.map((item: any) => {
+                  // Only Phase Management and Client Approval carry a live pending-approvals count
+                  // today (see pendingApprovalsBadge above) -- shown as a small red badge over the
+                  // icon so it reads the same whether the sidebar is expanded or collapsed to icons.
+                  const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge : 0;
+                  return (
                   <NavLink
                     key={item.id}
                     to={`/${item.id}`}
-                    title={item.label}
+                    title={badgeCount>0 ? `${item.label} — ${badgeCount} pending approval${badgeCount===1?'':'s'}` : item.label}
                     // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
                     // click lands, so by the time the route actually changes the code is usually already
                     // there and the loading spinner doesn't show at all. Calling the same import()
@@ -197,10 +209,18 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                       }`
                     }
                   >
-                    <S.Icon name={item.id} className="w-[18px] h-[18px] shrink-0" />
+                    <span className="relative shrink-0 inline-flex">
+                      <S.Icon name={item.id} className="w-[18px] h-[18px]" />
+                      {badgeCount>0 && (
+                        <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none ring-2 ring-white">
+                          {badgeCount>99?'99+':badgeCount}
+                        </span>
+                      )}
+                    </span>
                     {!collapsed && <span className="truncate">{item.label}</span>}
                   </NavLink>
-                ))}
+                  );
+                })}
               </div>
             ))}
           </nav>

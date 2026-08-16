@@ -1136,6 +1136,56 @@ export const itemDoneDate = (item) => item.clientAcceptedDate || item.actualDate
 // only becomes "Completed" once the Project Head explicitly confirms it (see confirmPhaseComplete). ----
 export const subtasksReady = (ms) => !(ms.subtasks && ms.subtasks.length) || ms.subtasks.every(isApproved);
 export const phaseMilestonesReady = (ph) => ph.milestones.length>0 && ph.milestones.every(isApproved);
+
+// ---- "My Pending Approvals" — a per-user, cross-project queue of items genuinely awaiting the
+// signed-in account's own approval decision right now: milestone/sub task review, the Implemented
+// escalation chain, and phase completion confirmation. Same per-project actor-level logic Phases.tsx's
+// own "Needs your action" panel uses (this project's team level, falling back to the account's
+// Administration -> Users hierarchy level) — just walked across every project the account can see
+// (not only whichever tab happens to be selected there) and without Phases.tsx's 2-day urgency
+// filter, since something waiting on YOUR decision is worth surfacing on the Dashboard regardless of
+// deadline. Used by Dashboard.tsx's "My Pending Approvals" card.
+export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, admin: any) => {
+  if (!myProfile) return [];
+  const out: any[] = [];
+  projects.forEach((p: any) => {
+    const myEntry = (p.team||[]).find((t: any) => t.name===myProfile.name);
+    const myLevel = myEntry?.level || myProfile.level || designationHierarchyLevel(myProfile.designation, admin) || 'L9';
+    const msApprover = approverLevelFor('milestone', p);
+    const stApprover = approverLevelFor('subtask', p);
+    const phApprover = approverLevelFor('phase', p);
+    (tree[p.id]||[]).forEach((ph: any) => {
+      (ph.milestones||[]).forEach((ms: any) => {
+        if (myLevel===msApprover && ms.review==='Pending Review') out.push({ project:p.name, label:`Approve milestone — ${ms.name}` });
+        if (ms.review==='Implemented Review' && !ms.headApprovedImpl && (ms.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${ms.name}` });
+        (ms.subtasks||[]).forEach((s: any) => {
+          if (myLevel===stApprover && s.review==='Pending Review') out.push({ project:p.name, label:`Approve sub task — ${s.name}` });
+          if (s.review==='Implemented Review' && !s.headApprovedImpl && (s.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${s.name}` });
+        });
+      });
+      if (myLevel===phApprover && phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold) out.push({ project:p.name, label:`Confirm phase complete — ${ph.name}` });
+    });
+  });
+  return out;
+};
+
+// Total items anywhere in the approval pipeline (Sub Task/Milestone review, the Implemented
+// escalation chain, or Client sign-off — anything with a non-empty `review`) across the given
+// projects' phase trees. Exactly the same count Approvals.tsx (Client Approval Workflow) tallies as
+// its "Pending Approvals" total — factored out here so the sidebar's Phase Management/Client Approval
+// notification badges (App.tsx) show that identical number without re-walking the tree separately.
+export const totalPendingApprovals = (projects: any[], tree: any): number => {
+  let n = 0;
+  projects.forEach((p: any) => {
+    (tree[p.id]||[]).forEach((ph: any) => {
+      (ph.milestones||[]).forEach((ms: any) => {
+        if (ms.review) n++;
+        (ms.subtasks||[]).forEach((s: any) => { if (s.review) n++; });
+      });
+    });
+  });
+  return n;
+};
 export const phaseActualEnd = (ph) => {
   const dates = ph.milestones.map(itemDoneDate).filter(Boolean);
   return dates.length ? dates.slice().sort().slice(-1)[0] : '';
