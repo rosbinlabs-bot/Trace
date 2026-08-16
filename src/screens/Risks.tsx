@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 const STATUS_OPTS = ['Open', 'In Progress', 'Mitigated', 'Closed'];
 
 export default function Risks() {
+  const location = useLocation();
   const { risks, setRisks } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   // Same shared project-activity feed Phase Management posts to (S.PhaseDataContext wraps
@@ -44,13 +46,20 @@ export default function Risks() {
     const roster = S.buildRoster(proj, admin);
     addNotification({
       projectId: proj?.id, project: r.project, tags: roster.map((p: any) => p.name), priority: 'high',
-      level: 'risk', itemName: r.desc, type: 'Risk Support Assigned',
+      level: 'risk', itemName: r.desc, itemId: r.id, type: 'Risk Support Assigned',
       message: `${name} has been tagged as Supporting By on risk "${r.desc}" (${r.id}) in ${r.project} — please review and begin addressing it. All project stakeholders have been notified.`,
     });
   };
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = risks.find((r: any) => r.id === detailId) || null;
+
+  // Deep link from a notification click (shared.tsx's notificationTarget) — opens the specific
+  // risk's detail modal directly instead of leaving the register for the user to search.
+  React.useEffect(() => {
+    const openId = (location.state as any)?.openId;
+    if (openId) setDetailId(openId);
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reserved atomically in the database (db.nextSeqId -> next_seq_id() RPC) rather than computed
   // from the currently-loaded list -- two people clicking "+ Add Risk" at the same moment used to

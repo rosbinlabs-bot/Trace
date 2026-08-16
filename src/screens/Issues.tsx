@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 const STATUS_OPTS = ['Open', 'In Progress', 'Resolved', 'Closed'];
 
 export default function Issues() {
+  const location = useLocation();
   const { issues, setIssues } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
@@ -60,12 +62,19 @@ export default function Issues() {
     const roster = S.buildRosterWithClients(proj, admin);
     addNotification({
       projectId: proj?.id, project: i.project, tags: roster.map((p: any) => p.name), priority: 'high',
-      level: 'issue', itemName: i.desc, ...payload,
+      level: 'issue', itemName: i.desc, itemId: i.id, ...payload,
     });
   };
 
   const [detailId, setDetailId] = useState<string | null>(null);
   const detail = visibleIssues.find((i: any) => i.id === detailId) || null;
+
+  // Deep link from a notification click (shared.tsx's notificationTarget) — opens the specific
+  // issue's detail modal directly instead of leaving the list for the user to search.
+  React.useEffect(() => {
+    const openId = (location.state as any)?.openId;
+    if (openId) setDetailId(openId);
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ID reserved atomically in the database (db.nextSeqId) rather than computed from the currently-
   // loaded list -- two people clicking "+ Add Issue" at the same moment used to be able to land on

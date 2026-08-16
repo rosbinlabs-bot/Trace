@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   ResponsiveContainer, BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, Legend,
@@ -847,16 +848,51 @@ export const NOTIF_TONE = {
   default:                      { icon:'notifications', bg:'bg-slate-100',  text:'text-slate-400'   },
 };
 
+// Where a notification should send you when clicked — mirrors Dashboard's Approval Bottlenecks
+// deep-link (same {projectId, phaseId, msId, stId} shape Phase Management/Client Portal already
+// consume) plus one target per other notification-producing screen (Issues/Risks open the specific
+// record's detail via `itemId`, Calendar opens the specific event via `eventId`, Billing Due Soon
+// opens that project in Project Master). Returns null when there's nowhere useful to send the click
+// (e.g. a legacy notification raised before IDs were attached, or a type nothing here produces yet).
+export const notificationTarget = (n: any, role: string) => {
+  if (!n) return null;
+  if ((n.level==='milestone' || n.level==='subtask' || n.level==='phase') && n.projectId) {
+    const to = role==='client' ? '/portal' : '/phases';
+    return { to, state: { projectId:n.projectId, phaseId:n.phaseId, msId:n.msId, stId:n.stId } };
+  }
+  if (n.level==='issue') {
+    if (role==='client') return { to:'/portal', state:{} };
+    if (n.itemId) return { to:'/issues', state:{ openId:n.itemId } };
+    return null;
+  }
+  if (n.level==='risk' && n.itemId) return { to:'/risks', state:{ openId:n.itemId } };
+  if ((n.type==='Calendar Reminder' || n.type==='Calendar Cancelled') && (n.eventId || n.date)) {
+    return { to:'/calendar', state:{ openId:n.eventId, date:n.date } };
+  }
+  if (n.type==='Billing Due Soon' && n.projectId) return { to:'/projects', state:{ projectId:n.projectId } };
+  return null;
+};
+
 // Shared notification row list — used by both the Dashboard's "Project Activity" panel and the
-// header bell dropdown, so the two never drift out of sync.
+// header bell dropdown, so the two never drift out of sync. Each row is clickable whenever
+// notificationTarget() finds somewhere to send it, jumping straight to the project/item behind that
+// notification instead of leaving the person to go find it themselves.
 export const NotificationFeedList = ({ notifications, emptyText }: any) => {
+  const navigate = useNavigate();
+  const { role } = React.useContext(RoleContext);
   if (!notifications || notifications.length===0) {
     return <div className="text-sm text-slate-400">{emptyText || 'No activity yet.'}</div>;
   }
   return (
     <div className="space-y-1.5">
-      {notifications.map(n=>{ const nt = NOTIF_TONE[n.type] || NOTIF_TONE.default; return (
-        <div key={n.id} className="flex items-start justify-between gap-2 text-sm bg-white border border-slate-100 rounded-lg px-3 py-2">
+      {notifications.map(n=>{
+        const nt = NOTIF_TONE[n.type] || NOTIF_TONE.default;
+        const target = notificationTarget(n, role);
+        const Row = target ? 'button' : 'div';
+        return (
+        <Row key={n.id} type={target?'button':undefined} onClick={target ? ()=>navigate(target.to, { state:target.state }) : undefined}
+          title={target ? 'Open' : undefined}
+          className={`w-full flex items-start justify-between gap-2 text-sm bg-white border border-slate-100 rounded-lg px-3 py-2 text-left ${target ? 'hover:bg-brand-50 hover:border-brand-200 transition-colors cursor-pointer' : ''}`}>
           <div className="flex items-start gap-2.5 min-w-0">
             <span className={`shrink-0 w-6 h-6 rounded-full flex items-center justify-center ${nt.bg}`}><Icon name={nt.icon} className={`w-3.5 h-3.5 ${nt.text}`}/></span>
             <div className="min-w-0">
@@ -869,7 +905,7 @@ export const NotificationFeedList = ({ notifications, emptyText }: any) => {
             </div>
           </div>
           <span className="text-xs text-slate-400 whitespace-nowrap shrink-0" title={n.createdAt ? new Date(n.createdAt).toLocaleString() : n.when}>{relativeTime(n.createdAt || n.when)}</span>
-        </div>
+        </Row>
       );})}
     </div>
   );

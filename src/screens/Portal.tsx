@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 export default function Portal(){
+  const location = useLocation();
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
@@ -26,6 +28,19 @@ export default function Portal(){
   // return right below this would otherwise skip it on some renders and violate the Rules of Hooks.
   const [issueDraft, setIssueDraft] = useState({ desc:'', severity:'Medium' });
   const [raisingIssue, setRaisingIssue] = useState(false);
+
+  // Deep link from a notification click (see shared.tsx's notificationTarget) — jumps straight to the
+  // project/phase/milestone the notification was about instead of leaving the client to hunt through
+  // the timeline. Also called unconditionally, above the "no projects" early return, same reasoning
+  // as issueDraft/raisingIssue above.
+  React.useEffect(() => {
+    const deepLink: any = location.state;
+    if (!deepLink) return;
+    if (deepLink.projectId) setActiveProj(deepLink.projectId);
+    if (deepLink.phaseId) setOpenPhase((o:any) => ({ ...o, [deepLink.phaseId]: true }));
+    if (deepLink.msId) setOpenMs((o:any) => ({ ...o, [deepLink.msId]: true }));
+    if (deepLink.stId || deepLink.msId) setExpandedApproval(deepLink.stId || deepLink.msId);
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reached with no projects when a Client-type account's tagged project has since been removed (or
   // was never set) -- ProjectsDataContext is filtered to just their one project for that role (see
@@ -63,7 +78,7 @@ export default function Portal(){
         addedBy: myClientName, addedAt: new Date().toISOString(), remarks: [],
       };
       setIssues((is:any[]) => [...is, fresh]);
-      notifyProject({ level:'issue', itemName:fresh.desc, type:'Issue Raised',
+      notifyProject({ level:'issue', itemName:fresh.desc, itemId:fresh.id, type:'Issue Raised',
         message:`${myClientName} raised a new issue: "${fresh.desc}" (${id}) in ${projMeta.name}. Assign an owner to get it moving.` });
       setIssueDraft({ desc:'', severity:'Medium' });
     } finally { setRaisingIssue(false); }
@@ -92,7 +107,7 @@ export default function Portal(){
     } else {
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, status:'Implemented', review:'', clientApprovedImpl:true, clientAcceptedDate:S.TODAY_ISO})));
     }
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, type:'Implemented',
+    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Implemented',
       message:`"${item.name}" in phase "${ph.name}" has been marked Implemented after internal approval and Client Owner sign-off.` });
   };
 
@@ -105,17 +120,17 @@ export default function Portal(){
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, review:'', headApprovedImpl:false})));
     }
     const text = (remarkDraft[item.id]||'').trim();
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, type:'Client Requested Changes',
+    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Requested Changes',
       message:`Client Owner requested changes on "${item.name}" (${ph.name})${text?`: "${text}"`:'.'}` });
     setRemark(item.id, '');
   };
 
   const postRemark = (entry) => {
     if(!canAct) return;
-    const { level, ph, item } = entry;
+    const { level, ph, ms, item } = entry;
     const text = (remarkDraft[item.id]||'').trim();
     if(!text) return;
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, type:'Client Remark',
+    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
       message:`Client remark on "${item.name}" (${ph.name}): "${text}"` });
     setRemark(item.id, '');
   };

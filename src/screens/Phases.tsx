@@ -105,11 +105,11 @@ export default function Phases(){
       const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
       if(!ph || !ms) return;
       if(S.actorQualifies('milestone', actor)){
-        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
+        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
           message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
       } else {
         const approverLvl = S.approverLevelFor('milestone', projMeta);
-        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Pending Review',
+        notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Pending Review',
           message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
       }
     }
@@ -121,11 +121,11 @@ export default function Phases(){
       const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
       if(!ph || !ms || !st) return;
       if(S.actorQualifies('subtask', actor)){
-        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Sub Task Completed',
+        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
           message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
       } else {
         const approverLvl = S.approverLevelFor('subtask', projMeta);
-        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Pending Review',
+        notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Pending Review',
           message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
       }
     }
@@ -136,7 +136,7 @@ export default function Phases(){
     mutMs(ph.id, ms.id, m => decision==='Approved'
       ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO, reviewSince:''})
       : ({...m, status:'In Progress', review:'', approved:false, reviewSince:''}));
-    if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, type:'Milestone Completed',
+    if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
       message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
   const decideSt = (phId, msId, stId, decision) => {
@@ -146,7 +146,7 @@ export default function Phases(){
     if(decision==='Approved'){
       const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
       const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
-      if(ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, type:'Sub Task Completed',
+      if(ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
         message:`Sub Task "${st.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
     }
   };
@@ -227,7 +227,7 @@ export default function Phases(){
   const phaseApproverLevel = S.approverLevelFor('phase', projMeta);
   const confirmPhaseComplete = (ph) => {
     mutPhase(ph.id, x => ({...x, headConfirmedComplete:true}));
-    notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, type:'Phase Completed',
+    notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, phaseId:ph.id, type:'Phase Completed',
       message:`Phase "${ph.name}" has been confirmed Completed by ${actor}.` });
   };
 

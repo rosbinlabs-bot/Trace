@@ -1,7 +1,9 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 
 export default function Calendar(){
+  const location = useLocation();
   const { tree, addNotification } = React.useContext(S.PhaseDataContext);
   const { events: calEvents, setEvents: setCalEvents } = React.useContext(S.CalendarDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
@@ -34,6 +36,21 @@ export default function Calendar(){
   const [month, setMonth] = useState(Number(S.TODAY_ISO.slice(5,7))-1); // 0-indexed
   const [selectedDate, setSelectedDate] = useState(null);
   const [editingEvent, setEditingEvent] = useState(null); // draft object while the Add/Edit modal is open
+
+  // Deep link from a notification click (shared.tsx's notificationTarget) — jumps to the right month
+  // and opens that event's edit modal directly; falls back to just landing on the date if the event
+  // itself was since removed (e.g. a "Cancelled" notification for an event that's been deleted).
+  React.useEffect(() => {
+    const deep: any = location.state;
+    if (!deep) return;
+    const ev = deep.openId ? calEvents.find((e:any) => e.id === deep.openId) : null;
+    const date = ev ? ev.date : deep.date;
+    if (!date) return;
+    setYear(Number(date.slice(0,4)));
+    setMonth(Number(date.slice(5,7))-1);
+    setSelectedDate(date);
+    if (ev) setEditingEvent({...ev});
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const monthLabel = new Date(year, month, 1).toLocaleString('en-US',{month:'long',year:'numeric'});
   const daysInMonth = new Date(year, month+1, 0).getDate();
@@ -104,9 +121,11 @@ export default function Calendar(){
     if((finalEv.tags||[]).length>0){
       if(isNew){
         addNotification({ project:finalEv.project||'General', tags:finalEv.tags, priority:'normal', type:'Calendar Reminder',
+          eventId:finalEv.id, date:finalEv.date,
           message:`${finalEv.type} "${finalEv.title}" scheduled on ${finalEv.date}. You've been tagged — reminder set.` });
       } else if(prev && prev.status!=='Cancelled' && finalEv.status==='Cancelled'){
         addNotification({ project:finalEv.project||'General', tags:finalEv.tags, priority:'high', type:'Calendar Cancelled',
+          eventId:finalEv.id, date:finalEv.date,
           message:`${finalEv.type} "${finalEv.title}" on ${finalEv.date} has been cancelled.` });
       }
     }

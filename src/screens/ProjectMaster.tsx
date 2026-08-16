@@ -1,8 +1,10 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 export default function ProjectMaster(){
+  const location = useLocation();
   const { role } = React.useContext(S.RoleContext);
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
@@ -31,6 +33,15 @@ export default function ProjectMaster(){
     setIsNew(true); setExtChooser(false); setReqMenuOpen(false);
   };
   const close = () => { setForm(null); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
+
+  // Deep link from a notification click (shared.tsx's notificationTarget, e.g. "Billing Due Soon") —
+  // opens that project's detail view directly instead of leaving the list for the user to search.
+  React.useEffect(() => {
+    const projectId = (location.state as any)?.projectId;
+    if (!projectId) return;
+    const row = rows.find((r:any) => r.id === projectId);
+    if (row) openExisting(row);
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
   const setF = (k,v) => setForm(f => ({ ...f, [k]: v }));
 
   // Billing Due Date is stored as a full DATE, but for Monthly billing only its DAY OF MONTH is ever
