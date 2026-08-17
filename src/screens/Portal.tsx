@@ -198,7 +198,7 @@ export default function Portal(){
 
   return (
     <div>
-      <S.SectionTitle sub="Client-facing view — project health, approvals pending your sign-off, and a phase / milestone / sub task timeline">Client Portal{projMeta.client?` — ${projMeta.client}`:''}</S.SectionTitle>
+      <S.SectionTitle sub="Client-facing view — project health, approvals pending your sign-off, and a phase / milestone / sub task timeline">Client Portal{projMeta.name?` — ${projMeta.name}`:''}</S.SectionTitle>
 
       {/* Project tabs (stands in for "logged in as this client's project" in the prototype) */}
       <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">

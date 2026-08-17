@@ -882,10 +882,6 @@ export default function App() {
   const visibleProjects = role === 'client'
     ? projects.filter((p: any) => p.id === myProfile?.project)
     : S.staffVisibleProjects(projects, role, myProfile);
-  // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
-  // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
-  // see activity/approval notifications from every OTHER project in the tenant too.
-  const visibleNotifications = role === 'client' ? notifications.filter((n: any) => n.projectId === myProfile?.project) : notifications;
   // Risks, Issues, Deliverables and Calendar events aren't looked up through ProjectsDataContext --
   // Risks.tsx/Issues.tsx/the Reports "Risk Dashboard"/"Deliverable Budget" reports and Calendar all
   // render their own full list straight from GovernanceDataContext/DeliverablesDataContext/
@@ -898,6 +894,26 @@ export default function App() {
   // 'client' is included defensively even though its routes can't reach these screens today.
   const isProjectScoped = role !== 'admin';
   const visibleProjectNames = new Set(visibleProjects.map((p: any) => p.name));
+  const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
+  // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
+  // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
+  // see activity/approval notifications from every OTHER project in the tenant too. Non-Admin staff get
+  // the same isProjectScoped treatment as risks/issues/deliverables/calendar above: a client status
+  // update (approve/request changes/remark from Client Portal, or a Client Approval sign-off) only
+  // reaches the notification bell for that project's own team (PM/Associate/Strategic Lead/Project
+  // Head/guests), not the whole org -- matched on projectId first, falling back to the `project` name
+  // field for notification types that only ever set that (e.g. Billing Due Soon). Notifications with
+  // neither field (org-wide admin notices like a new signup pending approval) stay unscoped for
+  // everyone who already sees the bell, same as Calendar's `!e.project ||` fallback above. Calendar
+  // reminders/cancellations for an event with no real project default `project` to the literal string
+  // 'General' (see Calendar.tsx) rather than leaving it blank -- treated as "no project" here too, so
+  // those general reminders don't silently disappear from every non-Admin's bell.
+  const hasNoProject = (n: any) => !n.projectId && (!n.project || n.project === 'General');
+  const visibleNotifications = role === 'client'
+    ? notifications.filter((n: any) => n.projectId === myProfile?.project)
+    : isProjectScoped
+      ? notifications.filter((n: any) => hasNoProject(n) || (n.projectId ? visibleProjectIds.has(n.projectId) : visibleProjectNames.has(n.project)))
+      : notifications;
   const visibleRisks = isProjectScoped ? risks.filter((r: any) => visibleProjectNames.has(r.project)) : risks;
   const visibleIssues = isProjectScoped ? issues.filter((i: any) => visibleProjectNames.has(i.project)) : issues;
   const visibleDeliverables = isProjectScoped ? deliverables.filter((d: any) => visibleProjectNames.has(d.project)) : deliverables;

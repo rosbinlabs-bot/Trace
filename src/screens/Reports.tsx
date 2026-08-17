@@ -81,7 +81,12 @@ export default function Reports(){
   const clientGroups: any = {};
   projects.forEach(p=>{ (clientGroups[p.client]=clientGroups[p.client]||[]).push(p); });
   const clientStats = Object.entries(clientGroups).map(([client,projs]: any) =>({
-    client, count: projs.length,
+    client,
+    // Rollup label: with one project under this client, show that project's actual name (more
+    // meaningful than the client field, which is sometimes mis-entered) -- with multiple projects
+    // under one client there's no single project name to show, so fall back to the client field.
+    displayName: projs.length===1 ? (projs[0].name || client) : client,
+    count: projs.length,
     totalMonthly: projs.reduce((a,p)=>a+(Number(p.monthlyFee)||0),0),
     worstPayment: (['Delayed','On Hold','Pending','Received'].find(s=>projs.some((p:any)=>projPaymentStatus(p)===s)))||'—',
     billingTypes: [...new Set(projs.map(p=>p.billing))].join(', '),
@@ -128,15 +133,15 @@ export default function Reports(){
   const headroomRanked = capacityRanked.map((m:any)=>({ name:m.name, headroom: 100-(Number(m.util)||0) })).sort((a:any,b:any)=>a.headroom-b.headroom);
 
   // Client Revenue Contribution — top 10 clients by total monthly fee across their projects.
-  const clientRevenueRanked = [...clientStats].sort((a:any,b:any)=>b.totalMonthly-a.totalMonthly).slice(0,10).map((c:any)=>({ client:c.client, revenue:c.totalMonthly }));
+  const clientRevenueRanked = [...clientStats].sort((a:any,b:any)=>b.totalMonthly-a.totalMonthly).slice(0,10).map((c:any)=>({ client:c.displayName, revenue:c.totalMonthly }));
   const clientRevenueSorted = [...clientStats].sort((a:any,b:any)=>b.totalMonthly-a.totalMonthly);
   const clientBillingDonutData = (() => {
-    const top5 = clientRevenueSorted.slice(0,5).map((c:any)=>({ name:c.client, value:c.totalMonthly }));
+    const top5 = clientRevenueSorted.slice(0,5).map((c:any)=>({ name:c.displayName, value:c.totalMonthly }));
     const othersSum = clientRevenueSorted.slice(5).reduce((a:number,c:any)=>a+c.totalMonthly,0);
     return othersSum>0 ? [...top5, { name:'Others', value:othersSum, color:'#94a3b8' }] : top5;
   })();
   // Client Risk Heat — at-risk project count per client, worst first.
-  const clientRiskRanked = [...clientStats].sort((a:any,b:any)=>b.atRisk-a.atRisk).map((c:any)=>({ client:c.client, atRisk:c.atRisk }));
+  const clientRiskRanked = [...clientStats].sort((a:any,b:any)=>b.atRisk-a.atRisk).map((c:any)=>({ client:c.displayName, atRisk:c.atRisk }));
   const clientsAtRiskCount = clientStats.filter((c:any)=>c.atRisk>0).length;
   const clientRiskMixData = [
     { name:'Stable', value: clientStats.length - clientsAtRiskCount, color:'#10b981' },
@@ -646,7 +651,7 @@ export default function Reports(){
             </S.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
-                <S.Td className="font-medium">{c.client}</S.Td><S.Td>{c.count}</S.Td>
+                <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.count}</S.Td>
                 <S.Td>{S.inLakh(c.totalMonthly)}/mo</S.Td><S.Td>{c.billingTypes}</S.Td>
                 <S.Td><S.Badge cls={S.payColor(c.worstPayment)}>{c.worstPayment}</S.Badge></S.Td>
               </tr>
@@ -659,7 +664,7 @@ export default function Reports(){
             <S.ChartBlock title="Client Health Mix"><S.DonutChartMini data={clientRiskMixData} height={190}/></S.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
-                <S.Td className="font-medium">{c.client}</S.Td><S.Td>{c.count}</S.Td>
+                <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.count}</S.Td>
                 <S.Td>{c.statuses}</S.Td>
                 <S.Td>{c.atRisk>0 ? <S.Badge cls="bg-red-100 text-red-700">{c.atRisk} at risk</S.Badge> : <S.Badge cls="bg-emerald-100 text-emerald-700">Stable</S.Badge>}</S.Td>
               </tr>
@@ -672,7 +677,7 @@ export default function Reports(){
             <S.ChartBlock title="Engagement Type Mix"><S.DonutChartMini data={engagementMixData} height={190}/></S.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
-                <S.Td className="font-medium">{c.client}</S.Td><S.Td>{c.tier}</S.Td><S.Td>{c.industries}</S.Td>
+                <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.tier}</S.Td><S.Td>{c.industries}</S.Td>
                 <S.Td>{c.engagements}</S.Td><S.Td>{c.sbus}</S.Td>
               </tr>
             )), ['Client','Category Tier','Industry','Engagement Type','Total SBUs'])}

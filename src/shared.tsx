@@ -50,9 +50,17 @@ export const CURRENT_MONTH_END = (() => {
 export const CURRENT_MONTH_LABEL = new Date(TODAY_ISO+'T00:00:00').toLocaleString('en-US',{month:'long',year:'numeric'});
 export const monthsBetween = (a, b) => (!a || !b) ? 0 : Math.max(0, (+new Date(b) - +new Date(a)) / (30.44 * 864e5));
 export const projTotalMonths = (p) => monthsBetween(p.start, p.end);
-export const projTargetRevenue = (p) => Math.round(projTotalMonths(p) * (Number(p.monthlyFee)||0));
+// Revenue math rounds months to the same 1-decimal precision Project Master actually displays
+// ("Total Project Months") before multiplying by the fee. monthsBetween is a day-count / 30.44
+// average, so a project that's really 6 calendar months (e.g. Aug 12 -> Feb 11) lands on something
+// like 6.0118 rather than an exact 6 -- shown as "6.0" either way, but multiplying the UNROUNDED
+// 6.0118 by the fee silently added a few thousand rupees the person could never see or explain from
+// the number on screen. Rounding to 1 decimal first keeps "Total Value" mathematically consistent
+// with "Total Project Months × Monthly Fee" exactly as displayed.
+const roundToDisplayedMonths = (months) => Math.round(months * 10) / 10;
+export const projTargetRevenue = (p) => Math.round(roundToDisplayedMonths(projTotalMonths(p)) * (Number(p.monthlyFee)||0));
 export const projElapsedMonths = (p) => monthsBetween(p.start, (new Date(TODAY_ISO) < new Date(p.end) ? TODAY_ISO : p.end));
-export const projAchievedRevenue = (p) => Math.min(projTargetRevenue(p), Math.round(projElapsedMonths(p) * (Number(p.monthlyFee)||0)));
+export const projAchievedRevenue = (p) => Math.min(projTargetRevenue(p), Math.round(roundToDisplayedMonths(projElapsedMonths(p)) * (Number(p.monthlyFee)||0)));
 // Actual billed-to-date revenue — billing here is monthly-once (a single invoice raised per billing
 // cycle, not spread/prorated across the days of a month), so "achieved" should be the sum of the
 // invoice amounts actually CONFIRMED RECEIVED in Project Master (Billing Tracker rows are created by

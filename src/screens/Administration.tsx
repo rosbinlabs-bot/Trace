@@ -379,9 +379,9 @@ function UsersPanel(){
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
-              <input value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+              <input autoComplete="off" value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
-              <input value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+              <input autoComplete="off" value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
               <select value={draft.designation} onChange={e=>{ const designation=e.target.value; setDraft(d=>({...d,designation, level: levelTouched ? d.level : (S.designationHierarchyLevel(designation, admin)||d.level) })); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
@@ -392,7 +392,7 @@ function UsersPanel(){
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
-                <input value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                <input autoComplete="new-password" value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
                 <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
@@ -412,9 +412,9 @@ function UsersPanel(){
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
-              <input value={clientDraft.name} onChange={e=>setClientDraftName(e.target.value)} placeholder="Client contact name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
+              <input autoComplete="off" value={clientDraft.name} onChange={e=>setClientDraftName(e.target.value)} placeholder="Client contact name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
-              <input value={clientDraft.email} onChange={e=>setClientDraft(d=>({...d,email:e.target.value}))} placeholder="name@clientcompany.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
+              <input autoComplete="off" value={clientDraft.email} onChange={e=>setClientDraft(d=>({...d,email:e.target.value}))} placeholder="name@clientcompany.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Project</label>
               <select value={clientDraft.projectId} onChange={e=>setClientDraft(d=>({...d,projectId:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
                 <option value="">Select project…</option>
@@ -422,7 +422,7 @@ function UsersPanel(){
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
-                <input value={clientDraft.password} onChange={e=>{setClientPwTouched(true); setClientDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-violet-500"/>
+                <input autoComplete="new-password" value={clientDraft.password} onChange={e=>{setClientPwTouched(true); setClientDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-violet-500"/>
                 <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
@@ -440,7 +440,7 @@ function UsersPanel(){
           <div className="flex gap-1.5 items-end">
             <div className="flex flex-col gap-1 flex-1">
               <label className="text-[10px] text-slate-400">New Password</label>
-              <input value={resetFor.password} onChange={e=>setResetFor(r=>({...r,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+              <input autoComplete="new-password" value={resetFor.password} onChange={e=>setResetFor(r=>({...r,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
             </div>
             <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
             <button onClick={doReset} disabled={busy===resetFor.user.id} className="text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{busy===resetFor.user.id?'Resetting…':'Reset Password'}</button>
@@ -494,12 +494,12 @@ function UsersPanel(){
           return (<>
             <S.Td className="font-medium whitespace-nowrap">
               {isEditing
-                ? <input autoFocus value={editDraft.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[8rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                ? <input autoFocus autoComplete="off" value={editDraft.name} onChange={e=>setEditDraft(d=>({...d,name:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[8rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
                 : u.name}
             </S.Td>
             <S.Td className="text-slate-500 whitespace-nowrap">
               {isEditing
-                ? <input type="email" value={editDraft.email} onChange={e=>setEditDraft(d=>({...d,email:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[10rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                ? <input type="email" autoComplete="off" value={editDraft.email} onChange={e=>setEditDraft(d=>({...d,email:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1 text-sm w-full min-w-[10rem] focus:outline-none focus:ring-2 focus:ring-brand-500"/>
                 : u.email}
             </S.Td>
           </>);
@@ -531,7 +531,7 @@ function UsersPanel(){
                   const isEditing = editingId===u.id;
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
-                    <NameEmailCells u={u}/>
+                    {NameEmailCells({u})}
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -559,9 +559,9 @@ function UsersPanel(){
                         </select>
                       ) : <S.Badge cls="bg-violet-50 text-violet-700">{u.level||'—'}</S.Badge>}
                     </S.Td>
-                    <S.Td><StatusCell u={u}/></S.Td>
+                    <S.Td>{StatusCell({u})}</S.Td>
                     <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
-                    <S.Td><ActionsCell u={u}/></S.Td>
+                    <S.Td>{ActionsCell({u})}</S.Td>
                   </tr>
                   );
                 })}
@@ -588,7 +588,7 @@ function UsersPanel(){
                   const isEditing = editingId===u.id;
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
-                    <NameEmailCells u={u}/>
+                    {NameEmailCells({u})}
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.project||''} onChange={e=>setClientProject(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-1.5 py-1 text-xs max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-violet-500">
@@ -600,9 +600,9 @@ function UsersPanel(){
                       )}
                     </S.Td>
                     <S.Td><S.Badge cls="bg-slate-100 text-slate-500">Restricted</S.Badge></S.Td>
-                    <S.Td><StatusCell u={u}/></S.Td>
+                    <S.Td>{StatusCell({u})}</S.Td>
                     <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
-                    <S.Td><ActionsCell u={u}/></S.Td>
+                    <S.Td>{ActionsCell({u})}</S.Td>
                   </tr>
                   );
                 })}
