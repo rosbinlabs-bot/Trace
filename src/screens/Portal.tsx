@@ -5,7 +5,7 @@ import * as db from '../db';
 
 export default function Portal(){
   const location = useLocation();
-  const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
+  const { tree, setTree, addNotification, notifications } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email, profile: myProfile } = React.useContext(S.CurrentUserContext);
@@ -59,6 +59,15 @@ export default function Portal(){
   const roster = S.buildRoster(projMeta, admin);
   const clientOwner = (projMeta.clients||[]).find(c=>c.owner);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
+
+  // Recent Activity — the same shared notification feed the header bell reads (PhaseDataContext),
+  // scoped down to just this active project. The header bell itself stays org-wide/role-scoped as
+  // before (it's shared chrome across every screen); this is the client-facing, project-scoped view
+  // so a client -- or a staff account previewing the portal -- only ever sees updates about the one
+  // engagement shown here, never another client's activity. Matches on projectId where a notification
+  // set it (the vast majority do); falls back to the project name for the few paths that only ever
+  // recorded that (e.g. Calendar reminders).
+  const projectNotifications = (notifications||[]).filter((n:any) => n.projectId===activeProj || (!n.projectId && n.project===projMeta.name));
 
   // ---- Project Health — the first thing a client should see: is this project on track, and if
   // not, exactly what's late. Milestones (not sub tasks) are the client-meaningful unit of progress
@@ -361,6 +370,19 @@ export default function Portal(){
             ))}
           </div>
         )}
+      </S.Card>
+
+      {/* Recent Activity -- reuses the same clickable notification-row component the header bell
+          uses, so an entry here jumps straight to what it's about too. Scoped to this project only
+          (see projectNotifications above), so it never leaks another client's activity. */}
+      <S.Card className="p-4 mb-5">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="font-semibold text-slate-800">Recent Activity</span>
+          {projectNotifications.length>0 && <S.Badge cls="bg-slate-100 text-slate-600">{projectNotifications.length}</S.Badge>}
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          <S.NotificationFeedList notifications={projectNotifications.slice(0,20)} emptyText="No updates on this project yet."/>
+        </div>
       </S.Card>
 
       {/* Simple timeline: Phase -> Milestone -> Sub Task, deadline & status only */}
