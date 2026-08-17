@@ -60,6 +60,55 @@ export default function Portal(){
   const clientOwner = (projMeta.clients||[]).find(c=>c.owner);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
 
+  // ---- Project Health — the first thing a client should see: is this project on track, and if
+  // not, exactly what's late. Milestones (not sub tasks) are the client-meaningful unit of progress
+  // here, same granularity the sign-off flow above already uses. ----
+  const msOnly = phases.flatMap((ph:any)=>ph.milestones||[]);
+  const stOnly = msOnly.flatMap((ms:any)=>ms.subtasks||[]);
+  const msDone = msOnly.filter(S.isApproved).length;
+  const stDone = stOnly.filter(S.isApproved).length;
+  const msPct = msOnly.length ? Math.round(100*msDone/msOnly.length) : 0;
+
+  // Everything actually late right now: an unapproved milestone/sub task past its deadline, or a
+  // phase past its end date that isn't Completed or deliberately On Hold. Each keeps its parent
+  // phase name and how many days overdue, feeding both the health card's callout below and the red
+  // "overdue" badges in Project Timeline further down — one source of truth for "what's delayed" so
+  // the two never disagree.
+  const delayedItems: any[] = [];
+  phases.forEach((ph:any)=>{
+    if(ph.end && ph.end<S.TODAY_ISO && S.derivedPhaseStatus(ph)!=='Completed' && !ph.onHold){
+      delayedItems.push({ label:`Phase: ${ph.name}`, phaseName:ph.name, daysOverdue:-S.daysLeft(ph.end) });
+    }
+    (ph.milestones||[]).forEach((ms:any)=>{
+      if(S.isOverdue(ms)) delayedItems.push({ label:ms.name, phaseName:ph.name, daysOverdue:-S.daysLeft(ms.deadline) });
+      (ms.subtasks||[]).forEach((s:any)=>{
+        if(S.isOverdue(s)) delayedItems.push({ label:s.name, phaseName:ph.name, daysOverdue:-S.daysLeft(s.deadline) });
+      });
+    });
+  });
+  delayedItems.sort((a,b)=>b.daysOverdue-a.daysOverdue);
+
+  const nextMilestone = (()=>{
+    const mss = msOnly.filter((m:any)=>!S.isApproved(m) && m.deadline);
+    if(!mss.length) return null;
+    return [...mss].sort((a:any,b:any)=>a.deadline<b.deadline?-1:1)[0];
+  })();
+
+  // Pace check: what share of the project's planned calendar has elapsed vs. what share of
+  // milestones are actually done — the gap is a plain-language answer to "are we behind" even before
+  // anything is formally overdue (e.g. deadlines further out, but work isn't keeping pace).
+  const totalPlannedDays = S.daysBetween(projMeta.start, projMeta.end);
+  const elapsedDaysRaw = projMeta.start ? S.daysBetween(projMeta.start, S.TODAY_ISO) : null;
+  const timeElapsedPct = (totalPlannedDays && elapsedDaysRaw!==null) ? Math.min(100, Math.round(100*elapsedDaysRaw/totalPlannedDays)) : null;
+  const paceTrailing = timeElapsedPct!==null && msOnly.length>0 && (timeElapsedPct - msPct) >= 20;
+
+  // Red = something is actually late, or the project's own end date has lapsed with no extension on
+  // file (S.needsExtension — same signal Dashboard's Portfolio Health uses). Amber = nothing overdue
+  // yet, but either the next milestone is due within a week or the pace check above is trailing.
+  const overallHealth = (delayedItems.length>0 || S.needsExtension(projMeta)) ? 'red'
+    : ((nextMilestone && S.daysLeft(nextMilestone.deadline)<=7) || paceTrailing) ? 'amber'
+    : 'green';
+
   // My name as far as the issue register is concerned -- matches how it's recorded in
   // project.clients[] (see Project Master), falling back to the Client Owner label if this login
   // isn't itself a named client contact.
@@ -140,7 +189,7 @@ export default function Portal(){
 
   return (
     <div>
-      <S.SectionTitle sub="Client-facing view — approvals pending your sign-off, plus a simple phase / milestone / sub task timeline">Client Portal{projMeta.client?` — ${projMeta.client}`:''}</S.SectionTitle>
+      <S.SectionTitle sub="Client-facing view — project health, approvals pending your sign-off, and a phase / milestone / sub task timeline">Client Portal{projMeta.client?` — ${projMeta.client}`:''}</S.SectionTitle>
 
       {/* Project tabs (stands in for "logged in as this client's project" in the prototype) */}
       <div className="flex gap-1 border-b border-slate-200 mb-4 overflow-x-auto">
@@ -159,6 +208,70 @@ export default function Portal(){
       {!canAct && (
         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access to this portal — sign-off and remarks are turned off for this account.</div>
       )}
+
+      {/* Project Health — on track / delayed at a glance, plus exactly what's late if anything is,
+          before the client has to go digging through the timeline for it. */}
+      <S.Card className={`p-4 mb-5 border-l-4 ${overallHealth==='red'?'border-l-red-400':overallHealth==='amber'?'border-l-amber-400':'border-l-emerald-400'}`}>
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <div className="flex items-center gap-2">
+            <S.Icon name={overallHealth==='red'?'alert':overallHealth==='amber'?'clock':'checkcircle'} className={`w-5 h-5 ${overallHealth==='red'?'text-red-500':overallHealth==='amber'?'text-amber-500':'text-emerald-500'}`}/>
+            <span className={`font-semibold ${overallHealth==='red'?'text-red-700':overallHealth==='amber'?'text-amber-700':'text-emerald-700'}`}>
+              {overallHealth==='red' ? 'Delayed' : overallHealth==='amber' ? 'On Track — keep an eye on this' : 'On Track'}
+            </span>
+          </div>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{projMeta.start||'—'} → {projMeta.end||'—'}</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Milestones Completed</div>
+            <div className="flex items-center gap-2">
+              <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className="h-2 rounded-full bg-brand-500" style={{width:`${msPct}%`}}></div></div>
+              <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{msDone}/{msOnly.length}</span>
+            </div>
+            <div className="text-[11px] text-slate-400 mt-1">{stDone}/{stOnly.length} sub tasks done</div>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Time Elapsed</div>
+            {timeElapsedPct!==null ? (<>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full ${paceTrailing?'bg-amber-500':'bg-slate-400'}`} style={{width:`${timeElapsedPct}%`}}></div></div>
+                <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{timeElapsedPct}%</span>
+              </div>
+              <div className={`text-[11px] mt-1 ${paceTrailing?'text-amber-600':'text-slate-400'}`}>{paceTrailing?'Work is trailing the schedule':'Pace looks healthy'}</div>
+            </>) : <div className="text-sm text-slate-400">No project dates set.</div>}
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Next Milestone</div>
+            {nextMilestone ? (<>
+              <div className="text-sm font-medium text-slate-700 truncate">{nextMilestone.name}</div>
+              <div className={`text-[11px] mt-0.5 ${S.isOverdue(nextMilestone)?'text-red-600 font-medium':'text-slate-400'}`}>
+                {nextMilestone.deadline}{S.isOverdue(nextMilestone) ? ` · ${-S.daysLeft(nextMilestone.deadline)}d overdue` : ` · in ${S.daysLeft(nextMilestone.deadline)}d`}
+              </div>
+            </>) : <div className="text-sm text-slate-400">Nothing upcoming.</div>}
+          </div>
+        </div>
+
+        {(delayedItems.length>0 || S.needsExtension(projMeta)) && (
+          <div className="border-t border-slate-100 mt-4 pt-3">
+            <div className="text-xs font-medium text-red-600 mb-1.5">What's causing the delay</div>
+            <div className="space-y-1">
+              {S.needsExtension(projMeta) && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
+                  The project's planned end date ({projMeta.end}) has passed and no extension has been confirmed yet.
+                </div>
+              )}
+              {delayedItems.slice(0,5).map((d,i)=>(
+                <div key={i} className="flex justify-between items-center gap-2 text-xs bg-red-50 border border-red-100 rounded-lg px-2.5 py-1.5">
+                  <span className="text-slate-700 truncate">{d.label} <span className="text-slate-400">— {d.phaseName}</span></span>
+                  <span className="text-red-600 font-medium whitespace-nowrap">{d.daysOverdue}d overdue</span>
+                </div>
+              ))}
+              {delayedItems.length>5 && <div className="text-[11px] text-slate-400">+{delayedItems.length-5} more overdue — see Project Timeline below.</div>}
+            </div>
+          </div>
+        )}
+      </S.Card>
 
       {/* Pending Your Approval — phase-wise, expandable */}
       <S.Card className="p-4 mb-5">
@@ -254,31 +367,39 @@ export default function Portal(){
       <S.Card className="p-4">
         <div className="font-semibold text-slate-800 mb-3">Project Timeline</div>
         <div className="space-y-2">
-          {phases.map(ph=>{ const phOpen = !!openPhase[ph.id]; const phStatus = S.derivedPhaseStatus(ph); return (
-            <div key={ph.id} className="border border-slate-200 rounded-lg overflow-hidden">
-              <button onClick={()=>togglePhase(ph.id)} className="w-full flex flex-wrap items-center gap-3 px-3 py-2.5 bg-slate-50 text-left">
+          {phases.map(ph=>{
+            const phOpen = !!openPhase[ph.id]; const phStatus = S.derivedPhaseStatus(ph);
+            const phDelayed = ph.end && ph.end<S.TODAY_ISO && phStatus!=='Completed' && !ph.onHold;
+            const phDone = ph.milestones.filter(S.isApproved).length;
+            return (
+            <div key={ph.id} className={`border rounded-lg overflow-hidden ${phDelayed?'border-red-200':'border-slate-200'}`}>
+              <button onClick={()=>togglePhase(ph.id)} className={`w-full flex flex-wrap items-center gap-3 px-3 py-2.5 text-left ${phDelayed?'bg-red-50/50':'bg-slate-50'}`}>
                 <span className="text-slate-400 text-xs w-4">{phOpen?'▼':'▶'}</span>
-                <span className="font-medium text-slate-800 flex-1">{ph.name}</span>
-                <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {ph.end || '—'}</span>
+                <span className="font-medium text-slate-800">{ph.name}</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{phDone}/{ph.milestones.length} milestones</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap ml-auto">Deadline {ph.end || '—'}</span>
+                {phDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(ph.end)}d overdue</S.Badge>}
                 <S.Badge cls={S.statusColor(phStatus)}>{phStatus}</S.Badge>
               </button>
               {phOpen && (
                 <div className="divide-y divide-slate-100">
-                  {ph.milestones.map(ms=>{ const msOpen = !!openMs[ms.id]; return (
+                  {ph.milestones.map(ms=>{ const msOpen = !!openMs[ms.id]; const msDelayed = S.isOverdue(ms); return (
                     <div key={ms.id}>
-                      <button onClick={()=>toggleMs(ms.id)} className="w-full flex flex-wrap items-center gap-3 px-3 py-2 pl-8 text-left hover:bg-slate-50">
+                      <button onClick={()=>toggleMs(ms.id)} className={`w-full flex flex-wrap items-center gap-3 px-3 py-2 pl-8 text-left hover:bg-slate-50 ${msDelayed?'bg-red-50/30':''}`}>
                         <span className="text-slate-300 text-xs w-4">{ms.subtasks&&ms.subtasks.length ? (msOpen?'▼':'▶') : '·'}</span>
                         <span className="text-sm text-slate-700 flex-1">{ms.name}</span>
                         <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {ms.deadline || '—'}</span>
+                        {msDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(ms.deadline)}d overdue</S.Badge>}
                         <S.Badge cls={S.statusColor(ms.status)}>{ms.status}</S.Badge>
                       </button>
-                      {msOpen && (ms.subtasks||[]).map(s=>(
-                        <div key={s.id} className="flex flex-wrap items-center gap-3 px-3 py-2 pl-16 text-left">
+                      {msOpen && (ms.subtasks||[]).map(s=>{ const stDelayed = S.isOverdue(s); return (
+                        <div key={s.id} className={`flex flex-wrap items-center gap-3 px-3 py-2 pl-16 text-left ${stDelayed?'bg-red-50/30':''}`}>
                           <span className="text-sm text-slate-600 flex-1">{s.name}</span>
                           <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {s.deadline || '—'}</span>
+                          {stDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(s.deadline)}d overdue</S.Badge>}
                           <S.Badge cls={S.statusColor(s.status)}>{s.status}</S.Badge>
                         </div>
-                      ))}
+                      );})}
                     </div>
                   );})}
                   {ph.milestones.length===0 && <div className="text-xs text-slate-400 px-3 py-2 pl-8">No milestones yet.</div>}
