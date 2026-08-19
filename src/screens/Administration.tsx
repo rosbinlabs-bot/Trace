@@ -3,6 +3,7 @@ import * as S from '../shared';
 import * as db from '../db';
 
 function TagListSetting({ title, hint, field, placeholder, settings, setSettings, canEdit=true }: any){
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const [draft, setDraft] = useState('');
   const list = settings[field] || [];
   const add = () => {
@@ -11,9 +12,10 @@ function TagListSetting({ title, hint, field, placeholder, settings, setSettings
     if(!v) return;
     if(list.some(x=>x.toLowerCase()===v.toLowerCase())){ setDraft(''); return; }
     setSettings(s => ({ ...s, [field]: [...(s[field]||[]), v] }));
+    logActivity({ module:'Project Settings', action: `Added "${v}" to ${title}` });
     setDraft('');
   };
-  const remove = (i) => { if(!canEdit) return; setSettings(s => ({ ...s, [field]: (s[field]||[]).filter((_,j)=>j!==i) })); };
+  const remove = (i) => { if(!canEdit) return; const v=list[i]; setSettings(s => ({ ...s, [field]: (s[field]||[]).filter((_,j)=>j!==i) })); logActivity({ module:'Project Settings', action: `Removed "${v}" from ${title}` }); };
   return (
     <S.Card className="p-4">
       <div className="font-semibold text-slate-800">{title}</div>
@@ -43,6 +45,8 @@ function ProjectSettingsPanel(){
   const { settings, setSettings } = React.useContext(S.SettingsContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
+  const logSettings = (action: string) => logActivity({ module:'Project Settings', action });
   // Every Administration sub-panel independently re-checks the Administration module capability
   // (rather than trusting a parent wrapper) so it stays correctly locked down even if reached some
   // other way -- View means read/browse only, Edit or above is required to actually change anything.
@@ -57,11 +61,12 @@ function ProjectSettingsPanel(){
     if(!code || !label) return;
     if(settings.categories.some(c=>c.code.toUpperCase()===code)) return;
     setSettings(s => ({ ...s, categories:[...s.categories, { code, label }] }));
+    logSettings(`Added category "${code} - ${label}"`);
     setTierCode(''); setTierLabel('');
   };
-  const removeTier = (code) => { if(!canEdit) return; setSettings(s => ({ ...s, categories: s.categories.filter(c=>c.code!==code) })); };
+  const removeTier = (code) => { if(!canEdit) return; setSettings(s => ({ ...s, categories: s.categories.filter(c=>c.code!==code) })); logSettings(`Removed category "${code}"`); };
   const editTierLabel = (code, label) => { if(!canEdit) return; setSettings(s => ({ ...s, categories: s.categories.map(c=>c.code===code?{...c,label}:c) })); };
-  const resetDefaults = () => { if(canEdit) setSettings(S.DEFAULT_PROJECT_SETTINGS); };
+  const resetDefaults = () => { if(canEdit){ setSettings(S.DEFAULT_PROJECT_SETTINGS); logSettings('Reset Project Settings to defaults'); } };
 
   return (
     <div>
@@ -137,14 +142,16 @@ function SimpleListEditor({ list, onChange, placeholder, canEdit=true }: any){
 function RolesPermissionsPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
+  const logRoles = (action: string) => logActivity({ module:'Roles & Permissions', action });
   // Deliberately a HIGHER bar than the rest of Administration (Edit): this panel rewrites the rules
   // themselves, so an Edit-level Admin (who can otherwise manage Users/Company/Billing) still can't
   // grant themselves more access by editing the matrix -- only Full (Super Admin by default) can.
   const canEditRoles = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Full');
-  const setLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level })); };
-  const setHierarchyLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationHierarchyLevel', dl => ({ ...(dl||{}), [designation]: level })); };
-  const setCap = (mod, level, cap) => { if(!canEditRoles) return; patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } })); };
-  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('designationHierarchyLevel', ()=>({...S.DEFAULT_HIERARCHY_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); };
+  const setLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level })); logRoles(`Set "${designation}" permission level to "${level}"`); };
+  const setHierarchyLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationHierarchyLevel', dl => ({ ...(dl||{}), [designation]: level })); logRoles(`Set "${designation}" hierarchy level to "${level}"`); };
+  const setCap = (mod, level, cap) => { if(!canEditRoles) return; patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } })); logRoles(`Set "${mod}" capability for "${level}" to "${cap}"`); };
+  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('designationHierarchyLevel', ()=>({...S.DEFAULT_HIERARCHY_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); logRoles('Reset Roles & Permissions to defaults'); };
   return (
     <div className="space-y-5">
       {!canEditRoles && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access to Roles & Permissions — only a Super Admin (Full capability on Administration) can change designation levels or the capability matrix.</div>}
@@ -229,6 +236,8 @@ function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
+  const logUser = (action: string) => logActivity({ module:'Administration', action });
   // Derived from the actual Administration capability (configurable in Roles & Permissions), not a
   // hardcoded role==='admin' shortcut -- by default Admin permission level is 'View' on Administration
   // (browse only) and Super Admin is 'Full', so only Super Admin can manage users out of the box. A
@@ -270,6 +279,7 @@ function UsersPanel(){
     try {
       await db.createUserAccount(email, draft.password, name);
       patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', status:'Active', joined: S.TODAY_ISO }]);
+      logUser(`Added teammate "${name}" (${email}, ${draft.designation})`);
       setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
@@ -288,23 +298,25 @@ function UsersPanel(){
     try {
       await db.createUserAccount(email, clientDraft.password, name);
       patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO }]);
+      logUser(`Added client login "${name}" (${email})`);
       setClientDraft({ name:'', email:'', projectId:'', password: defaultPasswordFor('') }); setClientPwTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
-  const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); };
-  const setHierarchyLevel = (id, level) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,level}:u)); };
+  const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`Changed ${u?.name||id}'s designation to "${designation}"`); };
+  const setHierarchyLevel = (id, level) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,level}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`Changed ${u?.name||id}'s hierarchy level to "${level}"`); };
   // '' clears the override (back to the standard designation -> level mapping); any PERMISSION_LEVELS
   // value pins that account to that level regardless of designation.
-  const setPermissionOverride = (id, level) => { if(!iAmSuperAdmin) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,permissionOverride:level||null}:u)); };
+  const setPermissionOverride = (id, level) => { if(!iAmSuperAdmin) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,permissionOverride:level||null}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`${level?`Set custom permission override "${level}"`:'Cleared custom permission override'} for ${u?.name||id}`); };
   const setClientProject = (id, projectId) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,project:projectId}:u)); };
-  const approveUser = (u:any) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x)); };
+  const approveUser = (u:any) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:'Active'}:x)); logUser(`Approved pending signup for "${u.name}"`); };
   const toggleSuspend = async (u:any) => {
     if(!canEditUsers) return;
     setErr(''); setBusy(u.id);
     try {
       await db.setUserBanned(u.email, u.status==='Active');
       patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,status:x.status==='Active'?'Suspended':'Active'}:x));
+      logUser(`${u.status==='Active'?'Deactivated':'Reactivated'} "${u.name}"`);
     } catch(e:any) { setErr(e.message || 'Could not update that account.'); }
     setBusy(null);
   };
@@ -314,6 +326,7 @@ function UsersPanel(){
     try {
       await db.deleteUserAccount(u.email);
       patchAdmin('users', (us:any[]) => us.filter(x=>x.id!==u.id));
+      logUser(`Removed login "${u.name}" (${u.email})`);
       setConfirmRemove(null);
     } catch(e:any) { setErr(e.message || 'Could not remove that account.'); }
     setBusy(null);
@@ -322,7 +335,7 @@ function UsersPanel(){
     if(!canEditUsers) return;
     if(!resetFor || !resetFor.password || resetFor.password.length<8) { setErr('Password must be at least 8 characters.'); return; }
     setErr(''); setBusy(resetFor.user.id);
-    try { await db.resetUserPassword(resetFor.user.email, resetFor.password); setResetFor(null); }
+    try { await db.resetUserPassword(resetFor.user.email, resetFor.password); logUser(`Reset password for "${resetFor.user.name}"`); setResetFor(null); }
     catch(e:any) { setErr(e.message || 'Could not reset that password.'); }
     setBusy(null);
   };
@@ -340,6 +353,7 @@ function UsersPanel(){
       // could be a local-only patch, but routing both through the same call keeps this simple.
       await db.updateUserProfile(u.email, { name, email });
       patchAdmin('users', (us:any[]) => us.map(x=>x.id===u.id?{...x,name,email}:x));
+      logUser(`Edited user "${u.name}" -> name "${name}", email "${email}"`);
       setEditingId(null);
     } catch(e:any) { setErr(e.message || 'Could not update that user.'); }
     setBusy(null);
@@ -626,6 +640,7 @@ function UsersPanel(){
 function ProductivityPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const teammates = (admin.users||[]).filter((u:any)=>u.type!=='Client');
   const benchFor = (userId:string) => ({ ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((admin.productivity||{})[userId]||{}) });
@@ -633,6 +648,8 @@ function ProductivityPanel(){
     if(!canEdit) return;
     const num = Number(val)||0;
     patchAdmin('productivity', (prod:any) => ({ ...(prod||{}), [userId]: { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((prod||{})[userId]||{}), [key]: num } }));
+    const u = teammates.find((x:any)=>x.id===userId);
+    logActivity({ module:'Team Productivity', action: `Set ${u?.name||userId}'s "${key}" benchmark to ${num}` });
   };
   return (
     <div>
@@ -684,12 +701,26 @@ const CompanyField = ({label, value, type, onChange, disabled}: any) => (
   </div>
 );
 
+// Text fields that save on every keystroke (via patchAdmin's own debounce) would otherwise spam the
+// activity log with one entry per character. This coalesces rapid edits to the same field into a
+// single log entry, fired ~1s after the user stops typing that field — mirrors the debounce comment
+// on patchAdmin itself, just applied to the log write rather than the DB write.
+function useDebouncedFieldLog(logActivity: any, module: string){
+  const timers = React.useRef<Record<string, any>>({});
+  return (field: string, action: string) => {
+    if(timers.current[field]) clearTimeout(timers.current[field]);
+    timers.current[field] = setTimeout(() => { logActivity({ module, action }); delete timers.current[field]; }, 1000);
+  };
+}
+
 function CompanyPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
+  const logField = useDebouncedFieldLog(logActivity, 'Company');
   const c = admin.company;
-  const set = (k,v) => { if(!canEdit) return; patchAdmin('company', co => ({ ...co, [k]:v })); };
+  const set = (k,v) => { if(!canEdit) return; patchAdmin('company', co => ({ ...co, [k]:v })); logField(k, `Updated Company "${k}"`); };
   return (
     <div>
       {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access here — ask a Super Admin for Edit access on Administration to change the company profile.</div>}
@@ -721,12 +752,22 @@ function CompanyPanel(){
 function BillingPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   // Billing lives inside Administration for this panel (the Financials & Billing matrix module
   // instead gates the Payment Receipts / Billing Tracker sections inside a project in Project Master),
   // so this respects the Administration capability like the rest of these panels.
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
+  const logField = useDebouncedFieldLog(logActivity, 'Billing');
   const b = admin.billing;
-  const set = (k,v) => { if(!canEdit) return; patchAdmin('billing', bl => ({ ...bl, [k]:v })); };
+  const set = (k,v) => {
+    if(!canEdit) return;
+    patchAdmin('billing', bl => ({ ...bl, [k]:v }));
+    // Plan/auto-renew are discrete, meaningful toggles -- log those immediately; free-text fields
+    // (payment method, billing contact) are debounced like Company's fields above.
+    if(k==='plan') logActivity({ module:'Billing', action: `Changed plan to "${v}"` });
+    else if(k==='autoRenew') logActivity({ module:'Billing', action: `${v?'Enabled':'Disabled'} auto-renew` });
+    else logField(k, `Updated Billing "${k}"`);
+  };
   const daysToRenewal = b.plan==='Annual' ? S.daysLeft(b.renewalDate) : null;
   return (
     <div className="space-y-4">
@@ -790,8 +831,15 @@ function BillingPanel(){
 function NotificationsPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
-  const toggle = (key, channel) => { if(!canEdit) return; patchAdmin('notifications', n => ({ ...n, categories: n.categories.map(c=>c.key===key?{...c,[channel]:!c[channel]}:c) })); };
+  const toggle = (key, channel) => {
+    if(!canEdit) return;
+    let next = false;
+    patchAdmin('notifications', n => ({ ...n, categories: n.categories.map(c=>{ if(c.key!==key) return c; next = !c[channel]; return {...c,[channel]:next}; }) }));
+    const cat = (admin.notifications?.categories||[]).find((c:any)=>c.key===key);
+    logActivity({ module:'Notifications', action: `${next?'Enabled':'Disabled'} ${channel==='inApp'?'in-app':'email'} notifications for "${cat?.label||key}"` });
+  };
   return (
     <div>
       {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access here — ask a Super Admin for Edit access on Administration to change notification rules.</div>}
@@ -814,13 +862,129 @@ function NotificationsPanel(){
   );
 }
 
+// User Login Log Book — last tab in Administration, Super Admin only (S.isSuperAdmin gates both the
+// tab button itself in Admin() below and this panel's body, same defense-in-depth pattern the rest
+// of this file uses e.g. canEditUsers/iAmSuperAdmin in UsersPanel). Two feeds, both fetched on demand
+// (not part of the app's normal startup load — see db.ts's comment on fetchLoginLogs/fetchActivityLogs
+// for why): Login History is one row per session start (App.tsx's recordLogin-equivalent write, see
+// its own comment on why that's "session start" and not strictly "password submitted"); Changes Made
+// is every logActivity() call fired from around the app (S.ActivityLogContext) as real actions
+// actually commit — status changes, project/user/risk/issue edits, and so on, not raw keystrokes.
+function LoginLogBookPanel(){
+  const { admin } = React.useContext(S.AdminDataContext);
+  const [logins, setLogins] = useState<any[]>([]);
+  const [activity, setActivity] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [view, setView] = useState<'logins'|'activity'>('logins');
+  const [userFilter, setUserFilter] = useState('');
+  const [moduleFilter, setModuleFilter] = useState('');
+
+  const load = () => {
+    setLoading(true); setErr('');
+    Promise.all([db.fetchLoginLogs(), db.fetchActivityLogs()])
+      .then(([l, a]) => { setLogins(l); setActivity(a); })
+      .catch((e: any) => setErr(e.message || 'Could not load the log book.'))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A row's own userName is stamped at write time (see App.tsx) so history stays readable even if
+  // the account is later renamed/deactivated; falls back to a live Administration -> Users lookup by
+  // email, then the raw email itself, for any older row written before that stamp existed.
+  const nameFor = (email: string, stamped: string) => stamped || (admin.users || []).find((u: any) => (u.email || '').toLowerCase() === (email || '').toLowerCase())?.name || email;
+
+  const modules = useMemo(() => Array.from(new Set(activity.map((a: any) => a.module))).sort() as string[], [activity]);
+
+  const matchesUser = (email: string, stamped: string) => {
+    if (!userFilter) return true;
+    const q = userFilter.toLowerCase();
+    return nameFor(email, stamped).toLowerCase().includes(q) || (email || '').toLowerCase().includes(q);
+  };
+  const filteredLogins = logins.filter((l: any) => matchesUser(l.userEmail, l.userName));
+  const filteredActivity = activity.filter((a: any) => matchesUser(a.userEmail, a.userName) && (!moduleFilter || a.module === moduleFilter));
+
+  const fmt = (at: string) => at ? new Date(at).toLocaleString() : '—';
+
+  return (
+    <div>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <S.Icon name="shield" className="w-4 h-4 text-brand-600"/>
+          <span className="text-sm font-semibold text-slate-700">User Login Log Book</span>
+          <S.Badge cls="bg-amber-50 text-amber-700">Super Admin only</S.Badge>
+        </div>
+        <button onClick={load} disabled={loading} className="text-xs bg-slate-100 hover:bg-slate-200 disabled:opacity-50 text-slate-600 rounded-lg px-3 py-1.5 inline-flex items-center gap-1.5">
+          <S.Icon name="refresh" className="w-3.5 h-3.5"/> Refresh
+        </button>
+      </div>
+
+      {err && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">{err}</div>}
+
+      <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 mb-4 text-xs w-fit">
+        <button onClick={()=>setView('logins')} className={`px-3 py-1.5 rounded-md font-medium transition-colors ${view==='logins'?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>Login History</button>
+        <button onClick={()=>setView('activity')} className={`px-3 py-1.5 rounded-md font-medium transition-colors ${view==='activity'?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>Changes Made</button>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <input value={userFilter} onChange={e=>setUserFilter(e.target.value)} placeholder="Filter by user name or email…" className="border border-slate-200 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+        {view==='activity' && (
+          <select value={moduleFilter} onChange={e=>setModuleFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
+            <option value="">All modules</option>
+            {modules.map((m: string)=><option key={m}>{m}</option>)}
+          </select>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="text-sm text-slate-400 py-8 text-center">Loading…</div>
+      ) : view==='logins' ? (
+        <S.Card className="overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>User</S.Th><S.Th>Email</S.Th><S.Th>Login Time</S.Th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredLogins.map((l: any)=>(
+                <tr key={l.id}>
+                  <S.Td className="font-medium text-slate-700 whitespace-nowrap">{nameFor(l.userEmail, l.userName)}</S.Td>
+                  <S.Td className="text-slate-500">{l.userEmail}</S.Td>
+                  <S.Td className="text-slate-400 whitespace-nowrap">{fmt(l.at)}</S.Td>
+                </tr>
+              ))}
+              {filteredLogins.length===0 && <tr><td colSpan={3} className="text-center text-sm text-slate-400 py-8">No sign-ins recorded yet.</td></tr>}
+            </tbody>
+          </table>
+        </S.Card>
+      ) : (
+        <S.Card className="overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>User</S.Th><S.Th>Module</S.Th><S.Th>Change</S.Th><S.Th>Project</S.Th><S.Th>Time</S.Th></tr></thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredActivity.map((a: any)=>(
+                <tr key={a.id}>
+                  <S.Td className="font-medium text-slate-700 whitespace-nowrap">{nameFor(a.userEmail, a.userName)}</S.Td>
+                  <S.Td><S.Badge cls="bg-slate-100 text-slate-600">{a.module}</S.Badge></S.Td>
+                  <S.Td className="text-slate-600">{a.action}</S.Td>
+                  <S.Td className="text-slate-400 whitespace-nowrap">{a.project || '—'}</S.Td>
+                  <S.Td className="text-slate-400 whitespace-nowrap" title={fmt(a.at)}>{S.relativeTime(a.at)}</S.Td>
+                </tr>
+              ))}
+              {filteredActivity.length===0 && <tr><td colSpan={5} className="text-center text-sm text-slate-400 py-8">No activity recorded yet.</td></tr>}
+            </tbody>
+          </table>
+        </S.Card>
+      )}
+    </div>
+  );
+}
+
 // Branch and Holiday Calendar editors each need their own draft-input state, so — same reasoning
 // as TagListSetting/SimpleListEditor — they're standalone components rather than inline hooks
 // inside a switch-case (which would violate the Rules of Hooks as `item` changes).
 function BranchEditor({ branches, setExtras, canEdit=true }: any){
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const [name,setName]=useState(''), [city,setCity]=useState('');
-  const add=()=>{ if(!canEdit || !name.trim())return; setExtras('branches', b=>[...b,{id:S.uid('BR'),name:name.trim(),city:city.trim()}]); setName(''); setCity(''); };
-  const remove=(id)=>{ if(!canEdit) return; setExtras('branches', b=>b.filter(x=>x.id!==id)); };
+  const add=()=>{ if(!canEdit || !name.trim())return; setExtras('branches', b=>[...b,{id:S.uid('BR'),name:name.trim(),city:city.trim()}]); logActivity({ module:'Administration', action:`Added branch "${name.trim()}"` }); setName(''); setCity(''); };
+  const remove=(id)=>{ if(!canEdit) return; const b=branches.find(x=>x.id===id); setExtras('branches', b=>b.filter(x=>x.id!==id)); logActivity({ module:'Administration', action:`Removed branch "${b?.name||id}"` }); };
   return (
     <div>
       <div className="space-y-1.5 mb-3">
@@ -842,9 +1006,10 @@ function BranchEditor({ branches, setExtras, canEdit=true }: any){
   );
 }
 function HolidayEditor({ holidays, setExtras, canEdit=true }: any){
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const [date,setDate]=useState(''), [name,setName]=useState('');
-  const add=()=>{ if(!canEdit || !date||!name.trim())return; setExtras('holidays', h=>[...h,{date,name:name.trim()}].sort((a,b)=>a.date.localeCompare(b.date))); setDate(''); setName(''); };
-  const remove=(idx)=>{ if(!canEdit) return; setExtras('holidays', h=>h.filter((_,i)=>i!==idx)); };
+  const add=()=>{ if(!canEdit || !date||!name.trim())return; setExtras('holidays', h=>[...h,{date,name:name.trim()}].sort((a,b)=>a.date.localeCompare(b.date))); logActivity({ module:'Administration', action:`Added holiday "${name.trim()}" (${date})` }); setDate(''); setName(''); };
+  const remove=(idx)=>{ if(!canEdit) return; const h=holidays[idx]; setExtras('holidays', h=>h.filter((_,i)=>i!==idx)); logActivity({ module:'Administration', action:`Removed holiday "${h?.name||''}"` }); };
   return (
     <div>
       <div className="space-y-1.5 mb-3">
@@ -874,9 +1039,18 @@ function AdminOverviewDetail({ item, setTab }: any){
   const { settings, setSettings } = React.useContext(S.SettingsContext);
   const { team } = React.useContext(S.TeamDataContext);
   const { email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const extras = admin.extras;
   const setExtras = (k, updater) => { if(!canEdit) return; patchAdmin('extras', ex => ({ ...ex, [k]: typeof updater==='function'?updater(ex[k]):updater })); };
+  // Plain string list editors (SimpleListEditor for templates/masters) only hand back the whole new
+  // array, so diff against the array we already have in hand to describe what actually changed.
+  const logListDiff = (label: string, oldList: string[], newList: string[]) => {
+    const added = (newList||[]).filter(v=>!(oldList||[]).includes(v));
+    const removed = (oldList||[]).filter(v=>!(newList||[]).includes(v));
+    added.forEach(v => logActivity({ module:'Administration', action: `Added "${v}" to ${label}` }));
+    removed.forEach(v => logActivity({ module:'Administration', action: `Removed "${v}" from ${label}` }));
+  };
 
   switch(item){
     case 'Company':
@@ -908,8 +1082,8 @@ function AdminOverviewDetail({ item, setTab }: any){
       return <HolidayEditor holidays={extras.holidays} setExtras={setExtras} canEdit={canEdit}/>;
     case 'Working Days': {
       const wd = extras.workingDays;
-      const toggleDay = (d) => setExtras('workingDays', w=>({...w, [d]:!w[d]}));
-      const setTime = (k,v) => setExtras('workingDays', w=>({...w, [k]:v}));
+      const toggleDay = (d) => { setExtras('workingDays', w=>({...w, [d]:!w[d]})); logActivity({ module:'Administration', action: `${wd[d]?'Removed':'Added'} "${d}" ${wd[d]?'from':'to'} Working Days` }); };
+      const setTime = (k,v) => { setExtras('workingDays', w=>({...w, [k]:v})); logActivity({ module:'Administration', action: `Set Working Days "${k}" time to ${v}` }); };
       return (
         <div>
           <div className="flex flex-wrap gap-2 mb-4">
@@ -939,20 +1113,20 @@ function AdminOverviewDetail({ item, setTab }: any){
         </div>
       );
     case 'Project Templates': case 'Phase Templates': case 'Deliverable Templates': case 'Email Templates':
-      return <SimpleListEditor list={extras.templates[item]} placeholder={`Add ${item.toLowerCase().slice(0,-1)}…`} onChange={v=>setExtras('templates', t=>({...t,[item]:v}))} canEdit={canEdit}/>;
+      return <SimpleListEditor list={extras.templates[item]} placeholder={`Add ${item.toLowerCase().slice(0,-1)}…`} onChange={v=>{ logListDiff(item, extras.templates[item], v); setExtras('templates', t=>({...t,[item]:v})); }} canEdit={canEdit}/>;
     case 'Status Master':
-      return <SimpleListEditor list={settings.itemStatuses} placeholder="e.g. Blocked" onChange={v=>canEdit && setSettings(s=>({...s,itemStatuses:v}))} canEdit={canEdit}/>;
+      return <SimpleListEditor list={settings.itemStatuses} placeholder="e.g. Blocked" onChange={v=>{ if(!canEdit) return; logListDiff('Status Master', settings.itemStatuses, v); setSettings(s=>({...s,itemStatuses:v})); }} canEdit={canEdit}/>;
     case 'Priority Master':
-      return <SimpleListEditor list={settings.priorityLevels} placeholder="e.g. Critical" onChange={v=>canEdit && setSettings(s=>({...s,priorityLevels:v}))} canEdit={canEdit}/>;
+      return <SimpleListEditor list={settings.priorityLevels} placeholder="e.g. Critical" onChange={v=>{ if(!canEdit) return; logListDiff('Priority Master', settings.priorityLevels, v); setSettings(s=>({...s,priorityLevels:v})); }} canEdit={canEdit}/>;
     case 'Function Master':
-      return <SimpleListEditor list={settings.functions} placeholder="e.g. Legal" onChange={v=>canEdit && setSettings(s=>({...s,functions:v}))} canEdit={canEdit}/>;
+      return <SimpleListEditor list={settings.functions} placeholder="e.g. Legal" onChange={v=>{ if(!canEdit) return; logListDiff('Function Master', settings.functions, v); setSettings(s=>({...s,functions:v})); }} canEdit={canEdit}/>;
     case 'Department Master':
-      return <SimpleListEditor list={settings.departments} placeholder="e.g. Legal" onChange={v=>canEdit && setSettings(s=>({...s,departments:v}))} canEdit={canEdit}/>;
+      return <SimpleListEditor list={settings.departments} placeholder="e.g. Legal" onChange={v=>{ if(!canEdit) return; logListDiff('Department Master', settings.departments, v); setSettings(s=>({...s,departments:v})); }} canEdit={canEdit}/>;
     case 'Backup':
       return (
         <div>
           <div className="text-sm text-slate-500 mb-3">Last backup: <b className="text-slate-700">{extras.lastBackup}</b></div>
-          {canEdit && <button onClick={()=>setExtras('lastBackup', ()=>new Date().toISOString().slice(0,16).replace('T',' '))} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 inline-flex items-center gap-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/> Run Backup Now</button>}
+          {canEdit && <button onClick={()=>{ setExtras('lastBackup', ()=>new Date().toISOString().slice(0,16).replace('T',' ')); logActivity({ module:'Administration', action: 'Ran a manual backup' }); }} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 inline-flex items-center gap-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/> Run Backup Now</button>}
         </div>
       );
     case 'Integrations':
@@ -961,7 +1135,7 @@ function AdminOverviewDetail({ item, setTab }: any){
           {extras.integrations.map((it,i)=>(
             <div key={it.name} className="flex items-center justify-between bg-slate-50 border border-slate-200 rounded-lg px-3 py-2.5">
               <div><div className="text-sm font-medium text-slate-700">{it.name}</div><div className="text-xs text-slate-400">{it.desc}</div></div>
-              <button disabled={!canEdit} onClick={()=>setExtras('integrations', arr=>arr.map((x,idx)=>idx===i?{...x,connected:!x.connected}:x))}
+              <button disabled={!canEdit} onClick={()=>{ setExtras('integrations', arr=>arr.map((x,idx)=>idx===i?{...x,connected:!x.connected}:x)); logActivity({ module:'Administration', action: `${it.connected?'Disconnected':'Connected'} integration "${it.name}"` }); }}
                 className={`text-xs rounded-lg px-3 py-1.5 whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-60 ${it.connected?'bg-emerald-100 text-emerald-700 hover:bg-emerald-200':'bg-slate-200 text-slate-600 hover:bg-slate-300'}`}>
                 {it.connected?'Connected':'Connect'}
               </button>
@@ -976,6 +1150,16 @@ function AdminOverviewDetail({ item, setTab }: any){
 
 export default function Admin(){
   const [tab, setTab] = useState('overview');
+  const { admin } = React.useContext(S.AdminDataContext);
+  const { email } = React.useContext(S.CurrentUserContext);
+  // User Login Log Book is the one tab in Administration gated on actual Super Admin permission
+  // level (S.isSuperAdmin), not just the Administration capability matrix like every other tab here
+  // -- per the request, nobody below Super Admin should even see this tab exists.
+  const iAmSuperAdmin = S.isSuperAdmin(email, admin);
+  // If permissions changed under someone currently sitting on this tab (e.g. their Super Admin
+  // override was just revoked in another tab), fall back rather than leave them stranded on a panel
+  // whose tab button no longer renders.
+  React.useEffect(() => { if (tab==='loginLogBook' && !iAmSuperAdmin) setTab('overview'); }, [tab, iAmSuperAdmin]);
   const groups = {
     'Organization':['Company','Branch','Departments','Holiday Calendar','Working Days'],
     'Access':['Roles','Permissions','Audit Logs'],
@@ -994,6 +1178,7 @@ export default function Admin(){
     ['productivity','Team Productivity'],
     ['notifications','Notifications'],
     ['projectSettings','Project Settings'],
+    ...(iAmSuperAdmin ? [['loginLogBook','User Login Log Book']] : []),
   ];
   return (
     <div>
@@ -1042,6 +1227,7 @@ export default function Admin(){
       {tab==='productivity' && <ProductivityPanel/>}
       {tab==='notifications' && <NotificationsPanel/>}
       {tab==='projectSettings' && <ProjectSettingsPanel/>}
+      {tab==='loginLogBook' && iAmSuperAdmin && <LoginLogBookPanel/>}
     </div>
   );
 }

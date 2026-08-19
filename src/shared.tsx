@@ -234,6 +234,16 @@ export const PROJECT_STATUSES = ['Yet to Start','In Progress','On Hold','Dropped
 // e.g. approving an item in Phase Management is what makes it appear for client sign-off in Portal.
 export const PhaseDataContext = React.createContext<any>({ tree:{}, setTree:()=>{}, notifications:[], addNotification:()=>{} });
 
+// User Login Log Book (Administration -> last tab, Super Admin only — S.isSuperAdmin below).
+// logActivity() is a fire-and-forget write straight to the activity_logs table (App.tsx's
+// insertActivityLog) — unlike notifications/PhaseDataContext, entries aren't kept in local app state
+// since nothing else in the running app needs to react to them; the log book fetches its own page of
+// rows on demand when a Super Admin opens the tab. Every screen that mutates real data (Phase
+// Management, Risks, Issues, Project Master, Team, Calendar, Change Requests, Administration itself,
+// Client Portal) calls this at the point a change actually commits — matching the granularity
+// notifyProject() already uses in Phases.tsx (one entry per real action, not per keystroke).
+export const ActivityLogContext = React.createContext<any>({ logActivity: (_payload: { module: string; action: string; project?: string }) => {} });
+
 // Same reasoning as PhaseDataContext: Risk/Issue/Change Request edits need to survive navigating
 // away and back (the screen component remounts fresh each time `active` changes), so this state
 // lives at App level rather than as local useState inside each page.

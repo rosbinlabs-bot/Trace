@@ -14,6 +14,7 @@ export default function Issues() {
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Same shared project-activity feed Risk Management / Phase Management post to.
   const { addNotification } = React.useContext(S.PhaseDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   // Only Admin/Super Admin can permanently delete an issue entry — same rule used everywhere else.
   const canDelete = role === 'admin';
 
@@ -95,20 +96,25 @@ export default function Issues() {
       setIssues((is: any[]) => [...is, fresh]);
       setDetailId(id);
       notifyIssue(fresh, { type: 'Issue Raised', message: `${myName} raised a new issue: "${fresh.desc}" (${id}) in ${fresh.project}. Assign an owner to get it moving.` });
+      logActivity({ module: 'Issue Management', action: `Raised issue "${fresh.desc}" (${id})`, project: fresh.project });
     } finally { setAddingIssue(false); }
   };
   const removeIssue = (id: string) => {
     if (!canDelete) return;
+    const i = issues.find((x: any) => x.id === id);
     setIssues((is: any[]) => is.filter(i => i.id !== id));
+    logActivity({ module: 'Issue Management', action: `Removed issue "${i?.desc || id}"`, project: i?.project });
     setDetailId(d => d === id ? null : d);
   };
 
   // ---- remarks: anyone who can see the issue (raised/assigned/tagged/admin/L1) can comment ----
   const addRemark = (id: string, text: string) => {
     if (!text.trim()) return;
+    const i = issues.find((x: any) => x.id === id);
     setIssues((is: any[]) => is.map(i => i.id === id
       ? { ...i, remarks: [...(i.remarks || []), { id: S.uid('RMK'), text: text.trim(), by: myName, at: new Date().toISOString() }] }
       : i));
+    logActivity({ module: 'Issue Management', action: `Added a remark on issue "${i?.desc || id}"`, project: i?.project });
   };
   const [remarkDraft, setRemarkDraft] = useState('');
   React.useEffect(() => { setRemarkDraft(''); }, [detailId]);
@@ -120,6 +126,7 @@ export default function Issues() {
     if (!canAddress(i)) return;
     if (val !== 'Resolved' && val !== 'Closed') {
       mut(i.id, { status: val, pendingStatus: null, signOffRequestedBy: null, signOffRequestedAt: null });
+      logActivity({ module: 'Issue Management', action: `Changed issue "${i.desc}" status to "${val}"`, project: i.project });
       return;
     }
     const proj = projectByName(i.project);
@@ -129,9 +136,11 @@ export default function Issues() {
     if (qualifies) {
       mut(i.id, { status: val, pendingStatus: null, signOffRequestedBy: null, signOffRequestedAt: null, signedOffBy: myName, signedOffAt: S.TODAY_ISO });
       notifyIssue(i, { type: val === 'Closed' ? 'Issue Closed' : 'Issue Resolved', message: `Issue "${i.desc}" (${i.id}) has been marked ${val} by ${myName}.` });
+      logActivity({ module: 'Issue Management', action: `Marked issue "${i.desc}" ${val}`, project: i.project });
     } else {
       mut(i.id, { pendingStatus: val, signOffRequestedBy: myName, signOffRequestedAt: S.TODAY_ISO });
       notifyIssue(i, { type: 'Issue Pending Sign-off', message: `Issue "${i.desc}" (${i.id}) was marked ${val} by ${myName} and is awaiting ${S.designationForLevel(approverLvl, admin) || approverLvl} sign-off before it's final.` });
+      logActivity({ module: 'Issue Management', action: `Marked issue "${i.desc}" ${val} — pending sign-off`, project: i.project });
     }
   };
   const iAmSignOffApprover = (i: any) => {
@@ -145,25 +154,29 @@ export default function Issues() {
     const val = i.pendingStatus;
     mut(i.id, { status: val, pendingStatus: null, signOffRequestedBy: null, signOffRequestedAt: null, signedOffBy: myName, signedOffAt: S.TODAY_ISO });
     notifyIssue(i, { type: val === 'Closed' ? 'Issue Closed' : 'Issue Resolved', message: `Issue "${i.desc}" (${i.id}) has been signed off and finalized as ${val} by ${myName}.` });
+    logActivity({ module: 'Issue Management', action: `Signed off issue "${i.desc}" as ${val}`, project: i.project });
   };
   const sendBackSignOff = (i: any) => {
     if (!i.pendingStatus || !iAmSignOffApprover(i)) return;
     mut(i.id, { pendingStatus: null, signOffRequestedBy: null, signOffRequestedAt: null, status: 'In Progress' });
     notifyIssue(i, { type: 'Issue Pending Sign-off', message: `${myName} sent issue "${i.desc}" (${i.id}) back to In Progress instead of signing off on it.` });
+    logActivity({ module: 'Issue Management', action: `Sent issue "${i.desc}" back to In Progress`, project: i.project });
   };
 
   // ---- assignee / tags ----
   const setAssignee = (i: any, name: string) => {
     if (!canEditGeneral(i)) return;
     mut(i.id, { assignee: name });
+    logActivity({ module: 'Issue Management', action: `Assigned issue "${i.desc}" to "${name || '— unassigned —'}"`, project: i.project });
     if (name && name !== i.assignee) notifyIssue(i, { type: 'Issue Assigned', message: `${name} has been assigned issue "${i.desc}" (${i.id}) in ${i.project}.` });
   };
   const addTag = (i: any, name: string) => {
     if (!canEditGeneral(i) || !name || (i.tags || []).includes(name)) return;
     mut(i.id, { tags: [...(i.tags || []), name] });
+    logActivity({ module: 'Issue Management', action: `Tagged "${name}" on issue "${i.desc}"`, project: i.project });
     notifyIssue(i, { type: 'Issue Tagged', message: `${name} has been tagged on issue "${i.desc}" (${i.id}) in ${i.project} and can now see its updates.` });
   };
-  const removeTag = (i: any, name: string) => { if (canEditGeneral(i)) mut(i.id, { tags: (i.tags || []).filter((t: string) => t !== name) }); };
+  const removeTag = (i: any, name: string) => { if (canEditGeneral(i)) { mut(i.id, { tags: (i.tags || []).filter((t: string) => t !== name) }); logActivity({ module: 'Issue Management', action: `Removed tag "${name}" from issue "${i.desc}"`, project: i.project }); } };
 
   return (
     <div>

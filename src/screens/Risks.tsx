@@ -13,6 +13,7 @@ export default function Risks() {
   // GovernanceDataContext in App.tsx, so it's available here too) — used below to alert everyone
   // tagged to the project when someone is newly tagged Supporting By on a risk.
   const { addNotification } = React.useContext(S.PhaseDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
@@ -79,21 +80,26 @@ export default function Risks() {
         remarks: [], docs: [],
       };
       setRisks((rs: any[]) => [...rs, fresh]);
+      logActivity({ module: 'Risk Management', action: `Added risk "${fresh.desc}" (${id})`, project: fresh.project });
       setDetailId(id);
     } finally { setAddingRisk(false); }
   };
   const removeRisk = (id: string) => {
     if (!canDelete) return;
+    const r = risks.find((x: any) => x.id === id);
     setRisks((rs: any[]) => rs.filter(r => r.id !== id));
+    logActivity({ module: 'Risk Management', action: `Removed risk "${r?.desc || id}"`, project: r?.project });
     setDetailId(d => d === id ? null : d);
   };
 
   // ---- remarks: a running comment log, only whoever is Supporting By (or Admin) can add one ----
   const addRemark = (id: string, text: string) => {
     if (!text.trim()) return;
+    const r = risks.find((x: any) => x.id === id);
     setRisks((rs: any[]) => rs.map(r => r.id === id
       ? { ...r, remarks: [...(r.remarks || []), { id: S.uid('RMK'), text: text.trim(), by: myProfile?.name || myEmail, at: new Date().toISOString() }] }
       : r));
+    logActivity({ module: 'Risk Management', action: `Added a remark on risk "${r?.desc || id}"`, project: r?.project });
   };
   const [remarkDraft, setRemarkDraft] = useState('');
   React.useEffect(() => { setRemarkDraft(''); }, [detailId]);
@@ -111,6 +117,8 @@ export default function Risks() {
       setRisks((rs: any[]) => rs.map(r => r.id === id
         ? { ...r, docs: [...(r.docs || []), ...uploaded.map(u => ({ id: u.id, n: u.name, path: u.path, size: u.size, uploadedAt: new Date().toISOString(), uploadedBy: myEmail }))] }
         : r));
+      const r = risks.find((x: any) => x.id === id);
+      logActivity({ module: 'Risk Management', action: `Attached ${uploaded.length} document(s) to risk "${r?.desc || id}"`, project: r?.project });
     } catch (e: any) { setDocErr(e.message || 'Could not upload that file.'); }
     setDocUploading(false);
   };
@@ -118,6 +126,7 @@ export default function Risks() {
     const r = risks.find((x: any) => x.id === id);
     const d = r && (r.docs || [])[i];
     setRisks((rs: any[]) => rs.map(x => x.id === id ? { ...x, docs: (x.docs || []).filter((_: any, j: number) => j !== i) } : x));
+    logActivity({ module: 'Risk Management', action: `Removed attachment "${d?.n || ''}" from risk "${r?.desc || id}"`, project: r?.project });
     if (d?.path) db.deleteRiskDocFile(d.path).catch((e: any) => console.error('Storage cleanup failed:', e));
   };
   const downloadDoc = async (d: any) => {
@@ -255,6 +264,7 @@ export default function Risks() {
                     <select className={S.gInp} value={r.supportBy || ''} onChange={e => {
                       const name = e.target.value;
                       mut(r.id, { supportBy: name });
+                      logActivity({ module: 'Risk Management', action: `Set Supporting By on risk "${r.desc}" to "${name || '— unassigned —'}"`, project: r.project });
                       if (name && name !== r.supportBy) notifySupportTagged(r, name);
                     }}>
                       <option value="">— Select —</option>
@@ -267,7 +277,7 @@ export default function Risks() {
               <div className="flex items-center gap-2 flex-wrap mb-1">
                 <label className="text-[10px] text-slate-400 mr-1">Status</label>
                 {address ? (
-                  <select className={S.gInp + ' inline-block w-auto'} value={r.status} onChange={e => mut(r.id, { status: e.target.value })}>{STATUS_OPTS.map(o => <option key={o}>{o}</option>)}</select>
+                  <select className={S.gInp + ' inline-block w-auto'} value={r.status} onChange={e => { mut(r.id, { status: e.target.value }); logActivity({ module: 'Risk Management', action: `Changed risk "${r.desc}" status to "${e.target.value}"`, project: r.project }); }}>{STATUS_OPTS.map(o => <option key={o}>{o}</option>)}</select>
                 ) : <S.Badge cls={S.statusColor(r.status)}>{r.status}</S.Badge>}
               </div>
               <div className="mb-4 pb-4 border-b border-slate-100">

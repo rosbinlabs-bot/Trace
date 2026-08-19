@@ -6,6 +6,7 @@ import * as db from '../db';
 export default function Phases(){
   const location = useLocation();
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
@@ -52,6 +53,10 @@ export default function Phases(){
   // Roster limited to THIS project's team — only they can be tagged as assignees
   const roster = S.buildRoster(projMeta, admin);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
+  // User Login Log Book "Changes Made" feed (S.ActivityLogContext) -- every real mutation below logs
+  // one entry here, separate from notifyProject's project-team notifications above: this is a
+  // Super-Admin-only audit trail of who did what, not a heads-up to the people it affects.
+  const logPhase = (action: string) => logActivity({ module:'Phase Management', action, project: projMeta.name });
 
   // ---- mutation helpers ----
   const mutPhase = (phId, fn) => setPhases(ps => ps.map(ph => ph.id===phId ? fn({...ph}) : ph));
@@ -60,7 +65,7 @@ export default function Phases(){
 
   // Owner isn't something a user needs to fill in — it defaults to this project's most senior (L1) team member.
   const l1Name = (projMeta.team||[]).find((t:any)=>t.level==='L1')?.name || '';
-  const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]); };
+  const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]); logPhase('Added a new phase'); };
   // Removing any of these three is permanent (no trash/undo) and, for a phase or milestone, takes
   // everything nested under it -- milestones/sub tasks, their assignees, remarks and attachments --
   // down with it. A single misclick used to do that with no warning at all; now each asks first,
@@ -73,8 +78,9 @@ export default function Phases(){
     const detail = msCount ? ` along with its ${msCount} milestone${msCount===1?'':'s'}${stCount?` and ${stCount} sub task${stCount===1?'':'s'}`:''} (assignees, remarks and attachments included)` : '';
     if (!window.confirm(`Remove phase "${ph?.name||''}"${detail}?\n\nThis cannot be undone.`)) return;
     setPhases(ps => ps.filter(p=>p.id!==id));
+    logPhase(`Removed phase "${ph?.name||''}"`);
   };
-  const addMs = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]})); };
+  const addMs = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, milestones:[...ph.milestones, {...S.newItem('New Milestone'), open:true, subtasks:[]}]})); const ph=phases.find((p:any)=>p.id===phId); logPhase(`Added a new milestone in phase "${ph?.name||''}"`); };
   const removeMs = (phId, msId) => {
     if(!canDelete) return;
     const ph = phases.find((p:any)=>p.id===phId);
@@ -83,14 +89,16 @@ export default function Phases(){
     const detail = stCount ? ` along with its ${stCount} sub task${stCount===1?'':'s'} (assignees, remarks and attachments included)` : '';
     if (!window.confirm(`Remove milestone "${ms?.name||''}"${detail}?\n\nThis cannot be undone.`)) return;
     mutPhase(phId, ph => ({...ph, milestones: ph.milestones.filter(m=>m.id!==msId)}));
+    logPhase(`Removed milestone "${ms?.name||''}" from phase "${ph?.name||''}"`);
   };
-  const addSt = (phId, msId) => { if(readOnly) return; mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]})); };
+  const addSt = (phId, msId) => { if(readOnly) return; mutMs(phId, msId, m => ({...m, subtasks:[...(m.subtasks||[]), S.newItem('New Sub Task')]})); const ph=phases.find((p:any)=>p.id===phId); const ms=ph?.milestones?.find((m:any)=>m.id===msId); logPhase(`Added a new sub task under milestone "${ms?.name||''}"`); };
   const removeSt = (phId, msId, stId) => {
     if(!canDelete) return;
     const ph = phases.find((p:any)=>p.id===phId);
     const st = ph?.milestones?.find((m:any)=>m.id===msId)?.subtasks?.find((s:any)=>s.id===stId);
     if (!window.confirm(`Remove sub task "${st?.name||''}" (assignees, remarks and attachments included)?\n\nThis cannot be undone.`)) return;
     mutMs(phId, msId, m => ({...m, subtasks: (m.subtasks||[]).filter(s=>s.id!==stId)}));
+    logPhase(`Removed sub task "${st?.name||''}"`);
   };
 
   // ---- status changes: Not Started / In Progress / On Hold apply immediately; Completed queues review ----
@@ -108,6 +116,7 @@ export default function Phases(){
     mutMs(phId, msId, m => S.applyStatus(m, val, 'milestone', actor));
     const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
     if(!ph || !ms) return;
+    logPhase(`Changed milestone "${ms.name}" status to "${val}"`);
     if(val==='Completed'){
       if(S.actorQualifies('milestone', actor)){
         notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
@@ -127,6 +136,7 @@ export default function Phases(){
     const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
     const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
     if(!ph || !ms || !st) return;
+    logPhase(`Changed sub task "${st.name}" status to "${val}"`);
     if(val==='Completed'){
       if(S.actorQualifies('subtask', actor)){
         notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
@@ -147,6 +157,7 @@ export default function Phases(){
     mutMs(ph.id, ms.id, m => decision==='Approved'
       ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO, reviewSince:''})
       : ({...m, status:'In Progress', review:'', approved:false, reviewSince:''}));
+    logPhase(`${decision==='Approved'?'Approved':'Sent back'} milestone "${ms.name}"`);
     if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
       message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
@@ -154,21 +165,20 @@ export default function Phases(){
     mutSt(phId, msId, stId, s => decision==='Approved'
       ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:''})
       : ({...s, status:'In Progress', review:'', approved:false, reviewSince:''}));
-    if(decision==='Approved'){
-      const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
-      const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
-      if(ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
-        message:`Sub Task "${st.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
-    }
+    const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+    const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
+    if(st) logPhase(`${decision==='Approved'?'Approved':'Sent back'} sub task "${st.name}"`);
+    if(decision==='Approved' && ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
+      message:`Sub Task "${st.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
 
   // ---- "Implemented" escalation: sequential chain from whoever marked it up to L1 (S.implementChainFor
   // walks every level actually present on this project's team, skipping any that are missing), then the
   // Client Owner signs off in the Client Portal once the internal chain is fully approved. ----
-  const markImplementedMs = (phId, msId) => mutMs(phId, msId, m => { const chain = S.implementChainFor(projMeta, actor); return {...m, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; });
-  const markImplementedSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => { const chain = S.implementChainFor(projMeta, actor); return {...s, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; });
-  const chainApproveMs = (phId, msId) => mutMs(phId, msId, m => { const rest=(m.implChain||[]).slice(1); return {...m, implChain:rest, implApprovals:[...(m.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; });
-  const chainApproveSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => { const rest=(s.implChain||[]).slice(1); return {...s, implChain:rest, implApprovals:[...(s.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; });
+  const markImplementedMs = (phId, msId) => { mutMs(phId, msId, m => { const chain = S.implementChainFor(projMeta, actor); return {...m, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; }); const ph=phases.find(p=>p.id===phId); const ms=ph?.milestones?.find(m=>m.id===msId); logPhase(`Started Implemented escalation for milestone "${ms?.name||''}"`); };
+  const markImplementedSt = (phId, msId, stId) => { mutSt(phId, msId, stId, s => { const chain = S.implementChainFor(projMeta, actor); return {...s, review:'Implemented Review', implChain:chain, implApprovals:[], headApprovedImpl:chain.length===0, clientApprovedImpl:false}; }); const ph=phases.find(p=>p.id===phId); const st=ph?.milestones?.find(m=>m.id===msId)?.subtasks?.find(s=>s.id===stId); logPhase(`Started Implemented escalation for sub task "${st?.name||''}"`); };
+  const chainApproveMs = (phId, msId) => { mutMs(phId, msId, m => { const rest=(m.implChain||[]).slice(1); return {...m, implChain:rest, implApprovals:[...(m.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; }); const ph=phases.find(p=>p.id===phId); const ms=ph?.milestones?.find(m=>m.id===msId); logPhase(`Approved Implemented step for milestone "${ms?.name||''}"`); };
+  const chainApproveSt = (phId, msId, stId) => { mutSt(phId, msId, stId, s => { const rest=(s.implChain||[]).slice(1); return {...s, implChain:rest, implApprovals:[...(s.implApprovals||[]), {level:actor, by:myProfile?.name||myEmail, at:new Date().toISOString()}], headApprovedImpl:rest.length===0}; }); const ph=phases.find(p=>p.id===phId); const st=ph?.milestones?.find(m=>m.id===msId)?.subtasks?.find(s=>s.id===stId); logPhase(`Approved Implemented step for sub task "${st?.name||''}"`); };
   const cancelImplMs = (phId, msId) => mutMs(phId, msId, m => ({...m, review:'', implChain:[], headApprovedImpl:false}));
   const cancelImplSt = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, review:'', implChain:[], headApprovedImpl:false}));
 
@@ -191,6 +201,7 @@ export default function Phases(){
       const uploaded = [];
       for (const f of Array.from(files) as File[]) { uploaded.push(await db.uploadPhaseDoc(S.uid('DOC'), f)); }
       mutMs(phId, msId, m => ({...m, docs:[...(m.docs||[]), ...uploaded.map(u=>({id:u.id, n:u.name, path:u.path, size:u.size, uploadedAt:new Date().toISOString(), uploadedBy:myEmail}))]}));
+      const ph=phases.find(p=>p.id===phId); const ms=ph?.milestones?.find(m=>m.id===msId); logPhase(`Attached ${uploaded.length} document${uploaded.length===1?'':'s'} to milestone "${ms?.name||''}"`);
     } catch(e:any) { setDocErr(e.message || 'Could not upload that file.'); }
     setDocUploading(false);
   };
@@ -206,6 +217,7 @@ export default function Phases(){
       const uploaded = [];
       for (const f of Array.from(files) as File[]) { uploaded.push(await db.uploadPhaseDoc(S.uid('DOC'), f)); }
       mutSt(phId, msId, stId, s => ({...s, docs:[...(s.docs||[]), ...uploaded.map(u=>({id:u.id, n:u.name, path:u.path, size:u.size, uploadedAt:new Date().toISOString(), uploadedBy:myEmail}))]}));
+      const ph=phases.find(p=>p.id===phId); const st=ph?.milestones?.find(m=>m.id===msId)?.subtasks?.find(s=>s.id===stId); logPhase(`Attached ${uploaded.length} document${uploaded.length===1?'':'s'} to sub task "${st?.name||''}"`);
     } catch(e:any) { setDocErr(e.message || 'Could not upload that file.'); }
     setDocUploading(false);
   };
@@ -228,6 +240,7 @@ export default function Phases(){
   const addStRemark = (phId, msId, stId, text) => {
     if(!text.trim()) return;
     mutSt(phId, msId, stId, s => ({...s, remarks:[...(s.remarks||[]), { id:S.uid('RMK'), text:text.trim(), by:myProfile?.name||myEmail, at:new Date().toISOString() }]}));
+    const ph=phases.find(p=>p.id===phId); const st=ph?.milestones?.find(m=>m.id===msId)?.subtasks?.find(s=>s.id===stId); logPhase(`Added a remark on sub task "${st?.name||''}"`);
   };
 
   // ---- phase-level: start-date lock, On Hold toggle, completion confirmation ----
@@ -242,6 +255,7 @@ export default function Phases(){
     if(readOnly) return;
     const ph = phases.find(p=>p.id===phId);
     mutPhase(phId, x => ({...x, onHold:!x.onHold}));
+    if(ph) logPhase(`Changed phase "${ph.name}" status to "${ph.onHold ? 'In Progress' : 'On Hold'}"`);
     if(ph && isSeniorActor()){
       notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, phaseId:ph.id, type:'Status Update', priority:'normal',
         message:`Phase "${ph.name}" status changed to "${ph.onHold ? 'In Progress' : 'On Hold'}" by ${actor}.` });
@@ -250,6 +264,7 @@ export default function Phases(){
   const phaseApproverLevel = S.approverLevelFor('phase', projMeta);
   const confirmPhaseComplete = (ph) => {
     mutPhase(ph.id, x => ({...x, headConfirmedComplete:true}));
+    logPhase(`Confirmed phase "${ph.name}" Completed`);
     notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, phaseId:ph.id, type:'Phase Completed',
       message:`Phase "${ph.name}" has been confirmed Completed by ${actor}.` });
   };

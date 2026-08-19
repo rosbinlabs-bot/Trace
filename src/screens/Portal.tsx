@@ -6,6 +6,7 @@ import * as db from '../db';
 export default function Portal(){
   const location = useLocation();
   const { tree, setTree, addNotification, notifications } = React.useContext(S.PhaseDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email, profile: myProfile } = React.useContext(S.CurrentUserContext);
@@ -138,6 +139,7 @@ export default function Portal(){
       setIssues((is:any[]) => [...is, fresh]);
       notifyProject({ level:'issue', itemName:fresh.desc, itemId:fresh.id, type:'Issue Raised',
         message:`${myClientName} raised a new issue: "${fresh.desc}" (${id}) in ${projMeta.name}. Assign an owner to get it moving.` });
+      logActivity({ module: 'Client Portal', action: `Raised issue "${fresh.desc}" (${id})`, project: projMeta.name });
       setIssueDraft({ desc:'', severity:'Medium' });
     } finally { setRaisingIssue(false); }
   };
@@ -167,6 +169,7 @@ export default function Portal(){
     }
     notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Implemented',
       message:`"${item.name}" in phase "${ph.name}" has been marked Implemented after internal approval and Client Owner sign-off.` });
+    logActivity({ module: 'Client Portal', action: `Approved "${item.name}" (${ph.name}) as Implemented`, project: projMeta.name });
   };
 
   const requestChanges = (entry) => {
@@ -180,6 +183,7 @@ export default function Portal(){
     const text = (remarkDraft[item.id]||'').trim();
     notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Requested Changes',
       message:`Client Owner requested changes on "${item.name}" (${ph.name})${text?`: "${text}"`:'.'}` });
+    logActivity({ module: 'Client Portal', action: `Requested changes on "${item.name}" (${ph.name})`, project: projMeta.name });
     setRemark(item.id, '');
   };
 
@@ -190,6 +194,7 @@ export default function Portal(){
     if(!text) return;
     notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
       message:`Client remark on "${item.name}" (${ph.name}): "${text}"` });
+    logActivity({ module: 'Client Portal', action: `Posted a remark on "${item.name}" (${ph.name})`, project: projMeta.name });
     setRemark(item.id, '');
   };
 

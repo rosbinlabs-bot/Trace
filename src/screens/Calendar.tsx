@@ -5,6 +5,7 @@ import * as S from '../shared';
 export default function Calendar(){
   const location = useLocation();
   const { tree, addNotification } = React.useContext(S.PhaseDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { events: calEvents, setEvents: setCalEvents } = React.useContext(S.CalendarDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { team } = React.useContext(S.TeamDataContext);
@@ -129,9 +130,10 @@ export default function Calendar(){
           message:`${finalEv.type} "${finalEv.title}" on ${finalEv.date} has been cancelled.` });
       }
     }
+    logActivity({ module:'Calendar', action: `${isNew?'Added':'Edited'} event "${finalEv.title}" on ${finalEv.date}${prev && prev.status!==finalEv.status?` (status -> "${finalEv.status}")`:''}`, project: finalEv.project||undefined });
     setEditingEvent(null);
   };
-  const deleteEvent = () => { if(editingEvent && editingEvent.id) setCalEvents(evs => evs.filter(e=>e.id!==editingEvent.id)); setEditingEvent(null); };
+  const deleteEvent = () => { if(editingEvent && editingEvent.id){ setCalEvents(evs => evs.filter(e=>e.id!==editingEvent.id)); logActivity({ module:'Calendar', action: `Deleted event "${editingEvent.title}" on ${editingEvent.date}`, project: editingEvent.project||undefined }); } setEditingEvent(null); };
 
   return (
     <div>

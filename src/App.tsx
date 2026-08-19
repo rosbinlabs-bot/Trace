@@ -649,6 +649,17 @@ export default function App() {
         setInvoicesState(data.invoices);
         setMonthlyPlanState(data.monthlyPlan);
         setLoading(false);
+        // User Login Log Book: one row per session start. This effect re-fires whenever tenantId
+        // resolves, which includes a plain page reload with an already-persisted session, not only a
+        // fresh credential sign-in on the Login screen -- deliberate: Login.tsx's submit() runs before
+        // db.setTenantId has anything to scope a tenant-isolated insert to, so this is the earliest
+        // point where writing here is actually possible, and "a session started for this account" is
+        // what a login log book is for regardless of whether it came from a password or a resumed tab.
+        const email = session?.user?.email || '';
+        if (email) {
+          const me = (data.admin?.users || []).find((u: any) => (u.email || '').toLowerCase() === email.toLowerCase());
+          db.insertLoginLog({ id: S.uid('LOGIN'), userEmail: email, userName: me?.name || '' }).catch((e) => console.error('Login log failed:', e));
+        }
       })
       .catch((e) => {
         console.error('Failed to load Trace PMT data from Supabase:', e);
@@ -836,6 +847,18 @@ export default function App() {
     db.insertNotification(full).catch((e) => console.error('Supabase sync failed:', e));
   };
 
+  // User Login Log Book (S.ActivityLogContext) -- fire-and-forget write straight to activity_logs,
+  // no local state kept (see db.ts's insertActivityLog/fetchActivityLogs). session?.user?.email is
+  // read directly rather than the `myEmail` const further down so this doesn't care about its own
+  // position in the component relative to that declaration; admin.users is already loaded by the
+  // time any real user action can fire this.
+  const logActivity = (payload: { module: string; action: string; project?: string }) => {
+    const email = session?.user?.email || '';
+    if (!email) return;
+    const me = (admin.users || []).find((u: any) => (u.email || '').toLowerCase() === email.toLowerCase());
+    db.insertActivityLog({ id: S.uid('ACT'), userEmail: email, userName: me?.name || '', ...payload }).catch((e) => console.error('Activity log failed:', e));
+  };
+
   // Self sign-up on a tenant that already has this person's email is a rare race (e.g. an admin just
   // added them) — still raise the pending-approval notification the first time we see a genuinely
   // new Pending Approval row show up for someone other than ourselves is out of scope here; the
@@ -946,7 +969,9 @@ export default function App() {
                           <S.MonthlyPlanDataContext.Provider value={{ plan: monthlyPlan, setPlan: setMonthlyPlan }}>
                             <S.RoleContext.Provider value={{ role, setRole:()=>{} }}>
                               <S.CurrentUserContext.Provider value={{ email: myEmail, profile: myProfile }}>
-                                <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} />
+                                <S.ActivityLogContext.Provider value={{ logActivity }}>
+                                  <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} />
+                                </S.ActivityLogContext.Provider>
                               </S.CurrentUserContext.Provider>
                             </S.RoleContext.Provider>
                           </S.MonthlyPlanDataContext.Provider>

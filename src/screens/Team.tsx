@@ -26,6 +26,7 @@ export default function Team(){
   const { invoices } = React.useContext(S.InvoicesDataContext);
   // Only Admin/Super Admin can permanently remove a team member's roster entry.
   const { role } = React.useContext(S.RoleContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const canDelete = role==='admin';
   // Department Master (Administration -> Project Settings -> Masters -> Department Master) is the
   // single source of truth for department names now, so two people can't add the same department
@@ -64,10 +65,11 @@ export default function Team(){
     const name = draft.name.trim();
     if(!name || team.some(m=>m.name.toLowerCase()===name.toLowerCase())) return;
     setTeam(ts => [...ts, { ...draft, name, util:Number(draft.util)||0 }]);
+    logActivity({ module:'Team Management', action:`Added team member "${name}"` });
     setDraft(blankDraft); setAdding(false);
   };
-  const removeMember = (name) => { if(!canDelete) return; setTeam(ts => ts.filter(m=>m.name!==name)); setConfirmRemove(null); };
-  const patchMember = (name, key, val) => setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m));
+  const removeMember = (name) => { if(!canDelete) return; setTeam(ts => ts.filter(m=>m.name!==name)); logActivity({ module:'Team Management', action:`Removed team member "${name}"` }); setConfirmRemove(null); };
+  const patchMember = (name, key, val) => { setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m)); logActivity({ module:'Team Management', action:`Updated ${name}'s "${key}" to "${val}"` }); };
 
   // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
   // teammate's Users id); every actual below is derived live from Project Master + Billing Tracker,
@@ -146,7 +148,7 @@ export default function Team(){
             <button onClick={addMember} disabled={!draft.name.trim()} className="text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white rounded-lg px-3 py-2">Add</button>
             <button onClick={()=>{setAdding(false);setDraft(blankDraft);}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50">Cancel</button>
             {availableUsers.length>1 && (
-              <button onClick={()=>{ setTeam(ts => [...ts, ...availableUsers.map((u:any)=>({ name:u.name, role:u.designation, dept:'', util:0, avail:'', capacity:'40h/wk' }))]); setAdding(false); setDraft(blankDraft); }}
+              <button onClick={()=>{ setTeam(ts => [...ts, ...availableUsers.map((u:any)=>({ name:u.name, role:u.designation, dept:'', util:0, avail:'', capacity:'40h/wk' }))]); logActivity({ module:'Team Management', action:`Added all ${availableUsers.length} remaining users to the team` }); setAdding(false); setDraft(blankDraft); }}
                 className="text-xs border border-brand-300 text-brand-700 rounded-lg px-3 py-2 hover:bg-brand-50 ml-auto">Add all {availableUsers.length} remaining users</button>
             )}
           </div>

@@ -23,6 +23,7 @@ export default function DocumentLibrary(){
   const { email } = React.useContext(S.CurrentUserContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const iAmSuperAdmin = S.isSuperAdmin(email, admin);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
 
   const addDoc = async () => {
     if(!draft.name.trim() || !draft.file){ setErr(!draft.file ? 'Attach a file to upload.' : 'Name of the document is required.'); return; }
@@ -37,15 +38,17 @@ export default function DocumentLibrary(){
         addedOn:S.TODAY_ISO, filePath, fileName, fileSize, uploadedAt:new Date().toISOString(),
         status: iAmSuperAdmin ? 'Approved' : 'Pending Approval', uploadedBy: email,
       }]);
+      logActivity({ module: 'Document Library', action: `Uploaded document "${draft.name.trim()}"` });
       setDraft({ name:'', industry: settings.industries[0]||'', usedIn:'', function: settings.functions[0]||'', file:null });
       setAdding(false);
     } catch(e:any) { setErr(e.message || 'Could not upload that file.'); }
     setBusy(false);
   };
-  const approveDoc = (id:string) => { if(!iAmSuperAdmin) return; setDocs(ds => ds.map(x=>x.id===id?{...x,status:'Approved'}:x)); };
+  const approveDoc = (id:string) => { if(!iAmSuperAdmin) return; const d=docs.find(x=>x.id===id); setDocs(ds => ds.map(x=>x.id===id?{...x,status:'Approved'}:x)); logActivity({ module: 'Document Library', action: `Approved document "${d?.name||id}"` }); };
   const removeDoc = (d:any) => {
     if(!canDelete) return;
     setDocs(ds => ds.filter(x=>x.id!==d.id));
+    logActivity({ module: 'Document Library', action: `Removed document "${d.name}"` });
     // Best-effort storage cleanup -- the library_docs row is what the app actually reads, so a
     // failure here (e.g. flaky network) shouldn't block or roll back the row deletion above.
     if(d.filePath) db.deleteLibraryDocFile(d.filePath).catch((e)=>console.error('Storage cleanup failed:', e));

@@ -8,6 +8,7 @@ export default function ProjectMaster(){
   const { role } = React.useContext(S.RoleContext);
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { invoices, setInvoices } = React.useContext(S.InvoicesDataContext);
   const { settings, setSettings } = React.useContext(S.SettingsContext);
   const { team } = React.useContext(S.TeamDataContext);
@@ -112,6 +113,7 @@ export default function ProjectMaster(){
       }
     }
     setRows(rs => isNew ? [...rs, next] : rs.map(r => r._key===next._key ? next : r));
+    logActivity({ module:'Project Master', action: isNew ? `Created project "${next.name||next.id||''}"` : `Edited project "${next.name||next.id||''}"`, project: next.name });
     close();
   };
 
@@ -120,6 +122,7 @@ export default function ProjectMaster(){
   const applyLifecycle = (patch) => {
     setRows(rs => rs.map(r => r._key===form._key ? {...r, ...patch} : r));
     setForm(f => ({...f, ...patch}));
+    logActivity({ module:'Project Master', action: `Updated project "${form?.name||form?.id||''}" (${Object.keys(patch).join(', ')})`, project: form?.name });
   };
   const requestExtension = (type) => {
     applyLifecycle({ extension:{ type, on:S.TODAY_ISO } });

@@ -25,6 +25,7 @@ export default function MonthlyPlan(){
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   // Administration -> Company Settings, not a hardcoded string -- Legal Name first (what the
   // reference-style footer/branding line traditionally shows), falling back to Display Name.
   const companyName = admin?.company?.legalName || admin?.company?.displayName || '';
@@ -140,13 +141,14 @@ export default function MonthlyPlan(){
       id: S.uid('MP'), date: newDate, activity: newActivity.trim(), onsite: newOnsite,
       status: 'Pending', sourceId: null, sourceType: 'Custom', phase: '',
     }] }));
+    logActivity({ module: 'Monthly Plan', action: `Added activity "${newActivity.trim()}" on ${newDate}`, project: projMeta.name });
     setNewActivity('');
   };
-  const removeActivity = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).filter((r: any) => r.id !== id) })); };
+  const removeActivity = (id: string) => { if (canEdit) { const r = activities.find((x: any) => x.id === id); setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).filter((r: any) => r.id !== id) })); logActivity({ module: 'Monthly Plan', action: `Removed activity "${r?.activity || id}"`, project: projMeta.name }); } };
   const patchActivity = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, activities: (pd.activities || []).map((r: any) => r.id === id ? { ...r, ...patch } : r) })); };
 
-  const addObjective = () => { if (canEdit && !isFinal) setPlanData((pd: any) => ({ ...pd, objectives: [...(pd.objectives || []), { id: S.uid('OBJ'), text: '', dueInHouse: '', dueClient: '' }] })); };
-  const removeObjective = (id: string) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).filter((o: any) => o.id !== id) })); };
+  const addObjective = () => { if (canEdit && !isFinal) { setPlanData((pd: any) => ({ ...pd, objectives: [...(pd.objectives || []), { id: S.uid('OBJ'), text: '', dueInHouse: '', dueClient: '' }] })); logActivity({ module: 'Monthly Plan', action: 'Added a major objective', project: projMeta.name }); } };
+  const removeObjective = (id: string) => { if (canEdit) { setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).filter((o: any) => o.id !== id) })); logActivity({ module: 'Monthly Plan', action: 'Removed a major objective', project: projMeta.name }); } };
   const patchObjective = (id: string, patch: any) => { if (canEdit) setPlanData((pd: any) => ({ ...pd, objectives: (pd.objectives || []).map((o: any) => o.id === id ? { ...o, ...patch } : o) })); };
 
   // ---- confirm / approve / finalize ----
@@ -155,6 +157,7 @@ export default function MonthlyPlan(){
       const acts = (pd.activities || []).filter((r: any) => (r.activity || '').trim());
       return { ...pd, activities: acts, confirmStatus: 'Final', approvedBy: myProfile?.name || myEmail, approvedAt: S.TODAY_ISO };
     });
+    logActivity({ module: 'Monthly Plan', action: `Finalized the ${S.monthLabel(monthKey)} plan`, project: projMeta.name });
   };
   const confirmPlan = () => {
     if (!draftEdit || confirmStatus !== 'Draft') return;
@@ -162,6 +165,7 @@ export default function MonthlyPlan(){
       finalizePlan();
     } else {
       setPlanData((pd: any) => ({ ...pd, confirmStatus: 'Pending Approval', pendingLevel: planApproverLevel, confirmedBy: myProfile?.name || myEmail, confirmedAt: S.TODAY_ISO }));
+      logActivity({ module: 'Monthly Plan', action: `Confirmed the ${S.monthLabel(monthKey)} plan and sent it for approval`, project: projMeta.name });
     }
   };
   const approvePlan = () => { if (iAmApprover) finalizePlan(); };
