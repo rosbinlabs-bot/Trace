@@ -99,11 +99,16 @@ export default function Phases(){
   // naming the approver level (S.approverLevelFor) when it queues instead — previously Sub Tasks
   // raised no notification at all, and Milestones only notified on immediate finalize, so a reviewer
   // had no way to know something was waiting on them short of opening Phase Management themselves.
+  // Non-Completed transitions (Not Started / In Progress / On Hold) also notify the project's
+  // concerned members now, but only when a senior actor (L1/L2/L3) is the one making the change —
+  // matches how the rest of the app treats L1/L2/L3 as the levels whose calls the whole team needs
+  // to hear about, without spamming a notification for every junior contributor's routine edit.
+  const isSeniorActor = () => S.levelNum(actor) <= 3;
   const setMsStatus = (phId, msId, val) => {
     mutMs(phId, msId, m => S.applyStatus(m, val, 'milestone', actor));
+    const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+    if(!ph || !ms) return;
     if(val==='Completed'){
-      const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
-      if(!ph || !ms) return;
       if(S.actorQualifies('milestone', actor)){
         notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
           message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
@@ -112,14 +117,17 @@ export default function Phases(){
         notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Pending Review',
           message:`Milestone "${ms.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
       }
+    } else if(isSeniorActor()){
+      notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Status Update', priority:'normal',
+        message:`Milestone "${ms.name}" in phase "${ph.name}" status changed to "${val}" by ${actor}.` });
     }
   };
   const setStStatus = (phId, msId, stId, val) => {
     mutSt(phId, msId, stId, s => S.applyStatus(s, val, 'subtask', actor));
+    const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
+    const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
+    if(!ph || !ms || !st) return;
     if(val==='Completed'){
-      const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
-      const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
-      if(!ph || !ms || !st) return;
       if(S.actorQualifies('subtask', actor)){
         notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Sub Task Completed',
           message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor}.` });
@@ -128,6 +136,9 @@ export default function Phases(){
         notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Pending Review',
           message:`Sub Task "${st.name}" in phase "${ph.name}" was marked Completed by ${actor} and is awaiting ${approverLvl} review.` });
       }
+    } else if(isSeniorActor()){
+      notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Status Update', priority:'normal',
+        message:`Sub Task "${st.name}" in phase "${ph.name}" status changed to "${val}" by ${actor}.` });
     }
   };
 
@@ -223,7 +234,19 @@ export default function Phases(){
   // Once a phase has a start date, only L2-or-more-senior can change it (was "Project Head or
   // Strategic Lead" — generalized the same way as everything else in this file).
   const startEditableBy = (ph) => !readOnly && (!ph.start || S.levelNum(actor)<=2);
-  const toggleHold = (phId) => { if(readOnly) return; mutPhase(phId, ph => ({...ph, onHold:!ph.onHold})); };
+  // On Hold / Resume is itself a phase-level status change — the UI already restricts this button to
+  // L1/L2 (see the "Put on hold"/"Resume" button below), so it always qualifies as a senior-actor
+  // change, but isSeniorActor() is still checked here so the notification stays correct even if this
+  // function is ever called from somewhere with looser gating.
+  const toggleHold = (phId) => {
+    if(readOnly) return;
+    const ph = phases.find(p=>p.id===phId);
+    mutPhase(phId, x => ({...x, onHold:!x.onHold}));
+    if(ph && isSeniorActor()){
+      notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, phaseId:ph.id, type:'Status Update', priority:'normal',
+        message:`Phase "${ph.name}" status changed to "${ph.onHold ? 'In Progress' : 'On Hold'}" by ${actor}.` });
+    }
+  };
   const phaseApproverLevel = S.approverLevelFor('phase', projMeta);
   const confirmPhaseComplete = (ph) => {
     mutPhase(ph.id, x => ({...x, headConfirmedComplete:true}));
@@ -313,8 +336,13 @@ export default function Phases(){
   const isUrgent = (d) => { const n = daysUntil(d); return n!==null && n<=2; }; // overdue (negative) or due within 2 days
   const msApproverLevel = S.approverLevelFor('milestone', projMeta);
   const stApproverLevel = S.approverLevelFor('subtask', projMeta);
+  // Previously this whole block was skipped for actor==='L1', which meant L1 (the usual required
+  // approver for milestones/phases — see S.approverLevelFor) never saw their own pending approvals
+  // or Implemented sign-offs surface here, even though S.myPendingApprovals (Dashboard's equivalent
+  // cross-project queue) never had that restriction. L1 can act on everything any other level can —
+  // dropping the exclusion just lets L1's own approvals show up like everyone else's.
   const myActionItems = [];
-  if(!readOnly && actor!=='L1'){
+  if(!readOnly){
     phases.forEach(ph=>{
       ph.milestones.forEach(ms=>{
         if(!S.isApproved(ms) && !ms.review && isTagged(ms, actor) && isUrgent(ms.deadline)) myActionItems.push({ ph, ms, label:`Update status — ${ms.name}` });
@@ -372,7 +400,7 @@ export default function Phases(){
           {myActionItems.length>0 && <S.Badge cls="bg-amber-100 text-amber-700">{myActionItems.length}</S.Badge>}
           {!actionOpen && (
             <span className="text-xs text-slate-400 truncate ml-1">
-              {myActionItems.length===0 ? (actor==='L1' ? '— nothing needs your action' : '— nothing waiting on you') : `— ${myActionItems[0].label}${myActionItems.length>1?` +${myActionItems.length-1} more`:''}`}
+              {myActionItems.length===0 ? '— nothing waiting on you' : `— ${myActionItems[0].label}${myActionItems.length>1?` +${myActionItems.length-1} more`:''}`}
             </span>
           )}
         </button>

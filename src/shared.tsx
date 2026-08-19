@@ -846,6 +846,7 @@ export const NOTIF_TONE = {
   'Issue Resolved':              { icon:'checkcircle',   bg:'bg-emerald-50', text:'text-emerald-500' },
   'Issue Closed':                { icon:'checkcircle',   bg:'bg-emerald-50', text:'text-emerald-500' },
   'Phase Completed':            { icon:'checkcircle',  bg:'bg-emerald-50', text:'text-emerald-500' },
+  'Status Update':              { icon:'refresh',       bg:'bg-blue-50',    text:'text-blue-500'    },
   'Calendar Reminder':          { icon:'calendar',     bg:'bg-blue-50',    text:'text-blue-500'    },
   'Calendar Cancelled':         { icon:'ban',           bg:'bg-red-50',     text:'text-red-500'     },
   'Implemented':                { icon:'rocket',        bg:'bg-violet-50',  text:'text-violet-500'  },
