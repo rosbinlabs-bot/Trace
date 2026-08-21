@@ -329,6 +329,14 @@ export default function Risks() {
                   </div>
                 )}
               </div>
+
+              {/* Every field above auto-saves the moment it changes (onChange -> mut(), same as the
+                  editable governance tables elsewhere) -- there's nothing left to persist here. This
+                  button exists so closing the modal reads as a deliberate "I'm done", not a dead end
+                  with only the small ✕ up top. */}
+              <div className="flex justify-end mt-5 pt-4 border-t border-slate-100">
+                <button onClick={() => setDetailId(null)} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-4 py-2 rounded-lg">Done</button>
+              </div>
             </div>
           </div>
         );
