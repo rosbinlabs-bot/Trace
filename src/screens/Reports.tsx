@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import * as S from '../shared';
+import * as Charts from '../chartWidgets';
 
 export default function Reports(){
   const { tree } = React.useContext(S.PhaseDataContext);
@@ -255,9 +256,9 @@ export default function Reports(){
       case 'portfolio':
         return (
           <div>
-            <S.ChartBlock title="Projects by Status" sub={`${projects.length} project(s) across the portfolio`}>
-              <S.BarChartMini data={projStatusData.map((d:any)=>({status:d.name, count:d.value}))} xKey="status" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Projects by Status" sub={`${projects.length} project(s) across the portfolio`}>
+              <Charts.BarChartMini data={projStatusData.map((d:any)=>({status:d.name, count:d.value}))} xKey="status" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
+            </Charts.ChartBlock>
             {miniTable(
               perProjectCompletion.map(({p,pct}: any)=>(
                 <tr key={p.id}>
@@ -279,9 +280,9 @@ export default function Reports(){
       case 'revenue':
         return (
           <div>
-            <S.ChartBlock title="Portfolio Collections" sub={`₹${S.fmt(totalAchievedRevenue)} collected of a ₹${S.fmt(totalTargetRevenue)} target`}>
-              <S.DonutChartMini data={revenueSplitData} height={200}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Portfolio Collections" sub={`₹${S.fmt(totalAchievedRevenue)} collected of a ₹${S.fmt(totalTargetRevenue)} target`}>
+              <Charts.DonutChartMini data={revenueSplitData} height={200}/>
+            </Charts.ChartBlock>
             <div className="text-xs text-slate-400 mb-2 uppercase tracking-wide">By Project</div>
             <div className="space-y-2.5">
               {projects.map(p=>{
@@ -300,16 +301,16 @@ export default function Reports(){
         );
       case 'revenuetrend':
         return (
-          <S.ChartBlock title="Collected Revenue by Month" sub="Sum of invoices marked Received, by the date they were received">
-            <S.BarChartMini data={revenueTrendData} xKey="month" bars={[{key:'amount', color:'#3b5bdb', name:'Collected (₹)'}]} height={300}/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="Collected Revenue by Month" sub="Sum of invoices marked Received, by the date they were received">
+            <Charts.BarChartMini data={revenueTrendData} xKey="month" bars={[{key:'amount', color:'#3b5bdb', name:'Collected (₹)'}]} height={300}/>
+          </Charts.ChartBlock>
         );
       case 'billingaging':
         return (
           <div>
-            <S.ChartBlock title="Outstanding Amount by Age" sub="Invoices not yet marked Received, bucketed by days past due">
-              <S.BarChartMini data={agingData} xKey="bucket" bars={[{key:'amount', color:'#ef4444', name:'Amount (₹)'}]} height={240}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Outstanding Amount by Age" sub="Invoices not yet marked Received, bucketed by days past due">
+              <Charts.BarChartMini data={agingData} xKey="bucket" bars={[{key:'amount', color:'#ef4444', name:'Amount (₹)'}]} height={240}/>
+            </Charts.ChartBlock>
             {miniTable(agingData.map((a:any)=>(
               <tr key={a.bucket}>
                 <S.Td className="font-medium">{a.bucket}</S.Td>
@@ -322,8 +323,8 @@ export default function Reports(){
       case 'portfoliomix':
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <S.ChartBlock title="By Billing Type"><S.DonutChartMini data={billingTypeMixData}/></S.ChartBlock>
-            <S.ChartBlock title="By Category Tier"><S.DonutChartMini data={categoryMixData}/></S.ChartBlock>
+            <Charts.ChartBlock title="By Billing Type"><Charts.DonutChartMini data={billingTypeMixData}/></Charts.ChartBlock>
+            <Charts.ChartBlock title="By Category Tier"><Charts.DonutChartMini data={categoryMixData}/></Charts.ChartBlock>
           </div>
         );
       case 'riskdash':
@@ -335,8 +336,8 @@ export default function Reports(){
               <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Pending Change Requests</div><div className="text-xl font-bold text-blue-600">{changes.filter(c=>c.status==='Pending').length}</div></S.Card>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <S.ChartBlock title="Risks by Impact"><S.DonutChartMini data={riskImpactData} height={190}/></S.ChartBlock>
-              <S.ChartBlock title="Issues by Severity"><S.DonutChartMini data={issueSeverityData} height={190}/></S.ChartBlock>
+              <Charts.ChartBlock title="Risks by Impact"><Charts.DonutChartMini data={riskImpactData} height={190}/></Charts.ChartBlock>
+              <Charts.ChartBlock title="Issues by Severity"><Charts.DonutChartMini data={issueSeverityData} height={190}/></Charts.ChartBlock>
             </div>
             <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Risks</div>
             {miniTable(risks.map(r=>(
@@ -359,7 +360,7 @@ export default function Reports(){
       case 'margin':
         return (
           <div>
-            <S.ChartBlock title="Margin Health Mix"><S.DonutChartMini data={marginHealthData} height={190}/></S.ChartBlock>
+            <Charts.ChartBlock title="Margin Health Mix"><Charts.DonutChartMini data={marginHealthData} height={190}/></Charts.ChartBlock>
             {miniTable(
               marginRanked.map(p=>(
                 <tr key={p.id}>
@@ -380,7 +381,7 @@ export default function Reports(){
       case 'billingsummary':
         return (
           <div>
-            <S.ChartBlock title="Payment Status Mix"><S.DonutChartMini data={paymentStatusMixData} height={190}/></S.ChartBlock>
+            <Charts.ChartBlock title="Payment Status Mix"><Charts.DonutChartMini data={paymentStatusMixData} height={190}/></Charts.ChartBlock>
             {miniTable(
               billingRanked.map(p=>{ const due=S.nextBillingDueDate(p); const d=due?S.daysLeft(due):null; return (
                 <tr key={p.id}>
@@ -396,9 +397,9 @@ export default function Reports(){
       case 'phasecompletion':
         return (
           <div>
-            <S.ChartBlock title="Milestone Completion by Project" sub="Lowest completion first">
-              <S.HBarChartMini data={completionRanked} xKey="project" barKey="pct" color="#3b5bdb" name="Completion %"/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Milestone Completion by Project" sub="Lowest completion first">
+              <Charts.HBarChartMini data={completionRanked} xKey="project" barKey="pct" color="#3b5bdb" name="Completion %"/>
+            </Charts.ChartBlock>
             {miniTable(
               perProjectCompletion.map(({p,pct,total,approved}: any)=>(
                 <tr key={p.id}>
@@ -420,7 +421,7 @@ export default function Reports(){
         const statusMixData = Object.entries(statusCounts).map(([name,value]:any)=>({name,value}));
         return (
           <div>
-            <S.ChartBlock title="Milestone / Sub Task Status Mix"><S.DonutChartMini data={statusMixData} height={220}/></S.ChartBlock>
+            <Charts.ChartBlock title="Milestone / Sub Task Status Mix"><Charts.DonutChartMini data={statusMixData} height={220}/></Charts.ChartBlock>
             {miniTable(
               Object.entries(statusCounts).sort((a:any,b:any)=>b[1]-a[1]).map(([s,c]: any) =>(
                 <tr key={s}>
@@ -443,9 +444,9 @@ export default function Reports(){
           ? <div className="text-sm text-slate-400">No overdue milestones or sub tasks — everything is on track.</div>
           : (
             <div>
-              <S.ChartBlock title="Overdue Items by Project">
-                <S.HBarChartMini data={overdueByProjectData} xKey="project" barKey="count" color="#ef4444" name="Overdue Items"/>
-              </S.ChartBlock>
+              <Charts.ChartBlock title="Overdue Items by Project">
+                <Charts.HBarChartMini data={overdueByProjectData} xKey="project" barKey="count" color="#ef4444" name="Overdue Items"/>
+              </Charts.ChartBlock>
               {miniTable(overdueEntries.map((e,i)=>(
                 <tr key={i}>
                   <S.Td>{e.project}</S.Td><S.Td className="font-medium">{e.item.name}</S.Td><S.Td>{e.level}</S.Td>
@@ -458,9 +459,9 @@ export default function Reports(){
       case 'pendingapprovals':
         return (
           <div className="space-y-5">
-            <S.ChartBlock title="Pending Approvals by Stage">
-              <S.BarChartMini data={approvalsByStageData} xKey="stage" bars={[{key:'count', color:'#8b5cf6'}]} height={180}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Pending Approvals by Stage">
+              <Charts.BarChartMini data={approvalsByStageData} xKey="stage" bars={[{key:'count', color:'#8b5cf6'}]} height={180}/>
+            </Charts.ChartBlock>
             <div>
               <div className="text-xs text-slate-400 mb-1.5 uppercase tracking-wide">Sub Task Approval ({pmPending.length})</div>
               {pmPending.length===0 ? <div className="text-sm text-slate-400">Nothing pending.</div> : miniTable(pmPending.map((e,i)=>(<tr key={i}><S.Td>{e.project}</S.Td><S.Td className="font-medium">{e.item.name}</S.Td><S.Td>{e.level}</S.Td></tr>)), ['Project','Item','Level'])}
@@ -482,9 +483,9 @@ export default function Reports(){
           <div className="text-sm text-slate-400 py-6 text-center">No deliverables recorded yet.</div>
         ) : (
           <div>
-            <S.ChartBlock title="Budget by Department">
-              <S.BarChartMini data={budgetByDeptData} xKey="dept" bars={[{key:'budget', color:'#3b5bdb', name:'Budget (₹)'}]} height={220}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Budget by Department">
+              <Charts.BarChartMini data={budgetByDeptData} xKey="dept" bars={[{key:'budget', color:'#3b5bdb', name:'Budget (₹)'}]} height={220}/>
+            </Charts.ChartBlock>
             {miniTable(
               deliverables.map(d=>{
                 const proj = projects.find(p=>p.name===d.project);
@@ -505,9 +506,9 @@ export default function Reports(){
       case 'timeline':
         return (
           <div>
-            <S.ChartBlock title="Projects by Time Remaining">
-              <S.BarChartMini data={timelineBucketData} xKey="bucket" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Projects by Time Remaining">
+              <Charts.BarChartMini data={timelineBucketData} xKey="bucket" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
+            </Charts.ChartBlock>
             {miniTable(
               timelineRanked.map(p=>{ const d=S.daysLeft(p.end); return (
                 <tr key={p.id}>
@@ -522,22 +523,22 @@ export default function Reports(){
         );
       case 'velocity':
         return (
-          <S.ChartBlock title="Milestones & Sub Tasks Completed by Month" sub="Counted on client-accepted date, falling back to the internal approval date">
-            <S.LineChartMini data={velocityData} xKey="month" lines={[{key:'count', color:'#3b5bdb', name:'Completed'}]} height={300}/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="Milestones & Sub Tasks Completed by Month" sub="Counted on client-accepted date, falling back to the internal approval date">
+            <Charts.LineChartMini data={velocityData} xKey="month" lines={[{key:'count', color:'#3b5bdb', name:'Completed'}]} height={300}/>
+          </Charts.ChartBlock>
         );
       case 'riskissuetrend':
         return (
-          <S.ChartBlock title="Risks & Issues Raised by Month">
-            <S.LineChartMini data={riskIssueTrendData} xKey="month" lines={[{key:'Risks', color:'#ef4444'},{key:'Issues', color:'#f59e0b'}]} height={300}/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="Risks & Issues Raised by Month">
+            <Charts.LineChartMini data={riskIssueTrendData} xKey="month" lines={[{key:'Risks', color:'#ef4444'},{key:'Issues', color:'#f59e0b'}]} height={300}/>
+          </Charts.ChartBlock>
         );
       case 'utilization':
         return (
           <div>
-            <S.ChartBlock title="Utilization by Consultant">
-              <S.HBarChartMini data={utilRanked} xKey="name" barKey="util" color="#3b5bdb" name="Utilization %"/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Utilization by Consultant">
+              <Charts.HBarChartMini data={utilRanked} xKey="name" barKey="util" color="#3b5bdb" name="Utilization %"/>
+            </Charts.ChartBlock>
             {miniTable(team.map(m=>(
               <tr key={m.name}>
                 <S.Td className="font-medium">{m.name}</S.Td><S.Td>{m.dept}</S.Td>
@@ -555,9 +556,9 @@ export default function Reports(){
       case 'deptperf':
         return (
           <div>
-            <S.ChartBlock title="Average Utilization by Department">
-              <S.BarChartMini data={deptStats} xKey="dept" bars={[{key:'avgUtil', color:'#3b5bdb', name:'Avg Utilization %'}]} height={220}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Average Utilization by Department">
+              <Charts.BarChartMini data={deptStats} xKey="dept" bars={[{key:'avgUtil', color:'#3b5bdb', name:'Avg Utilization %'}]} height={220}/>
+            </Charts.ChartBlock>
             {miniTable(deptStats.map(d=>(
               <tr key={d.dept}>
                 <S.Td className="font-medium">{d.dept}</S.Td><S.Td>{d.count}</S.Td>
@@ -574,9 +575,9 @@ export default function Reports(){
       case 'availability':
         return (
           <div>
-            <S.ChartBlock title="Availability by Consultant">
-              <S.HBarChartMini data={availRanked} xKey="name" barKey="avail" color="#10b981" name="Availability"/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Availability by Consultant">
+              <Charts.HBarChartMini data={availRanked} xKey="name" barKey="avail" color="#10b981" name="Availability"/>
+            </Charts.ChartBlock>
             {miniTable([...team].sort((a,b)=>(Number(String(b.avail).replace('%',''))||0)-(Number(String(a.avail).replace('%',''))||0)).map(m=>(
               <tr key={m.name}><S.Td className="font-medium">{m.name}</S.Td><S.Td>{m.dept}</S.Td><S.Td>{m.avail}</S.Td><S.Td>{m.util}%</S.Td></tr>
             )), ['Name','Department','Availability','Utilization'])}
@@ -585,9 +586,9 @@ export default function Reports(){
       case 'roleworkload':
         return (
           <div>
-            <S.ChartBlock title="Average Utilization by Role">
-              <S.BarChartMini data={roleStats} xKey="role" bars={[{key:'avgUtil', color:'#8b5cf6', name:'Avg Utilization %'}]} height={220}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Average Utilization by Role">
+              <Charts.BarChartMini data={roleStats} xKey="role" bars={[{key:'avgUtil', color:'#8b5cf6', name:'Avg Utilization %'}]} height={220}/>
+            </Charts.ChartBlock>
             {miniTable(roleStats.map(r=>(
               <tr key={r.role}>
                 <S.Td className="font-medium">{r.role}</S.Td><S.Td>{r.count}</S.Td>
@@ -604,9 +605,9 @@ export default function Reports(){
       case 'capacityforecast':
         return (
           <div>
-            <S.ChartBlock title="Headroom by Consultant" sub="Least headroom (most stretched) first">
-              <S.HBarChartMini data={headroomRanked} xKey="name" barKey="headroom" color="#f59e0b" name="Headroom %"/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Headroom by Consultant" sub="Least headroom (most stretched) first">
+              <Charts.HBarChartMini data={headroomRanked} xKey="name" barKey="headroom" color="#f59e0b" name="Headroom %"/>
+            </Charts.ChartBlock>
             {miniTable(capacityRanked.map(m=>{ const headroom = 100-m.util; return (
               <tr key={m.name}>
                 <S.Td className="font-medium">{m.name}</S.Td><S.Td>{m.role}</S.Td><S.Td>{m.capacity}</S.Td>
@@ -617,9 +618,9 @@ export default function Reports(){
         );
       case 'utildist':
         return (
-          <S.ChartBlock title="Consultants by Utilization Band">
-            <S.BarChartMini data={utilDistData} xKey="bucket" bars={[{key:'count', color:'#3b5bdb'}]} height={260}/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="Consultants by Utilization Band">
+            <Charts.BarChartMini data={utilDistData} xKey="bucket" bars={[{key:'count', color:'#3b5bdb'}]} height={260}/>
+          </Charts.ChartBlock>
         );
       case 'clientpending':
         return clientPending.length===0
@@ -635,9 +636,9 @@ export default function Reports(){
               <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Implemented</div><div className="text-xl font-bold text-blue-600">{implementedEntries.length}</div></S.Card>
               <S.Card className="p-3 text-center"><div className="text-xs text-slate-500">Implemented This Month</div><div className="text-xl font-bold text-violet-600">{implementedThisMonth.length}</div></S.Card>
             </div>
-            <S.ChartBlock title="Approval Funnel">
-              <S.BarChartMini data={approvalTrackerData} xKey="cat" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Approval Funnel">
+              <Charts.BarChartMini data={approvalTrackerData} xKey="cat" bars={[{key:'count', color:'#3b5bdb'}]} height={200}/>
+            </Charts.ChartBlock>
             {implementedEntries.length===0 ? <div className="text-sm text-slate-400">No items implemented yet.</div> : miniTable(implementedEntries.map((e,i)=>(
               <tr key={i}><S.Td>{e.project}</S.Td><S.Td className="font-medium">{e.item.name}</S.Td><S.Td>{e.level}</S.Td><S.Td>{e.item.clientAcceptedDate||'—'}</S.Td></tr>
             )), ['Project','Item','Level','Client Accepted'])}
@@ -646,9 +647,9 @@ export default function Reports(){
       case 'clientbilling':
         return (
           <div>
-            <S.ChartBlock title="Monthly Fee Share by Client" sub="Top 5 clients, remainder grouped as Others">
-              <S.DonutChartMini data={clientBillingDonutData}/>
-            </S.ChartBlock>
+            <Charts.ChartBlock title="Monthly Fee Share by Client" sub="Top 5 clients, remainder grouped as Others">
+              <Charts.DonutChartMini data={clientBillingDonutData}/>
+            </Charts.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
                 <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.count}</S.Td>
@@ -661,7 +662,7 @@ export default function Reports(){
       case 'clientrisk':
         return (
           <div>
-            <S.ChartBlock title="Client Health Mix"><S.DonutChartMini data={clientRiskMixData} height={190}/></S.ChartBlock>
+            <Charts.ChartBlock title="Client Health Mix"><Charts.DonutChartMini data={clientRiskMixData} height={190}/></Charts.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
                 <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.count}</S.Td>
@@ -674,7 +675,7 @@ export default function Reports(){
       case 'clientengagement':
         return (
           <div>
-            <S.ChartBlock title="Engagement Type Mix"><S.DonutChartMini data={engagementMixData} height={190}/></S.ChartBlock>
+            <Charts.ChartBlock title="Engagement Type Mix"><Charts.DonutChartMini data={engagementMixData} height={190}/></Charts.ChartBlock>
             {miniTable(clientStats.map(c=>(
               <tr key={c.client}>
                 <S.Td className="font-medium">{c.displayName}</S.Td><S.Td>{c.tier}</S.Td><S.Td>{c.industries}</S.Td>
@@ -685,21 +686,21 @@ export default function Reports(){
         );
       case 'clientrevenue':
         return (
-          <S.ChartBlock title="Top Clients by Monthly Fee">
-            <S.HBarChartMini data={clientRevenueRanked} xKey="client" barKey="revenue" color="#3b5bdb" name="Monthly Fee (₹)"/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="Top Clients by Monthly Fee">
+            <Charts.HBarChartMini data={clientRevenueRanked} xKey="client" barKey="revenue" color="#3b5bdb" name="Monthly Fee (₹)"/>
+          </Charts.ChartBlock>
         );
       case 'clientriskheat':
         return (
-          <S.ChartBlock title="At-Risk Projects by Client">
-            <S.HBarChartMini data={clientRiskRanked} xKey="client" barKey="atRisk" color="#ef4444" name="At-Risk Projects"/>
-          </S.ChartBlock>
+          <Charts.ChartBlock title="At-Risk Projects by Client">
+            <Charts.HBarChartMini data={clientRiskRanked} xKey="client" barKey="atRisk" color="#ef4444" name="At-Risk Projects"/>
+          </Charts.ChartBlock>
         );
       case 'clientmix':
         return (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <S.ChartBlock title="By Industry"><S.DonutChartMini data={industryMixData}/></S.ChartBlock>
-            <S.ChartBlock title="By Engagement Type"><S.DonutChartMini data={engagementMixData}/></S.ChartBlock>
+            <Charts.ChartBlock title="By Industry"><Charts.DonutChartMini data={industryMixData}/></Charts.ChartBlock>
+            <Charts.ChartBlock title="By Engagement Type"><Charts.DonutChartMini data={engagementMixData}/></Charts.ChartBlock>
           </div>
         );
       default: return null;

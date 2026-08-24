@@ -131,7 +131,13 @@ export async function loadAll() {
     supabase.from('team').select('*'),
     supabase.from('admin_data').select('*'),
     supabase.from('app_settings').select('*').maybeSingle(),
-    supabase.from('notifications').select('*').order('created_at', { ascending: false }),
+    // Capped (2026-08-24, perf pass): notifications is the largest and only unboundedly-growing
+    // table loaded here (login_logs/activity_logs are already fetched separately with their own
+    // .limit() elsewhere in this file). The notification bell (shared.tsx) only ever shows what's
+    // currently loaded and marks it read client-side via localStorage -- it never needs full history,
+    // so capping to the most recent 300 is safe and just protects against this query growing
+    // unbounded as the tenant accumulates activity over time.
+    supabase.from('notifications').select('*').order('created_at', { ascending: false }).limit(300),
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('monthly_plans').select('*'),
   ]);

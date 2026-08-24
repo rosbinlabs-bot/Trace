@@ -27,18 +27,30 @@ export default function Dashboard(){
   // Flatten every phase/milestone/sub task across every project into one list, each entry keeping
   // its project name — this one pass feeds every KPI/widget/insight below, all from the same live
   // Phase Management tree (no separate mock numbers).
-  const allEntries: any[] = [];
-  projects.forEach((p:any)=>{
-    (tree[p.id]||[]).forEach((ph:any)=>{
-      ph.milestones.forEach((ms:any)=>{
-        allEntries.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });
-        (ms.subtasks||[]).forEach((s:any)=> allEntries.push({ item:s, project:p.name, level:'Sub Task', projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id }));
+  // Memoized (2026-08-24, perf pass): this walk is O(every project × phase × milestone × subtask),
+  // and Dashboard re-renders on every Realtime event across the whole tenant (any teammate's edit,
+  // anywhere), not just when this data actually changes. useMemo keeps the same array reference
+  // across renders that don't touch tree/projects, so this rebuild only happens when it needs to.
+  // Everything downstream still reads allEntries/msOnly/stOnly exactly as before -- only the
+  // construction of these three arrays moved into useMemo, nothing about what they contain changed.
+  const allEntries: any[] = React.useMemo(() => {
+    const out: any[] = [];
+    projects.forEach((p:any)=>{
+      (tree[p.id]||[]).forEach((ph:any)=>{
+        ph.milestones.forEach((ms:any)=>{
+          out.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });
+          (ms.subtasks||[]).forEach((s:any)=> out.push({ item:s, project:p.name, level:'Sub Task', projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id }));
+        });
       });
     });
-  });
-  const msOnly: any[] = [];
-  projects.forEach((p:any)=>(tree[p.id]||[]).forEach((ph:any)=>ph.milestones.forEach((ms:any)=>msOnly.push(ms))));
-  const stOnly = msOnly.flatMap((ms:any)=>ms.subtasks||[]);
+    return out;
+  }, [projects, tree]);
+  const msOnly: any[] = React.useMemo(() => {
+    const out: any[] = [];
+    projects.forEach((p:any)=>(tree[p.id]||[]).forEach((ph:any)=>ph.milestones.forEach((ms:any)=>out.push(ms))));
+    return out;
+  }, [projects, tree]);
+  const stOnly = React.useMemo(() => msOnly.flatMap((ms:any)=>ms.subtasks||[]), [msOnly]);
 
   const monthKey = S.CURRENT_MONTH_END.slice(0,7);
   const overdueEntries = allEntries.filter(e=>S.isOverdue(e.item));
