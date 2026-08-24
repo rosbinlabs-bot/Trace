@@ -585,7 +585,7 @@ export default function ProjectMaster(){
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide shrink-0">Payment Receipts</span>
                 {!isNew && canEditFinancials && <button onClick={addReceipt} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap shrink-0">+ Add Payment Receipt</button>}
               </div>
-              <div className="text-[11px] text-slate-400 mb-2">Tick ✓ once payment is actually received in full — that locks the row and logs it to the Billing Tracker &amp; revenue. For a part-payment, set status to Partial and log what's actually landed in Received Amt/Received Date; the remaining balance stays open and ages off the Due Date. A confirmed row entered in error (e.g. ticked before the money actually came in) can be reopened via the amber unlock icon — Super Admin only.</div>
+              <div className="text-[11px] text-slate-400 mb-2">Every field here saves automatically as you type or select — there's nothing else to click. Tick ✓ only once payment is actually received in full; that's a separate, deliberate action that locks the row and logs it to the Billing Tracker &amp; revenue. For a part-payment, set status to Partial and log what's actually landed in Received Amt/Received Date — the ✓ stays disabled until Received Amt reaches the full Amount, so it can't be confirmed by mistake. A confirmed row entered in error (e.g. ticked before the money actually came in) can be reopened via the amber unlock icon — Super Admin only.</div>
               {(form.paymentReceipts||[]).length>0 ? (
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs min-w-[880px] border-separate" style={{borderSpacing:0}}>
@@ -597,7 +597,20 @@ export default function ProjectMaster(){
                       <th className="text-left font-medium py-1.5 pr-2 w-[92px]">Confirm</th><th className="w-[28px]"></th>
                     </tr></thead>
                     <tbody>
-                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; const locked = confirmed || !canEditFinancials; const partialEditable = !locked && r.status==='Partial'; return (
+                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; const locked = confirmed || !canEditFinancials; const partialEditable = !locked && r.status==='Partial';
+                        // Every field on this row already autosaves on change (setReceipt -> applyLifecycle,
+                        // same as the rest of this form) -- there is no separate "save" step. The green
+                        // checkmark is a DIFFERENT action: "mark fully received", which locks the row and
+                        // writes a Billing Tracker invoice for whatever's currently in Amount. A real
+                        // incident: a reopened row was set to Partial with a real Received Amt logged, but
+                        // the checkmark was still clickable and got pressed anyway (habit, since it's the
+                        // only button on the row) -- it silently discarded the Partial status and locked in
+                        // the (by-then-also-edited) Amount as if the whole thing had been received. Guard:
+                        // disable the checkmark whenever the row reads Partial and Received Amt hasn't
+                        // actually reached Amount yet, so "mark fully received" can't fire on money that
+                        // isn't actually fully in.
+                        const fullyCovered = r.status!=='Partial' || (Number(r.receivedAmount)||0) >= (Number(r.amount)||0);
+                        return (
                         <tr key={r.id} className={`border-t border-slate-200 ${confirmed?'bg-emerald-50/40':''}`}>
                           <td className="py-1.5 pr-2 align-middle">
                             <input type="date" value={r.due} disabled={locked} onChange={e=>setReceipt(i,'due',e.target.value)}
@@ -649,9 +662,15 @@ export default function ProjectMaster(){
                                   )}
                                 </>
                               ) : canEditFinancials ? (
-                                <button onClick={()=>confirmReceipt(i)} title="Mark as received" aria-label="Mark payment as received" className="w-6 h-6 rounded-full border border-emerald-300 text-emerald-500 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 flex items-center justify-center transition-colors">
-                                  <S.Icon name="checkcircle" className="w-4 h-4"/>
-                                </button>
+                                fullyCovered ? (
+                                  <button onClick={()=>confirmReceipt(i)} title="Mark as received" aria-label="Mark payment as received" className="w-6 h-6 rounded-full border border-emerald-300 text-emerald-500 hover:bg-emerald-500 hover:text-white hover:border-emerald-500 flex items-center justify-center transition-colors">
+                                    <S.Icon name="checkcircle" className="w-4 h-4"/>
+                                  </button>
+                                ) : (
+                                  <button disabled title="This row is Partial and Received Amt hasn't reached the full Amount yet, so it can't be confirmed as fully received. Your Status/Received Amt/Received Date edits already saved automatically — nothing else to click." aria-label="Cannot mark as received while Partial and not fully covered" className="w-6 h-6 rounded-full border border-slate-200 text-slate-300 flex items-center justify-center cursor-not-allowed">
+                                    <S.Icon name="checkcircle" className="w-4 h-4"/>
+                                  </button>
+                                )
                               ) : null}
                             </div>
                           </td>
