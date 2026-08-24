@@ -141,18 +141,17 @@ export default function Dashboard(){
   // (fully) received (see S.outstandingCollections) — an unconfirmed receipt never produces an
   // invoice row, so reading invoices alone missed every payment that was simply overdue and never
   // ticked (e.g. a One Time/Phase Wise project like this whose receipt sat unconfirmed past its due
-  // date). A receipt/invoice only counts as "aging" once it's more than AGING_GRACE_DAYS past due —
-  // inside the grace window it's still bucketed as not-yet-a-collections-concern. ----
-  const AGING_GRACE_DAYS = 6;
+  // date). Aging starts the day after the due date — day 1 overdue already lands in the 1–30 bucket,
+  // no grace period. ----
   const openReceivables = S.outstandingCollections(projects, invoices);
   const overdueDaysOf = (i:any) => -S.daysLeft(i.dueDate);
   const aging = { notDue:0, d30:0, d60:0, d90:0 };
   openReceivables.forEach((i:any)=>{
     const d = overdueDaysOf(i); const amt = Number(i.amount)||0;
-    if (d<=AGING_GRACE_DAYS) aging.notDue+=amt; else if (d<=30) aging.d30+=amt; else if (d<=60) aging.d60+=amt; else aging.d90+=amt;
+    if (d<=0) aging.notDue+=amt; else if (d<=30) aging.d30+=amt; else if (d<=60) aging.d60+=amt; else aging.d90+=amt;
   });
   const totalOverdue = aging.d30+aging.d60+aging.d90;
-  const overdueInvoices = openReceivables.filter((i:any)=>overdueDaysOf(i)>AGING_GRACE_DAYS)
+  const overdueInvoices = openReceivables.filter((i:any)=>overdueDaysOf(i)>0)
     .sort((a:any,b:any)=>overdueDaysOf(b)-overdueDaysOf(a)).slice(0,5);
   const projectOf = (invProjectId:string) => projects.find((p:any)=>p.id===invProjectId);
 
@@ -515,7 +514,7 @@ export default function Dashboard(){
         <S.Card className="p-4">
           <div className="font-semibold text-slate-800 mb-3">Collections Aging</div>
           <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-emerald-50 rounded-lg p-2"><div className="text-[11px] text-emerald-700">Not yet due (≤{AGING_GRACE_DAYS}d)</div><div className="text-sm font-bold text-emerald-700">{S.inLakh(aging.notDue)}</div></div>
+            <div className="bg-emerald-50 rounded-lg p-2"><div className="text-[11px] text-emerald-700">Not yet due</div><div className="text-sm font-bold text-emerald-700">{S.inLakh(aging.notDue)}</div></div>
             <div className="bg-amber-50 rounded-lg p-2"><div className="text-[11px] text-amber-700">1–30 days</div><div className="text-sm font-bold text-amber-700">{S.inLakh(aging.d30)}</div></div>
             <div className="bg-orange-50 rounded-lg p-2"><div className="text-[11px] text-orange-700">31–60 days</div><div className="text-sm font-bold text-orange-700">{S.inLakh(aging.d60)}</div></div>
             <div className="bg-red-50 rounded-lg p-2"><div className="text-[11px] text-red-700">60+ days</div><div className="text-sm font-bold text-red-700">{S.inLakh(aging.d90)}</div></div>
