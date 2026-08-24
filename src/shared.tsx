@@ -745,7 +745,47 @@ export const remainingLabel = (end) => {
   const months = Math.floor(d/30);
   return { txt:`${d}d${months>0?` (~${months}mo)`:''} left`, cls: d<=30?'text-amber-600':'text-slate-700' };
 };
-export const payColor = (s) => ({ 'Received':'bg-emerald-100 text-emerald-700','Pending':'bg-amber-100 text-amber-700','Delayed':'bg-red-100 text-red-700','On Hold':'bg-orange-100 text-orange-700' }[s] || 'bg-slate-100 text-slate-600');
+export const payColor = (s) => ({ 'Received':'bg-emerald-100 text-emerald-700','Pending':'bg-amber-100 text-amber-700','Partial':'bg-sky-100 text-sky-700','Delayed':'bg-red-100 text-red-700','On Hold':'bg-orange-100 text-orange-700' }[s] || 'bg-slate-100 text-slate-600');
+
+// A Payment Receipt's uncollected balance -- amount still owed against it. Most receipts are binary
+// (0 received until the whole thing is ticked 'Received'), but 'Partial' status lets Amount Received
+// be logged against a receipt while some balance remains outstanding; the remainder keeps aging off
+// the receipt's own due date (a partial payment doesn't reset the clock on what's left).
+export const receiptOutstanding = (r: any): number => {
+  const amount = Number(r?.amount) || 0;
+  const received = Number(r?.receivedAmount) || 0;
+  return Math.max(0, amount - received);
+};
+
+// Every outstanding collection across the portfolio, from both places one can originate:
+// - Billing Tracker invoices (`invoices`, Supabase-backed) — cron-generated Monthly-billing rows, or
+//   anything else logged there that isn't yet status:'Received'.
+// - Project Master Payment Receipts (`project.paymentReceipts[]`) that are past/at their due date but
+//   not (fully) received. These are the source-of-truth "master" for One Time / Phase Wise billing
+//   (and any ad hoc receipt on a Monthly project) — critically, an unconfirmed receipt NEVER produces
+//   an invoice row (confirmReceipt in ProjectMaster.tsx only writes one at the moment a receipt is
+//   ticked fully 'Received'), so reading the invoices table alone misses every payment that's overdue
+//   but has simply never been ticked. Added 2026-08-24 so Collections Aging reflects receipts like
+//   this, not just the Billing Tracker.
+// Each entry mirrors an invoice's own shape ({id, project (id), dueDate, amount}) so callers built
+// against `invoices` (Dashboard's aging buckets, largest-overdue insight, etc.) don't need to branch
+// on where an entry came from.
+export const outstandingCollections = (projects: any[], invoices: any[]): any[] => {
+  const out: any[] = [];
+  (invoices||[]).forEach((i:any) => {
+    if (i.status==='Received' || !i.dueDate) return;
+    out.push({ id:i.id, project:i.project, dueDate:i.dueDate, amount:Number(i.amount)||0 });
+  });
+  (projects||[]).forEach((p:any) => {
+    (p.paymentReceipts||[]).forEach((r:any) => {
+      if (r.status==='Received' || !r.due) return;
+      const amount = receiptOutstanding(r);
+      if (amount<=0) return;
+      out.push({ id:`pr-${r.id}`, project:p.id, dueDate:r.due, amount });
+    });
+  });
+  return out;
+};
 
 // A project's end date has passed but it's still marked In Progress and no extension has been recorded yet.
 export const isProjectOverdue = (p) => daysLeft(p.end) < 0;

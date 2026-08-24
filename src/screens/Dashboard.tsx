@@ -136,17 +136,23 @@ export default function Dashboard(){
   // milestone selected there, sub task detail modal opened too if that's the level that's stuck.
   const goToBottleneck = (b:any) => { setOpenKpi(null); navigate('/phases', { state:{ projectId:b.projectId, phaseId:b.phaseId, msId:b.msId, stId:b.level==='Sub Task'?b.stId:undefined } }); };
 
-  // ---- collections aging — real, from Billing Tracker invoices (dueDate/amount/status), not
-  // reconstructed from anywhere else. ----
-  const openInvoices = invoices.filter((i:any)=>i.status!=='Received' && i.dueDate);
+  // ---- collections aging — combines BOTH places an outstanding collection can live: Billing
+  // Tracker invoices (dueDate/amount/status) AND Project Master Payment Receipts that are due but not
+  // (fully) received (see S.outstandingCollections) — an unconfirmed receipt never produces an
+  // invoice row, so reading invoices alone missed every payment that was simply overdue and never
+  // ticked (e.g. a One Time/Phase Wise project like this whose receipt sat unconfirmed past its due
+  // date). A receipt/invoice only counts as "aging" once it's more than AGING_GRACE_DAYS past due —
+  // inside the grace window it's still bucketed as not-yet-a-collections-concern. ----
+  const AGING_GRACE_DAYS = 6;
+  const openReceivables = S.outstandingCollections(projects, invoices);
   const overdueDaysOf = (i:any) => -S.daysLeft(i.dueDate);
   const aging = { notDue:0, d30:0, d60:0, d90:0 };
-  openInvoices.forEach((i:any)=>{
+  openReceivables.forEach((i:any)=>{
     const d = overdueDaysOf(i); const amt = Number(i.amount)||0;
-    if (d<=0) aging.notDue+=amt; else if (d<=30) aging.d30+=amt; else if (d<=60) aging.d60+=amt; else aging.d90+=amt;
+    if (d<=AGING_GRACE_DAYS) aging.notDue+=amt; else if (d<=30) aging.d30+=amt; else if (d<=60) aging.d60+=amt; else aging.d90+=amt;
   });
   const totalOverdue = aging.d30+aging.d60+aging.d90;
-  const overdueInvoices = openInvoices.filter((i:any)=>overdueDaysOf(i)>0)
+  const overdueInvoices = openReceivables.filter((i:any)=>overdueDaysOf(i)>AGING_GRACE_DAYS)
     .sort((a:any,b:any)=>overdueDaysOf(b)-overdueDaysOf(a)).slice(0,5);
   const projectOf = (invProjectId:string) => projects.find((p:any)=>p.id===invProjectId);
 
@@ -194,7 +200,7 @@ export default function Dashboard(){
   }
   if (overdueInvoices.length) {
     const inv = overdueInvoices[0]; const proj = projectOf(inv.project);
-    extraInsights.push({ icon:'financials', tone:'rose', text:`${proj?proj.name:'An'} invoice of ${S.inLakh(Number(inv.amount)||0)} is ${overdueDaysOf(inv)} days overdue — the single largest collections risk in the portfolio right now.` });
+    extraInsights.push({ icon:'financials', tone:'rose', text:`${proj?proj.name:'An'} outstanding payment of ${S.inLakh(Number(inv.amount)||0)} is ${overdueDaysOf(inv)} days overdue — the single largest collections risk in the portfolio right now.` });
   }
   const allInsights = [...extraInsights, ...insights];
 
@@ -260,7 +266,7 @@ export default function Dashboard(){
             {totalOverdue>0 && (
               <div className="flex flex-wrap justify-between gap-2 py-2 text-sm">
                 <span className="text-slate-700">{S.inLakh(totalOverdue)} in overdue collections{aging.d90>0?`, ${S.inLakh(aging.d90)} aged past 60 days`:''}</span>
-                <span className="text-xs text-slate-400 whitespace-nowrap">Billing Tracker</span>
+                <span className="text-xs text-slate-400 whitespace-nowrap">Collections Aging</span>
               </div>
             )}
             {extNeeded.length>0 && (
@@ -509,7 +515,7 @@ export default function Dashboard(){
         <S.Card className="p-4">
           <div className="font-semibold text-slate-800 mb-3">Collections Aging</div>
           <div className="grid grid-cols-2 gap-2 mb-3">
-            <div className="bg-emerald-50 rounded-lg p-2"><div className="text-[11px] text-emerald-700">Not yet due</div><div className="text-sm font-bold text-emerald-700">{S.inLakh(aging.notDue)}</div></div>
+            <div className="bg-emerald-50 rounded-lg p-2"><div className="text-[11px] text-emerald-700">Not yet due (≤{AGING_GRACE_DAYS}d)</div><div className="text-sm font-bold text-emerald-700">{S.inLakh(aging.notDue)}</div></div>
             <div className="bg-amber-50 rounded-lg p-2"><div className="text-[11px] text-amber-700">1–30 days</div><div className="text-sm font-bold text-amber-700">{S.inLakh(aging.d30)}</div></div>
             <div className="bg-orange-50 rounded-lg p-2"><div className="text-[11px] text-orange-700">31–60 days</div><div className="text-sm font-bold text-orange-700">{S.inLakh(aging.d60)}</div></div>
             <div className="bg-red-50 rounded-lg p-2"><div className="text-[11px] text-red-700">60+ days</div><div className="text-sm font-bold text-red-700">{S.inLakh(aging.d90)}</div></div>
@@ -521,7 +527,7 @@ export default function Dashboard(){
                 <span className="text-slate-500 whitespace-nowrap">{S.inLakh(Number(inv.amount)||0)} · {overdueDaysOf(inv)}d</span>
               </div>
             );})}
-            {overdueInvoices.length===0 && <div className="text-xs text-slate-400">No overdue invoices.</div>}
+            {overdueInvoices.length===0 && <div className="text-xs text-slate-400">No overdue collections.</div>}
           </div>
         </S.Card>
       </div>

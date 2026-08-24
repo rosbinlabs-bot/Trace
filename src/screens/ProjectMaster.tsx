@@ -211,10 +211,15 @@ export default function ProjectMaster(){
   // locked project, UNTIL a receipt is confirmed via the tick button (confirmReceipt below), at
   // which point it's final: the row locks and a matching, already-locked, "Received" row is written
   // into the Billing Tracker/invoices table so it's what feeds Dashboard/Reports revenue.
-  const RECEIPT_STATUSES = ['Pending','Received','Delayed','On Hold'];
+  // 'Partial' (added 2026-08-24) is for a receipt where some but not all of the amount has come in --
+  // Received Amt/Received Date below capture what's actually landed so far, while the receipt itself
+  // stays open (not confirmed/locked) until the remaining balance is collected. Dashboard's Collections
+  // Aging reads the outstanding balance (amount - receivedAmount) straight off this master via
+  // S.outstandingCollections — see shared.tsx.
+  const RECEIPT_STATUSES = ['Pending','Partial','Received','Delayed','On Hold'];
   const myName = myProfile?.name;
   const iAmSuperAdmin = S.isSuperAdmin(myEmail, admin);
-  const addReceipt = () => applyLifecycle({ paymentReceipts:[...(form.paymentReceipts||[]), { id:S.uid('PR'), due:S.TODAY_ISO, amount:0, status:'Pending', remarks:'' }] });
+  const addReceipt = () => applyLifecycle({ paymentReceipts:[...(form.paymentReceipts||[]), { id:S.uid('PR'), due:S.TODAY_ISO, amount:0, status:'Pending', receivedAmount:0, receivedDate:'', remarks:'' }] });
   const setReceipt = (i,k,v) => applyLifecycle({ paymentReceipts:(form.paymentReceipts||[]).map((r,j)=> j===i?{...r,[k]:v}:r) });
   const removeReceipt = (i) => applyLifecycle({ paymentReceipts:(form.paymentReceipts||[]).filter((_,j)=>j!==i) });
   const confirmReceipt = (i) => {
@@ -556,17 +561,19 @@ export default function ProjectMaster(){
                 <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide shrink-0">Payment Receipts</span>
                 {!isNew && canEditFinancials && <button onClick={addReceipt} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap shrink-0">+ Add Payment Receipt</button>}
               </div>
-              <div className="text-[11px] text-slate-400 mb-2">Tick ✓ once payment is actually received — that locks the row and logs it to the Billing Tracker &amp; revenue.</div>
+              <div className="text-[11px] text-slate-400 mb-2">Tick ✓ once payment is actually received in full — that locks the row and logs it to the Billing Tracker &amp; revenue. For a part-payment, set status to Partial and log what's actually landed in Received Amt/Received Date; the remaining balance stays open and ages off the Due Date.</div>
               {(form.paymentReceipts||[]).length>0 ? (
                 <div className="overflow-x-auto">
-                  <table className="w-full text-xs min-w-[600px] border-separate" style={{borderSpacing:0}}>
+                  <table className="w-full text-xs min-w-[840px] border-separate" style={{borderSpacing:0}}>
                     <thead><tr className="text-slate-400 text-[10px] uppercase tracking-wide">
                       <th className="text-left font-medium py-1.5 pr-2 w-[130px]">Due Date</th><th className="text-left font-medium py-1.5 pr-2 w-[110px]">Amount (₹)</th>
-                      <th className="text-left font-medium py-1.5 pr-2 w-[130px]">Receipt Status</th><th className="text-left font-medium py-1.5 pr-2">Remarks</th>
+                      <th className="text-left font-medium py-1.5 pr-2 w-[120px]">Receipt Status</th>
+                      <th className="text-left font-medium py-1.5 pr-2 w-[110px]">Received Amt (₹)</th><th className="text-left font-medium py-1.5 pr-2 w-[130px]">Received Date</th>
+                      <th className="text-left font-medium py-1.5 pr-2">Remarks</th>
                       <th className="text-left font-medium py-1.5 pr-2 w-[70px]">Confirm</th><th className="w-[28px]"></th>
                     </tr></thead>
                     <tbody>
-                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; const locked = confirmed || !canEditFinancials; return (
+                      {form.paymentReceipts.map((r,i)=>{ const confirmed = !!r.confirmedAt; const locked = confirmed || !canEditFinancials; const partialEditable = !locked && r.status==='Partial'; return (
                         <tr key={r.id} className={`border-t border-slate-200 ${confirmed?'bg-emerald-50/40':''}`}>
                           <td className="py-1.5 pr-2 align-middle">
                             <input type="date" value={r.due} disabled={locked} onChange={e=>setReceipt(i,'due',e.target.value)}
@@ -586,6 +593,16 @@ export default function ProjectMaster(){
                                 </select>
                               )}
                             </div>
+                          </td>
+                          <td className="pr-2 align-middle">
+                            <input type="text" inputMode="numeric" pattern="[0-9]*" value={r.receivedAmount===''||r.receivedAmount==null?'':String(r.receivedAmount)}
+                              disabled={!partialEditable} placeholder="0"
+                              onChange={e=>{ const d=e.target.value.replace(/[^0-9]/g,''); setReceipt(i,'receivedAmount', d===''?'':Number(d)); }}
+                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${!partialEditable?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
+                          </td>
+                          <td className="pr-2 align-middle">
+                            <input type="date" value={r.receivedDate||''} disabled={!partialEditable} onChange={e=>setReceipt(i,'receivedDate',e.target.value)}
+                              className={`h-7 w-full border rounded px-2 text-xs leading-none focus:outline-none ${!partialEditable?'border-slate-200 bg-slate-100 text-slate-400':'border-slate-200 bg-white focus:border-brand-400'}`} />
                           </td>
                           <td className="pr-2 align-middle">
                             <input value={r.remarks} disabled={locked} onChange={e=>setReceipt(i,'remarks',e.target.value)} placeholder="Remarks"
