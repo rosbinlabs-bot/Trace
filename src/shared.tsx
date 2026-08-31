@@ -704,10 +704,18 @@ export const NAV = [
 // Sidebar/route nav for a Client-type account (see deriveRole above) — deliberately just these two
 // items. App.tsx (Shell) swaps to this list instead of NAV, and its route table restricts a client
 // to exactly these paths, so there's no way to reach anything else by URL either.
+// Sidebar/route nav for a Client-type account (see deriveRole above). Monthly Plan and Calendar
+// were added 2026-08-31, scoped to just the one project a client is tagged to (myProfile.project)
+// -- Monthly Plan is inherently view-only for a client (canEdit there requires project-team
+// membership, which a client never has) and Calendar is explicitly made read-only for clients in
+// Calendar.tsx (canEditCalendar). App.tsx (Shell) swaps to this list instead of NAV, and its route
+// table restricts a client to exactly these paths, so there's no way to reach anything else by URL.
 export const CLIENT_NAV = [
   { group:'Client', items:[
     { id:'portal', label:'Client Portal' },
     { id:'structure', label:'Project Structure' },
+    { id:'monthlyplan', label:'Monthly Plan' },
+    { id:'calendar', label:'Calendar' },
   ]},
 ];
 

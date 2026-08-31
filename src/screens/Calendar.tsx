@@ -19,8 +19,16 @@ export default function Calendar(){
   // This is a personal schedule, not a portfolio view -- even for Admin/Super Admin (who otherwise see
   // every project everywhere else in the app), the Calendar only shows projects the signed-in person
   // is actually tagged to (Project Master -> Project Team or Guest Teammates). A project they're not
-  // on isn't part of "their" schedule, so it's left out here entirely.
-  const myTaggedProjects = projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===myProfile?.name) || (p.guests||[]).includes(myProfile?.name));
+  // on isn't part of "their" schedule, so it's left out here entirely. A client account is never a
+  // team member/guest on a project (those arrays are for staff only), so that check would leave this
+  // empty for every client -- but `projects` from context is already scoped down to just the single
+  // project a client is tagged to (App.tsx's visibleProjects), so for a client every visible project
+  // IS "their" project and no further membership filtering is needed or possible.
+  const myTaggedProjects = role==='client' ? projects : projects.filter((p:any) => (p.team||[]).some((t:any)=>t.name===myProfile?.name) || (p.guests||[]).includes(myProfile?.name));
+  // Clients can view their project's calendar but never create, edit, cancel or delete an event --
+  // consistent with every other client-facing screen in the app (Monthly Plan is inherently view-only
+  // for them too, Client Portal only exposes hand-picked approve/reject actions).
+  const canEditCalendar = role !== 'client';
   const myTaggedProjectNames = new Set(myTaggedProjects.map((p:any)=>p.name));
   const [projFilter, setProjFilter] = useState('All');
   // Every one of MY tagged projects' names, each assigned a distinct, non-repeating color by stable
@@ -149,13 +157,13 @@ export default function Calendar(){
             <span className="px-2 text-sm font-medium text-slate-700 whitespace-nowrap">{monthLabel}</span>
             <button onClick={()=>shiftMonth(1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white">›</button>
           </div>
-          <button onClick={()=>openAdd(S.TODAY_ISO)} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Event</button>
+          {canEditCalendar && <button onClick={()=>openAdd(S.TODAY_ISO)} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Event</button>}
         </div>
       </div>
 
       <div className="flex items-center gap-3 mb-3 text-[11px] text-slate-500">
         {S.EVENT_TYPES.map(t=>(<span key={t} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${S.EVENT_TYPE_COLOR[t].dot}`}></span>{t}</span>))}
-        <span className="flex items-center gap-1 text-slate-400">· click a date to add an event, or click an event to edit it</span>
+        <span className="flex items-center gap-1 text-slate-400">{canEditCalendar ? '· click a date to add an event, or click an event to edit it' : '· view only'}</span>
       </div>
 
       <div className="flex gap-4 items-start">
@@ -171,8 +179,8 @@ export default function Calendar(){
             const isToday = dateStr===S.TODAY_ISO;
             const isSelected = dateStr && dateStr===selectedDate;
             return (
-              <div key={i} onClick={()=>inMonth && openAdd(dateStr)}
-                className={`min-h-[80px] rounded-lg border p-1 text-xs align-top ${inMonth?'bg-white border-slate-200 cursor-pointer hover:border-brand-300':'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
+              <div key={i} onClick={()=>inMonth && canEditCalendar && openAdd(dateStr)}
+                className={`min-h-[80px] rounded-lg border p-1 text-xs align-top ${inMonth?`bg-white border-slate-200 ${canEditCalendar?'cursor-pointer hover:border-brand-300':''}`:'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
                 {inMonth && <>
                   <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}</div>
                   <div className="space-y-0.5 mt-1">
@@ -186,9 +194,9 @@ export default function Calendar(){
                       const projColor = ev.project ? colorForProject(ev.project) : null;
                       const chipCls = projColor ? projColor.chip : typeColor.chip;
                       const cancelled=ev.status==='Cancelled'; const done=ev.status==='Completed'; return (
-                      <div key={ev.id} onClick={e=>{e.stopPropagation(); openEdit(ev);}}
+                      <div key={ev.id} onClick={e=>{e.stopPropagation(); canEditCalendar && openEdit(ev);}}
                         title={`${ev.type}: ${ev.title}${ev.project?` · ${ev.project}`:''} · ${ev.status}`}
-                        className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${chipCls} ${cancelled?'opacity-50 line-through':''}`}>
+                        className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${chipCls} ${cancelled?'opacity-50 line-through':''} ${canEditCalendar?'':'cursor-default'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeColor.dot}`}></span>
                         {done && '✓ '}{ev.title}
                       </div>

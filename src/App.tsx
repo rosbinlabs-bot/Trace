@@ -281,6 +281,13 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   <Route path="/" element={<Navigate to="/portal" replace />} />
                   <Route path="/portal" element={<ClientGate admin={admin} email={email}><Portal /></ClientGate>} />
                   <Route path="/structure" element={<ClientGate admin={admin} email={email}><ProjectStructure /></ClientGate>} />
+                  {/* Added 2026-08-31: Monthly Plan and Calendar, scoped to the client's one tagged
+                      project via the same visibleProjects/visibleCalendarEvents context filtering
+                      used everywhere else for a client account -- gated by the same Client Portal
+                      capability as the two routes above so there's one master on/off switch for the
+                      whole client experience rather than a second, separately-configured toggle. */}
+                  <Route path="/monthlyplan" element={<ClientGate admin={admin} email={email}><MonthlyPlan /></ClientGate>} />
+                  <Route path="/calendar" element={<ClientGate admin={admin} email={email}><CalendarScreen /></ClientGate>} />
                   <Route path="*" element={<Navigate to="/portal" replace />} />
                 </>
               ) : (
