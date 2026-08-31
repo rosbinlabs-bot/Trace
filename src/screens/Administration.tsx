@@ -339,6 +339,11 @@ function UsersPanel(){
   const [clientPwTouched, setClientPwTouched] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(null);
   const [resetFor, setResetFor] = useState<any>(null); // { user, password }
+  // Set once a reset has actually gone through, so the admin gets a clear on-screen confirmation --
+  // previously the panel just silently closed on success (same as every other action here), which
+  // reads as "nothing happened" / "reset password isn't working" when there's no toast system in
+  // this app to surface a transient success message instead.
+  const [resetDone, setResetDone] = useState<any>(null); // { name, email, password } | null
   const [editingId, setEditingId] = useState<string|null>(null); // id of the user row currently being edited (Name/Email)
   const [editDraft, setEditDraft] = useState<any>({ name:'', email:'' });
   const [busy, setBusy] = useState<string|null>(null); // user id currently mid-action
@@ -413,7 +418,12 @@ function UsersPanel(){
     if(!canEditUsers) return;
     if(!resetFor || !resetFor.password || resetFor.password.length<8) { setErr('Password must be at least 8 characters.'); return; }
     setErr(''); setBusy(resetFor.user.id);
-    try { await db.resetUserPassword(resetFor.user.email, resetFor.password); logUser(`Reset password for "${resetFor.user.name}"`); setResetFor(null); }
+    try {
+      await db.resetUserPassword(resetFor.user.email, resetFor.password);
+      logUser(`Reset password for "${resetFor.user.name}"`);
+      setResetDone({ name: resetFor.user.name, email: resetFor.user.email, password: resetFor.password });
+      setResetFor(null);
+    }
     catch(e:any) { setErr(e.message || 'Could not reset that password.'); }
     setBusy(null);
   };
@@ -537,6 +547,19 @@ function UsersPanel(){
             <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
             <button onClick={doReset} disabled={busy===resetFor.user.id} className="text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{busy===resetFor.user.id?'Resetting…':'Reset Password'}</button>
             <button onClick={()=>{setResetFor(null);setErr('');}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50 whitespace-nowrap">Cancel</button>
+          </div>
+        </S.Card>
+      )}
+
+      {resetDone && (
+        <S.Card className="p-3 mb-3 border-2 border-dashed border-emerald-300 bg-emerald-50/40">
+          <div className="flex items-start gap-2">
+            <S.Icon name="checkcircle" className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"/>
+            <div className="text-xs text-slate-600 flex-1">
+              <div className="font-medium text-emerald-700 mb-0.5">Password reset for {resetDone.name}</div>
+              <div>New password: <b className="font-mono">{resetDone.password}</b> — share this with them directly. They'll be asked to set their own password the next time they sign in with it.</div>
+            </div>
+            <button onClick={()=>setResetDone(null)} className="text-xs border border-emerald-200 text-emerald-700 rounded-lg px-3 py-1.5 hover:bg-emerald-100 whitespace-nowrap">Done</button>
           </div>
         </S.Card>
       )}
