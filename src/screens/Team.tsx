@@ -4,8 +4,13 @@ import * as S from '../shared';
 // Benchmark vs actual for one Team Productivity metric — green + filled bar once the actual meets
 // or exceeds the benchmark (or, for a not-yet-benchmarked metric, once there's any actual at all),
 // amber otherwise. Kept outside Team() since it doesn't need anything from that closure.
-const MetricCell = ({ actual, benchmark, fmt }: any) => {
-  const met = benchmark>0 ? actual>=benchmark : actual>0;
+const MetricCell = ({ actual, benchmark, fmt, lowerIsBetter }: any) => {
+  // actual can be null -- no items with the relevant dates yet for this person, so there's nothing
+  // to score against the benchmark (distinct from an actual of 0, which IS a real, poor score).
+  if(actual==null) return <span className="text-xs text-slate-300">No data yet</span>;
+  // lowerIsBetter flips the comparison for a capacity-style target (e.g. "ideally two concurrent
+  // projects") where exceeding the benchmark means overloaded, not high-performing.
+  const met = lowerIsBetter ? (benchmark>0 ? actual<=benchmark : true) : (benchmark>0 ? actual>=benchmark : actual>0);
   const pct = benchmark>0 ? Math.min(100, Math.round(actual/benchmark*100)) : (actual>0?100:0);
   return (
     <div className="min-w-[92px]">
@@ -23,7 +28,7 @@ export default function Team(){
   const { admin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const { invoices } = React.useContext(S.InvoicesDataContext);
+  const { tree } = React.useContext(S.PhaseDataContext);
   // Only Admin/Super Admin can permanently remove a team member's roster entry.
   const { role } = React.useContext(S.RoleContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
@@ -72,32 +77,62 @@ export default function Team(){
   const patchMember = (name, key, val) => { setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m)); logActivity({ module:'Team Management', action:`Updated ${name}'s "${key}" to "${val}"` }); };
 
   // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
-  // teammate's Users id); every actual below is derived live from Project Master + Billing Tracker,
-  // the same way the rest of the app computes its numbers — nothing here is typed in by hand. A
-  // member is "on" a project if they appear anywhere in that project's team[] (Project Master ->
-  // Project Team, hierarchy-level based — replaces the old 4 fixed named-role fields); a Premium-tier
-  // project counts as TWO projects toward the "No. of Projects" actual (S.projectWeight), everything
-  // else counts it once.
+  // teammate's Users id); every actual below is derived live from Project Master + Phase Management,
+  // the same way the rest of the app computes its numbers — nothing here is typed in by hand.
+  // Redefined 2026-08-31 around three aspects: how reliably someone's own deliverables land on time,
+  // how many active projects they're carrying at once (ideally two), and how reliably their work
+  // clears client sign-off on time. A member is "on" a project if they appear anywhere in that
+  // project's team[] (Project Master -> Project Team, hierarchy-level based); a milestone/sub task
+  // is "theirs" if their name is in its assignees[] (Phase Management).
   const usersByName: any = {};
   (admin.users||[]).forEach((u:any)=>{ usersByName[u.name]=u; });
   const CATEGORY_TIERS = (settings.categories && settings.categories.length) ? settings.categories : S.DEFAULT_PROJECT_SETTINGS.categories;
   const projectsFor = (name:string) => projects.filter((p:any)=>name && (p.team||[]).some((t:any)=>t.name===name));
+  // Every milestone + sub task across every project, flattened once (not once per team member) --
+  // same pattern Dashboard.tsx's own tree flatten uses, memoized for the same reason (avoid
+  // rebuilding this on every Realtime event from any teammate's edit anywhere in the tenant).
+  const allItems = useMemo(() => {
+    const out: any[] = [];
+    projects.forEach((p:any) => {
+      (tree[p.id]||[]).forEach((ph:any) => {
+        (ph.milestones||[]).forEach((ms:any) => {
+          out.push(ms);
+          (ms.subtasks||[]).forEach((s:any) => out.push(s));
+        });
+      });
+    });
+    return out;
+  }, [tree, projects]);
+  const itemsAssignedTo = (name:string) => allItems.filter((it:any)=>(it.assignees||[]).includes(name));
   const productivityFor = (m:any) => {
-    const mine = projectsFor(m.name);
-    const actualProjects = mine.reduce((a:number,p:any)=>a+S.projectWeight(p, CATEGORY_TIERS), 0);
-    const colleagues = new Set();
-    mine.forEach((p:any)=>{ (p.team||[]).forEach((t:any)=>{ if(t.name && t.name!==m.name) colleagues.add(t.name); }); });
-    const actualBilling = mine.reduce((a:number,p:any)=>a+S.projInvoicedRevenue(p, invoices), 0);
-    const actualVisits = mine.length ? Math.round((mine.reduce((a:number,p:any)=>a+(Number(p.visitsMonth)||0),0)/mine.length)*10)/10 : 0;
+    // 1) On-Time Deliverable Completion — of this person's own items that are actually done (approved,
+    // with both a deadline and a completion date logged), what share finished on or before deadline.
+    const mine = itemsAssignedTo(m.name);
+    const doneWithDates = mine.filter((it:any)=>S.isApproved(it) && it.deadline && it.actualDate);
+    const onTimeCount = doneWithDates.filter((it:any)=>it.actualDate<=it.deadline).length;
+    const onTimePct = doneWithDates.length ? Math.round(onTimeCount/doneWithDates.length*100) : null;
+
+    // 2) Projects Handling at a Time — how many currently active (In Progress) projects this person is
+    // on right now, weighted the same way as everywhere else (S.projectWeight — Premium tier counts
+    // double). Ideal is 2 concurrent projects per person (DEFAULT_PRODUCTIVITY_BENCHMARK.concurrentProjects).
+    const activeProjects = projectsFor(m.name).filter((p:any)=>p.status==='In Progress');
+    const concurrentProjects = activeProjects.reduce((a:number,p:any)=>a+S.projectWeight(p, CATEGORY_TIERS), 0);
+
+    // 3) On-Time Client Sign-off — of this person's own items the client has actually signed off on
+    // (clientApprovedImpl, via the Client Portal), what share were signed off on or before deadline.
+    const signedOff = mine.filter((it:any)=>it.clientApprovedImpl && it.deadline && it.clientAcceptedDate);
+    const signedOffOnTime = signedOff.filter((it:any)=>it.clientAcceptedDate<=it.deadline).length;
+    const clientSignoffPct = signedOff.length ? Math.round(signedOffOnTime/signedOff.length*100) : null;
+
     const u = usersByName[m.name];
     const bench = { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((u && (admin.productivity||{})[u.id]) || {}) };
     return {
-      projects: { benchmark:bench.projects, actual:actualProjects },
-      teamSize: { benchmark:bench.teamSize, actual:colleagues.size },
-      billingTarget: { benchmark:bench.billingTarget, actual:actualBilling },
-      onsiteVisits: { benchmark:bench.onsiteVisits, actual:actualVisits },
+      onTimeDelivery: { benchmark:bench.onTimeDelivery, actual:onTimePct },
+      concurrentProjects: { benchmark:bench.concurrentProjects, actual:concurrentProjects },
+      onTimeClientSignoff: { benchmark:bench.onTimeClientSignoff, actual:clientSignoffPct },
     };
   };
+  const pctFmt = (v:any) => `${v}%`;
 
   return (
     <div>
@@ -260,14 +295,14 @@ export default function Team(){
               <span className="text-slate-400 text-xs w-3 inline-block">{productivityOpen?'▼':'▶'}</span>
               Team Productivity — Benchmarks vs Actuals
             </div>
-            <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — projects, team size and billing come from Project Master and Billing Tracker; a Premium-tier project counts as two projects.</div>
+            <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — on-time % is measured against each person's own assigned milestones/sub tasks in Phase Management, and current project load comes from Project Master (a Premium-tier project counts as two).</div>
           </div>
         </button>
         {productivityOpen && (
         <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-slate-50 border-b border-slate-200">
-            <tr><S.Th>Name</S.Th><S.Th>No. of Projects</S.Th><S.Th>Team Size</S.Th><S.Th>Billing Target</S.Th><S.Th>On Site Visits / Project</S.Th></tr>
+            <tr><S.Th>Name</S.Th><S.Th>On-Time Deliverable Completion</S.Th><S.Th>Projects Handling at a Time</S.Th><S.Th>On-Time Client Sign-off</S.Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {team.map(m=>{
@@ -280,15 +315,14 @@ export default function Team(){
                       <span className="font-medium text-slate-800 whitespace-nowrap">{m.name}</span>
                     </div>
                   </S.Td>
-                  <S.Td><MetricCell actual={p.projects.actual} benchmark={p.projects.benchmark}/></S.Td>
-                  <S.Td><MetricCell actual={p.teamSize.actual} benchmark={p.teamSize.benchmark}/></S.Td>
-                  <S.Td><MetricCell actual={p.billingTarget.actual} benchmark={p.billingTarget.benchmark} fmt={S.inLakh}/></S.Td>
-                  <S.Td><MetricCell actual={p.onsiteVisits.actual} benchmark={p.onsiteVisits.benchmark}/></S.Td>
+                  <S.Td><MetricCell actual={p.onTimeDelivery.actual} benchmark={p.onTimeDelivery.benchmark} fmt={pctFmt}/></S.Td>
+                  <S.Td><MetricCell actual={p.concurrentProjects.actual} benchmark={p.concurrentProjects.benchmark} lowerIsBetter/></S.Td>
+                  <S.Td><MetricCell actual={p.onTimeClientSignoff.actual} benchmark={p.onTimeClientSignoff.benchmark} fmt={pctFmt}/></S.Td>
                 </tr>
               );
             })}
             {team.length===0 && (
-              <tr><td colSpan={5} className="text-center text-sm text-slate-400 py-8">Add team members above to see productivity benchmarks.</td></tr>
+              <tr><td colSpan={4} className="text-center text-sm text-slate-400 py-8">Add team members above to see productivity benchmarks.</td></tr>
             )}
           </tbody>
         </table>

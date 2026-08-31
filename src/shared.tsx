@@ -517,15 +517,17 @@ export const DEFAULT_ADMIN_EXTRAS: any = {
 
 // Team Productivity Settings (Administration -> Team Productivity): per-teammate benchmarks, keyed
 // by their Administration -> Users record id (stable even if the person's name is later edited).
-// Missing keys/fields all default to 0 via PRODUCTIVITY_METRICS below, not undefined, so a teammate
-// with no benchmark set yet just shows "— of 0" instead of breaking the Team Management table.
+// Missing keys/fields all default via PRODUCTIVITY_METRICS below, not undefined, so a teammate with
+// no benchmark set yet just shows the default instead of breaking the Team Management table.
+// Redefined 2026-08-31 to the three aspects the user asked Team Productivity to measure instead of
+// the old No. of Projects/Team Size/Billing Target/On Site Visits set (all-time totals that didn't
+// really speak to productivity) -- see Team.tsx's productivityFor for how each actual is computed.
 export const PRODUCTIVITY_METRICS = [
-  { key:'projects',    label:'No. of Projects',            unit:'' },
-  { key:'teamSize',     label:'Team Size',                  unit:'' },
-  { key:'billingTarget', label:'Billing Target',            unit:'₹' },
-  { key:'onsiteVisits', label:'On Site Visits Per Project', unit:'' },
+  { key:'onTimeDelivery',       label:'On-Time Deliverable Completion %', unit:'' },
+  { key:'concurrentProjects',   label:'Projects Handling at a Time',      unit:'' },
+  { key:'onTimeClientSignoff',  label:'On-Time Client Sign-off %',        unit:'' },
 ];
-export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { projects:0, teamSize:0, billingTarget:0, onsiteVisits:0 };
+export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { onTimeDelivery:90, concurrentProjects:2, onTimeClientSignoff:90 };
 export const DEFAULT_ADMIN_DATA: any = {
   designationLevel: DEFAULT_DESIGNATION_LEVEL,
   designationHierarchyLevel: DEFAULT_HIERARCHY_LEVEL,
