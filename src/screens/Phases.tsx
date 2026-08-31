@@ -125,7 +125,7 @@ export default function Phases(){
   // to hear about, without spamming a notification for every junior contributor's routine edit.
   const isSeniorActor = () => S.levelNum(actor) <= 3;
   const setMsStatus = (phId, msId, val) => {
-    mutMs(phId, msId, m => S.applyStatus(m, val, 'milestone', actor));
+    mutMs(phId, msId, m => ({...S.applyStatus(m, val, 'milestone', actor), statusAlert: (val==='On Hold' && isSeniorActor()) ? {status:'On Hold', by:actor, at:new Date().toISOString()} : null}));
     const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
     if(!ph || !ms) return;
     logPhase(`Changed milestone "${ms.name}" status to "${val}"`);
@@ -144,7 +144,7 @@ export default function Phases(){
     }
   };
   const setStStatus = (phId, msId, stId, val) => {
-    mutSt(phId, msId, stId, s => S.applyStatus(s, val, 'subtask', actor));
+    mutSt(phId, msId, stId, s => ({...S.applyStatus(s, val, 'subtask', actor), statusAlert: (val==='On Hold' && isSeniorActor()) ? {status:'On Hold', by:actor, at:new Date().toISOString()} : null}));
     const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
     const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
     if(!ph || !ms || !st) return;
@@ -167,16 +167,16 @@ export default function Phases(){
   // ---- review decisions: up to L2 decides Sub Tasks, L1 decides Milestones (S.approverLevelFor) ----
   const decideMs = (ph, ms, decision) => {
     mutMs(ph.id, ms.id, m => decision==='Approved'
-      ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO, reviewSince:''})
-      : ({...m, status:'In Progress', review:'', approved:false, reviewSince:''}));
+      ? ({...m, status:'Completed', review:'', approved:true, actualDate:m.actualDate||S.TODAY_ISO, reviewSince:'', statusAlert:null})
+      : ({...m, status:'In Progress', review:'', approved:false, reviewSince:'', statusAlert: isSeniorActor() ? {status:decision, by:actor, at:new Date().toISOString()} : null}));
     logPhase(`${decision==='Approved'?'Approved':'Sent back'} milestone "${ms.name}"`);
     if(decision==='Approved') notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Milestone Completed',
       message:`Milestone "${ms.name}" in phase "${ph.name}" was approved as Completed by ${actor}.` });
   };
   const decideSt = (phId, msId, stId, decision) => {
     mutSt(phId, msId, stId, s => decision==='Approved'
-      ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:''})
-      : ({...s, status:'In Progress', review:'', approved:false, reviewSince:''}));
+      ? ({...s, status:'Completed', review:'', approved:true, actualDate:s.actualDate||S.TODAY_ISO, reviewSince:'', statusAlert:null})
+      : ({...s, status:'In Progress', review:'', approved:false, reviewSince:'', statusAlert: isSeniorActor() ? {status:decision, by:actor, at:new Date().toISOString()} : null}));
     const ph = phases.find(p=>p.id===phId); const ms = ph && ph.milestones.find(m=>m.id===msId);
     const st = ms && (ms.subtasks||[]).find(s=>s.id===stId);
     if(st) logPhase(`${decision==='Approved'?'Approved':'Sent back'} sub task "${st.name}"`);
@@ -266,7 +266,8 @@ export default function Phases(){
   const toggleHold = (phId) => {
     if(readOnly) return;
     const ph = phases.find(p=>p.id===phId);
-    mutPhase(phId, x => ({...x, onHold:!x.onHold}));
+    const goingOnHold = !!(ph && !ph.onHold);
+    mutPhase(phId, x => ({...x, onHold:!x.onHold, statusAlert: (goingOnHold && isSeniorActor()) ? {status:'On Hold', by:actor, at:new Date().toISOString()} : null}));
     if(ph) logPhase(`Changed phase "${ph.name}" status to "${ph.onHold ? 'In Progress' : 'On Hold'}"`);
     if(ph && isSeniorActor()){
       notifyProject({ level:'phase', itemName:ph.name, phaseName:ph.name, phaseId:ph.id, type:'Status Update', priority:'normal',
@@ -290,6 +291,26 @@ export default function Phases(){
     if(level==='milestone' && !S.subtasksReady(ms)) opts = opts.filter(o=>o!=='Completed');
     return opts;
   };
+
+  // Reporting-officer status-change alert: a blinking triangle shown on a Phase/Milestone/Sub Task
+  // whenever an L1/L2/L3 member puts it On Hold, or sends it back as Rework/Rejected during review
+  // -- the rest of the team needs a persistent, at-a-glance cue that something needs attention, not
+  // just a one-off notification-bell entry they may have missed. Stored as item.statusAlert
+  // ({status, by, at} | null) directly on the phase/milestone/sub task object, so it rides along in
+  // the same phase_trees jsonb blob as everything else here -- no schema change needed. It auto-
+  // clears the moment that item's status changes again by anyone (every status-setting function
+  // below either re-sets it or explicitly nulls it out), or can be dismissed early by clicking it.
+  const StatusAlertIcon = ({item, onClear}: any) => {
+    if(!item.statusAlert) return null;
+    return (
+      <span onClick={e=>{e.stopPropagation(); onClear();}} title={`Reporting officer changed status to "${item.statusAlert.status}" — click to dismiss`} className="text-red-500 hover:text-red-600 animate-pulse cursor-pointer shrink-0 inline-flex">
+        <S.Icon name="alert" className="w-3.5 h-3.5"/>
+      </span>
+    );
+  };
+  const clearPhaseAlert = (phId) => mutPhase(phId, x => ({...x, statusAlert:null}));
+  const clearMsAlert = (phId, msId) => mutMs(phId, msId, m => ({...m, statusAlert:null}));
+  const clearStAlert = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, statusAlert:null}));
 
   // Reusable status control for a milestone/sub task row
   const StatusControl = ({item, onChange, level, ms}: any) => {
@@ -493,6 +514,7 @@ export default function Phases(){
                   <span className="flex items-center gap-1.5">
                     <span className={`block text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}>{ph.name || 'Untitled phase'}</span>
                     {ph.onHold && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor('On Hold')}`}></span>}
+                    <StatusAlertIcon item={ph} onClear={()=>clearPhaseAlert(ph.id)}/>
                   </span>
                   <span className="block text-[11px] text-slate-400 truncate mt-0.5">{msDone}/{ph.milestones.length} milestones done{ph.onHold?' · on hold':''}</span>
                   <span className="block h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
@@ -526,7 +548,7 @@ export default function Phases(){
                 return (
                   <button key={ms.id} onClick={()=>setSelectedMsId(ms.id)}
                     className={`w-full text-left px-3 py-2.5 rounded-xl border-l-[3px] border ${isSel?'border-l-brand-500 border-brand-200 bg-brand-50':`border-l-transparent border-slate-200 hover:bg-slate-50`} ${msOverdue?'bg-red-50/40':''}`}>
-                    <div className={`text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}>{ms.name || 'Untitled milestone'}</div>
+                    <div className={`flex items-center gap-1.5 text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}><span className="truncate">{ms.name || 'Untitled milestone'}</span><StatusAlertIcon item={ms} onClear={()=>clearMsAlert(selPhase.id,ms.id)}/></div>
                     <div className="flex items-center justify-between gap-2 mt-1">
                       <span className={`text-[11px] whitespace-nowrap inline-flex items-center gap-1 ${msOverdue?'text-red-500 font-medium':'text-slate-400'}`}>{msOverdue && <S.Icon name="alert" className="w-3 h-3"/>}{msOverdue?'overdue':`due ${ms.deadline||'—'}`}</span>
                       <S.Badge cls={S.statusColor(msStatus)}>{msStatus}</S.Badge>
@@ -593,6 +615,7 @@ export default function Phases(){
                   {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=readOnly||(stLock&&actor!=='L1'); const overdue=S.isOverdue(s); return (
                     <div key={s.id} id={`st-${s.id}`} className={`flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
+                      <StatusAlertIcon item={s} onClear={()=>clearStAlert(ph.id,ms.id,s.id)}/>
                       {/* Opens the full detail modal — view everything, download/upload attachments,
                           add remarks — without disturbing the quick inline fields alongside it. */}
                       <button onClick={()=>setDetailStIds({phId:ph.id, msId:ms.id, stId:s.id})} title="View details" aria-label={`View details for ${s.name || 'sub task'}`} className="text-slate-300 hover:text-brand-600 shrink-0">
@@ -703,7 +726,10 @@ export default function Phases(){
                 <div className="text-[11px] text-slate-400">{ph.name} → {ms.name}</div>
                 <button className="text-slate-400 hover:text-slate-600" onClick={()=>setDetailStIds(null)}>✕</button>
               </div>
-              <input className={inpFor('subtask')+" font-medium text-sm w-full mb-3"+(overdue?" border-red-300":"")} value={s.name} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
+              <div className="flex items-center gap-1.5 mb-3">
+                <input className={inpFor('subtask')+" font-medium text-sm flex-1"+(overdue?" border-red-300":"")} value={s.name} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
+                <StatusAlertIcon item={s} onClear={()=>clearStAlert(ph.id,ms.id,s.id)}/>
+              </div>
 
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="flex flex-col gap-1">
