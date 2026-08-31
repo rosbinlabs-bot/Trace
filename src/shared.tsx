@@ -536,6 +536,39 @@ export const PRODUCTIVITY_METRICS = [
   { key:'onTimeClientSignoff',  label:'On-Time Client Sign-off %',        unit:'' },
 ];
 export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { onTimeDelivery:90, concurrentProjects:2, onTimeClientSignoff:90 };
+// Live team roster (Team Management) -- derived entirely from Administration -> Users + real project
+// assignments, not a separately-maintained list. Replaces the old manually-added `team` Supabase table:
+// previously a person could exist in Administration -> Users but be invisible to Project Master's team
+// picker, Calendar's assignee roster, Dashboard's utilization KPIs and every Team Report until someone
+// remembered to click "Add Team Member" here too. Every non-Client user is now automatically "on the
+// team" -- add/remove happens in Administration -> Users, nowhere else.
+// Utilization/Availability are computed live (same weighted-concurrent-project logic Team.tsx's
+// productivityFor already used for "Projects Handling at a Time"), expressed as a percentage of each
+// person's own Team Productivity ideal (Administration -> Team Productivity, default 2 concurrent
+// projects) instead of hand-typed numbers. Department and Weekly Capacity aren't derivable from
+// project data, so they stay editable -- now stored on the Users record itself (see UsersPanel in
+// Administration.tsx) rather than duplicated in a second table.
+export const computeTeamRoster = (admin: any, projects: any[], tree: any, categories: any[]): any[] => {
+  return (admin?.users || []).filter((u: any) => u.type !== 'Client').map((u: any) => {
+    const activeProjects = (projects || []).filter((p: any) => p.status === 'In Progress' && (p.team || []).some((t: any) => t.name === u.name));
+    const concurrentProjects = activeProjects.reduce((a: number, p: any) => a + projectWeight(p, categories), 0);
+    const bench = { ...DEFAULT_PRODUCTIVITY_BENCHMARK, ...((admin.productivity || {})[u.id] || {}) };
+    const ideal = bench.concurrentProjects || DEFAULT_PRODUCTIVITY_BENCHMARK.concurrentProjects;
+    const util = ideal > 0 ? Math.min(150, Math.round((concurrentProjects / ideal) * 100)) : (concurrentProjects > 0 ? 100 : 0);
+    const avail = Math.max(0, 100 - util);
+    return {
+      id: u.id,
+      name: u.name,
+      role: u.designation || '',
+      dept: u.dept || '',
+      capacity: u.capacity || '40h/wk',
+      level: u.level || designationHierarchyLevel(u.designation, admin) || '',
+      util,
+      avail: avail + '%',
+      activeProjectCount: activeProjects.length,
+    };
+  });
+};
 export const DEFAULT_ADMIN_DATA: any = {
   designations: DEFAULT_DESIGNATIONS,
   designationLevel: DEFAULT_DESIGNATION_LEVEL,

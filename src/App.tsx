@@ -925,6 +925,37 @@ export default function App() {
   const isProjectScoped = role !== 'admin';
   const visibleProjectNames = new Set(visibleProjects.map((p: any) => p.name));
   const visibleProjectIds = new Set(visibleProjects.map((p: any) => p.id));
+  // Team Management restructure (2026-08-31): `team` is now computed live from Administration ->
+  // Users + real project assignments (S.computeTeamRoster) instead of a manually-maintained roster --
+  // see shared.tsx for why. Kept the same {name, role, dept, util, avail, capacity} shape on purpose
+  // so Dashboard/Calendar/Project Master/Reports, which all read `team` via TeamDataContext, needed no
+  // changes at all. The legacy `team` Supabase table (teamState/setTeam above) keeps loading and
+  // syncing in the background purely so the one-time migration effect below can read it -- nothing
+  // else consumes it anymore, and it's safe to leave dormant rather than drop it.
+  const CATEGORY_TIERS = (settings.categories && settings.categories.length) ? settings.categories : S.DEFAULT_PROJECT_SETTINGS.categories;
+  const liveTeam = React.useMemo(
+    () => S.computeTeamRoster(admin, visibleProjects, phaseTree, CATEGORY_TIERS),
+    [admin, visibleProjects, phaseTree, settings.categories]
+  );
+  // One-time backfill: copy Department/Weekly Capacity off any legacy `team` row onto the matching
+  // Administration -> Users record (by name) if that user doesn't have them yet, so nothing typed into
+  // the old Team Management roster is lost now that Users is the single source for those two fields.
+  // Guarded to run once per session and to never overwrite a value someone has already set on Users.
+  const migratedTeamFieldsRef = React.useRef(false);
+  React.useEffect(() => {
+    if (migratedTeamFieldsRef.current || loading) return;
+    migratedTeamFieldsRef.current = true;
+    if (!team.length || !admin.users?.length) return;
+    const legacyByName: any = {};
+    team.forEach((t: any) => { legacyByName[t.name] = t; });
+    const needsPatch = admin.users.some((u: any) => legacyByName[u.name] && (u.dept == null || u.capacity == null));
+    if (!needsPatch) return;
+    patchAdmin('users', (us: any[]) => us.map((u: any) => {
+      const t = legacyByName[u.name];
+      if (!t) return u;
+      return { ...u, dept: u.dept ?? (t.dept || ''), capacity: u.capacity ?? (t.capacity || '40h/wk') };
+    }));
+  }, [loading, team, admin.users]);
   // Same reasoning, for the header's notification bell (S.NotificationBell reads PhaseDataContext
   // regardless of role, and it's rendered in Shell for every account) -- without this, a client would
   // see activity/approval notifications from every OTHER project in the tenant too. Non-Admin staff get
@@ -966,7 +997,7 @@ export default function App() {
       <S.AdminDataContext.Provider value={{ admin, patchAdmin }}>
         <S.SettingsContext.Provider value={{ settings, setSettings }}>
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
-            <S.TeamDataContext.Provider value={{ team, setTeam }}>
+            <S.TeamDataContext.Provider value={{ team: liveTeam, setTeam: () => {} }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
                 <S.GovernanceDataContext.Provider value={{ risks: visibleRisks, setRisks, issues: visibleIssues, setIssues, changes, setChanges }}>
                   <S.CalendarDataContext.Provider value={{ events: visibleCalendarEvents, setEvents: setCalendarEvents }}>

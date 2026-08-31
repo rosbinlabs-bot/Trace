@@ -313,8 +313,14 @@ const defaultPasswordFor = (name: string) => {
 function UsersPanel(){
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
+  const { settings } = React.useContext(S.SettingsContext);
   const { email } = React.useContext(S.CurrentUserContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
+  // Department Master is the single source of truth for department names (same list Project
+  // Settings -> Masters -> Department Master edits) -- if a teammate already has a dept value from
+  // before this list existed, or one outside the master list, it's kept as a selectable option too.
+  const DEPT_OPTS = (settings.departments && settings.departments.length) ? settings.departments : S.DEFAULT_PROJECT_SETTINGS.departments;
+  const deptOptsFor = (current: string) => (current && !DEPT_OPTS.includes(current)) ? [...DEPT_OPTS, current] : DEPT_OPTS;
   const logUser = (action: string) => logActivity({ module:'Administration', action });
   // Derived from the actual Administration capability (configurable in Roles & Permissions), not a
   // hardcoded role==='admin' shortcut -- by default Admin permission level is 'View' on Administration
@@ -332,7 +338,7 @@ function UsersPanel(){
   // Client) -> 'teammate' or 'client' (the actual form). Teammate keeps the original single-step
   // form/behavior untouched; Client is new (see addClient below).
   const [addMode, setAddMode] = useState<null|'menu'|'teammate'|'client'>(null);
-  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') });
+  const [draft, setDraft] = useState<any>({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], dept:'', capacity:'40h/wk', password: defaultPasswordFor('') });
   const [levelTouched, setLevelTouched] = useState(false); // true once the admin manually picks a level, so we stop re-defaulting it as the designation changes
   const [pwTouched, setPwTouched] = useState(false); // true once the admin manually edits the password field, so we stop overwriting it as the name changes
   const [clientDraft, setClientDraft] = useState<any>({ name:'', email:'', projectId:'', password: defaultPasswordFor('') });
@@ -361,9 +367,9 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, draft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', status:'Active', joined: S.TODAY_ISO, password: draft.password }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', dept:draft.dept||'', capacity:draft.capacity||'40h/wk', status:'Active', joined: S.TODAY_ISO, password: draft.password }]);
       logUser(`Added teammate "${name}" (${email}, ${draft.designation})`);
-      setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
+      setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], dept:'', capacity:'40h/wk', password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
     setBusy(null);
   };
@@ -388,6 +394,11 @@ function UsersPanel(){
   };
   const setDesignation = (id, designation) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,designation}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`Changed ${u?.name||id}'s designation to "${designation}"`); };
   const setHierarchyLevel = (id, level) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,level}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`Changed ${u?.name||id}'s hierarchy level to "${level}"`); };
+  // Department and Weekly Capacity -- moved here from the old Team Management roster (see
+  // S.computeTeamRoster) so a person's identity/attributes live in exactly one place; edited inline
+  // in the Team table below, same onBlur pattern Team Management's own inline fields already used.
+  const setDept = (id, dept) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,dept}:u)); };
+  const setCapacity = (id, capacity) => { if(!canEditUsers) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,capacity}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`Updated ${u?.name||id}'s weekly capacity to "${capacity}"`); };
   // '' clears the override (back to the standard designation -> level mapping); any PERMISSION_LEVELS
   // value pins that account to that level regardless of designation.
   const setPermissionOverride = (id, level) => { if(!iAmSuperAdmin) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,permissionOverride:level||null}:u)); const u=admin.users.find((x:any)=>x.id===id); logUser(`${level?`Set custom permission override "${level}"`:'Cleared custom permission override'} for ${u?.name||id}`); };
@@ -479,7 +490,7 @@ function UsersPanel(){
             <div className="text-xs font-medium text-slate-600 inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5 text-brand-500"/> Add Teammate</div>
             <button onClick={()=>setAddMode('menu')} className="text-[11px] text-slate-400 hover:text-slate-600">Change type</button>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-6 gap-2 items-end">
+          <div className="grid grid-cols-1 sm:grid-cols-4 lg:grid-cols-8 gap-2 items-end">
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
               <input autoComplete="off" value={draft.name} onChange={e=>setDraftName(e.target.value)} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Email</label>
@@ -492,6 +503,13 @@ function UsersPanel(){
               <select value={draft.level} onChange={e=>{setLevelTouched(true); setDraft(d=>({...d,level:e.target.value}));}} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.HIERARCHY_LEVELS.map(l=><option key={l}>{l}</option>)}
               </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Department</label>
+              <select value={draft.dept} onChange={e=>setDraft(d=>({...d,dept:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">— Select —</option>
+                {deptOptsFor(draft.dept).map(d=><option key={d} value={d}>{d}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Weekly Capacity</label>
+              <input value={draft.capacity} onChange={e=>setDraft(d=>({...d,capacity:e.target.value}))} placeholder="e.g. 40h/wk" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
                 <input autoComplete="new-password" value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
@@ -637,7 +655,7 @@ function UsersPanel(){
           <S.Card className="overflow-hidden mb-6">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Department</S.Th><S.Th>Weekly Capacity</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {teamUsers.map((u:any)=>{
@@ -673,6 +691,19 @@ function UsersPanel(){
                         </select>
                       ) : <S.Badge cls="bg-violet-50 text-violet-700">{u.level||'—'}</S.Badge>}
                     </S.Td>
+                    <S.Td>
+                      {canEditUsers ? (
+                        <select value={u.dept||''} onChange={e=>setDept(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                          <option value="">— Select —</option>
+                          {deptOptsFor(u.dept).map(d=><option key={d} value={d}>{d}</option>)}
+                        </select>
+                      ) : (u.dept || '—')}
+                    </S.Td>
+                    <S.Td>
+                      {canEditUsers ? (
+                        <input defaultValue={u.capacity||'40h/wk'} placeholder="e.g. 40h/wk" onBlur={e=>setCapacity(u.id, e.target.value)} className="w-20 border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                      ) : (u.capacity || '—')}
+                    </S.Td>
                     <S.Td>{StatusCell({u})}</S.Td>
                     <S.Td className="text-slate-400 whitespace-nowrap">{u.joined}</S.Td>
                     <S.Td>{ActionsCell({u})}</S.Td>
@@ -680,7 +711,7 @@ function UsersPanel(){
                   );
                 })}
                 {teamUsers.length===0 && (
-                  <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
+                  <tr><td colSpan={11} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
                 )}
               </tbody>
             </table>

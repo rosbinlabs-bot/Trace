@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import * as S from '../shared';
 
 // Benchmark vs actual for one Team Productivity metric — green + filled bar once the actual meets
@@ -23,74 +24,77 @@ const MetricCell = ({ actual, benchmark, fmt, lowerIsBetter }: any) => {
   );
 };
 
+const UTIL_BAND = (u:number) => u>90?'overloaded':u>75?'busy':'healthy';
+const utilBarColor = (u:number) => u>90?'bg-red-500':u>75?'bg-amber-500':'bg-emerald-500';
+const initials = (name:string) => (name||'').split(' ').map(x=>x[0]).join('');
+
 export default function Team(){
-  const { team, setTeam } = React.useContext(S.TeamDataContext);
-  const { admin } = React.useContext(S.AdminDataContext);
+  // Team is now a live, computed roster (S.computeTeamRoster in shared.tsx) -- every non-Client
+  // Administration -> Users record, decorated with utilization/availability derived from real active
+  // project assignments. There's no add/remove step here any more: membership follows Users
+  // automatically, which is also what fixed the old gap where a person added in Users but never
+  // manually added here was invisible to Project Master's team picker, Calendar's roster and every
+  // Team Report. Add/remove/deactivate a person from Administration -> Users; Department and Weekly
+  // Capacity (the two fields that live on the person, not derivable from project data) are still
+  // editable right here, they just write through to that same Users record now.
+  const { team } = React.useContext(S.TeamDataContext);
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { tree } = React.useContext(S.PhaseDataContext);
-  // Only Admin/Super Admin can permanently remove a team member's roster entry.
   const { role } = React.useContext(S.RoleContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
-  const canDelete = role==='admin';
+  const canEdit = role==='admin';
   // Department Master (Administration -> Project Settings -> Masters -> Department Master) is the
-  // single source of truth for department names now, so two people can't add the same department
-  // spelled two different ways ("Delivery" vs "delivery"). If a member already has a dept value from
-  // before this list existed, or one outside the master list, it's kept as a selectable option too
-  // rather than silently dropped.
+  // single source of truth for department names, same list Administration -> Users' own Department
+  // column now uses.
   const DEPT_OPTS = (settings.departments && settings.departments.length) ? settings.departments : S.DEFAULT_PROJECT_SETTINGS.departments;
-  const deptOptsFor = (current) => (current && !DEPT_OPTS.includes(current)) ? [...DEPT_OPTS, current] : DEPT_OPTS;
-  // List view is the default per product decision — grid stays available as a toggle.
-  const [view, setView] = useState('list');
-  const [adding, setAdding] = useState(false);
-  const blankDraft: any = { name:'', role:'', dept:'', util:0, avail:'', capacity:'40h/wk' };
-  const [draft, setDraft] = useState<any>(blankDraft);
-  const [confirmRemove, setConfirmRemove] = useState(null);
+  const deptOptsFor = (current:string) => (current && !DEPT_OPTS.includes(current)) ? [...DEPT_OPTS, current] : DEPT_OPTS;
+
+  const [tab, setTab] = useState<'roster'|'orgchart'|'capacity'>('roster');
   const [productivityOpen, setProductivityOpen] = useState(false);
-  const avgUtil = team.length ? Math.round(team.reduce((a,m)=>a+m.util,0)/team.length) : 0;
-  const avgAvail = team.length ? Math.round(team.reduce((a,m)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
-  const overloaded = team.filter(m=>m.util>90);
-  const deptGroups: any = {};
-  team.forEach(m=>{ (deptGroups[m.dept]=deptGroups[m.dept]||[]).push(m); });
-  const depts = Object.entries(deptGroups).sort((a:any,b:any)=>b[1].length-a[1].length);
-  const initials = (name) => name.split(' ').map(x=>x[0]).join('');
-  const utilBarColor = (u) => u>90?'bg-red-500':u>75?'bg-amber-500':'bg-emerald-500';
 
-  // Pick from the people already added in Administration -> Users, instead of retyping a name —
-  // selecting one pre-fills their designation as a starting Role; everything else (department,
-  // utilization, availability, capacity) is left blank/default and can be edited inline in the
-  // table right after adding.
-  const availableUsers = (admin.users||[]).filter((u:any) => u.type!=='Client' && !team.some(m=>m.name===u.name));
-  const pickUser = (name) => {
-    const u = availableUsers.find((x:any)=>x.name===name);
-    setDraft(d => ({ ...d, name: name||'', role: u ? u.designation : d.role }));
-  };
+  // Search & filters -- new, since the roster is no longer a short hand-picked list; it's everyone.
+  const [q, setQ] = useState('');
+  const [fDept, setFDept] = useState('');
+  const [fRole, setFRole] = useState('');
+  const [fLevel, setFLevel] = useState('');
+  const [fBand, setFBand] = useState('');
+  const roleOpts = useMemo(() => Array.from(new Set(team.map((m:any)=>m.role).filter(Boolean))).sort(), [team]);
+  const deptOptsPresent = useMemo(() => Array.from(new Set(team.map((m:any)=>m.dept).filter(Boolean))).sort(), [team]);
+  const levelOpts = useMemo(() => S.HIERARCHY_LEVELS.filter(l=>team.some((m:any)=>m.level===l)), [team]);
+  const filteredTeam = useMemo(() => team.filter((m:any) => {
+    if(q && !m.name.toLowerCase().includes(q.toLowerCase())) return false;
+    if(fDept && m.dept!==fDept) return false;
+    if(fRole && m.role!==fRole) return false;
+    if(fLevel && m.level!==fLevel) return false;
+    if(fBand && UTIL_BAND(m.util)!==fBand) return false;
+    return true;
+  }), [team, q, fDept, fRole, fLevel, fBand]);
+  const filtersActive = !!(q || fDept || fRole || fLevel || fBand);
+  const clearFilters = () => { setQ(''); setFDept(''); setFRole(''); setFLevel(''); setFBand(''); };
 
-  const addMember = () => {
-    const name = draft.name.trim();
-    if(!name || team.some(m=>m.name.toLowerCase()===name.toLowerCase())) return;
-    setTeam(ts => [...ts, { ...draft, name, util:Number(draft.util)||0 }]);
-    logActivity({ module:'Team Management', action:`Added team member "${name}"` });
-    setDraft(blankDraft); setAdding(false);
-  };
-  const removeMember = (name) => { if(!canDelete) return; setTeam(ts => ts.filter(m=>m.name!==name)); logActivity({ module:'Team Management', action:`Removed team member "${name}"` }); setConfirmRemove(null); };
-  const patchMember = (name, key, val) => { setTeam(ts => ts.map(m => m.name===name ? { ...m, [key]: key==='util' ? (Number(val)||0) : val } : m)); logActivity({ module:'Team Management', action:`Updated ${name}'s "${key}" to "${val}"` }); };
+  const avgUtil = team.length ? Math.round(team.reduce((a:number,m:any)=>a+m.util,0)/team.length) : 0;
+  const avgAvail = team.length ? Math.round(team.reduce((a:number,m:any)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
+  const overloaded = team.filter((m:any)=>m.util>90);
+
+  const setDept = (id:string, dept:string) => { if(!canEdit) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,dept}:u)); const m=team.find((x:any)=>x.id===id); logActivity({ module:'Team Management', action:`Updated ${m?.name||id}'s department to "${dept}"` }); };
+  const setCapacity = (id:string, capacity:string) => { if(!canEdit) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,capacity}:u)); const m=team.find((x:any)=>x.id===id); logActivity({ module:'Team Management', action:`Updated ${m?.name||id}'s weekly capacity to "${capacity}"` }); };
 
   // Team Productivity — benchmarks come from Administration -> Team Productivity (keyed by the
-  // teammate's Users id); every actual below is derived live from Project Master + Phase Management,
-  // the same way the rest of the app computes its numbers — nothing here is typed in by hand.
-  // Redefined 2026-08-31 around three aspects: how reliably someone's own deliverables land on time,
-  // how many active projects they're carrying at once (ideally two), and how reliably their work
-  // clears client sign-off on time. A member is "on" a project if they appear anywhere in that
-  // project's team[] (Project Master -> Project Team, hierarchy-level based); a milestone/sub task
-  // is "theirs" if their name is in its assignees[] (Phase Management).
-  const usersByName: any = {};
-  (admin.users||[]).forEach((u:any)=>{ usersByName[u.name]=u; });
+  // teammate's Users id, which every team[] entry now carries directly); every actual below is
+  // derived live from Project Master + Phase Management, the same way the rest of the app computes
+  // its numbers — nothing here is typed in by hand. Three aspects: how reliably someone's own
+  // deliverables land on time, how many active projects they're carrying at once (ideally two), and
+  // how reliably their work clears client sign-off on time. A member is "on" a project if they appear
+  // anywhere in that project's team[] (Project Master -> Project Team); a milestone/sub task is
+  // "theirs" if their name is in its assignees[] (Phase Management).
   const CATEGORY_TIERS = (settings.categories && settings.categories.length) ? settings.categories : S.DEFAULT_PROJECT_SETTINGS.categories;
   const projectsFor = (name:string) => projects.filter((p:any)=>name && (p.team||[]).some((t:any)=>t.name===name));
   // Every milestone + sub task across every project, flattened once (not once per team member) --
   // same pattern Dashboard.tsx's own tree flatten uses, memoized for the same reason (avoid
-  // rebuilding this on every Realtime event from any teammate's edit anywhere in the tenant).
+  // rebuilding this on every Realtime event from any teammate's edit anywhere in the tenant). Also
+  // the basis for the Capacity Planning forecast below.
   const allItems = useMemo(() => {
     const out: any[] = [];
     projects.forEach((p:any) => {
@@ -111,21 +115,14 @@ export default function Team(){
     const doneWithDates = mine.filter((it:any)=>S.isApproved(it) && it.deadline && it.actualDate);
     const onTimeCount = doneWithDates.filter((it:any)=>it.actualDate<=it.deadline).length;
     const onTimePct = doneWithDates.length ? Math.round(onTimeCount/doneWithDates.length*100) : null;
-
-    // 2) Projects Handling at a Time — how many currently active (In Progress) projects this person is
-    // on right now, weighted the same way as everywhere else (S.projectWeight — Premium tier counts
-    // double). Ideal is 2 concurrent projects per person (DEFAULT_PRODUCTIVITY_BENCHMARK.concurrentProjects).
-    const activeProjects = projectsFor(m.name).filter((p:any)=>p.status==='In Progress');
-    const concurrentProjects = activeProjects.reduce((a:number,p:any)=>a+S.projectWeight(p, CATEGORY_TIERS), 0);
-
+    // 2) Projects Handling at a Time — current active-project count, already computed live in `team`.
+    const concurrentProjects = m.activeProjectCount;
     // 3) On-Time Client Sign-off — of this person's own items the client has actually signed off on
     // (clientApprovedImpl, via the Client Portal), what share were signed off on or before deadline.
     const signedOff = mine.filter((it:any)=>it.clientApprovedImpl && it.deadline && it.clientAcceptedDate);
     const signedOffOnTime = signedOff.filter((it:any)=>it.clientAcceptedDate<=it.deadline).length;
     const clientSignoffPct = signedOff.length ? Math.round(signedOffOnTime/signedOff.length*100) : null;
-
-    const u = usersByName[m.name];
-    const bench = { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((u && (admin.productivity||{})[u.id]) || {}) };
+    const bench = { ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((m.id && (admin.productivity||{})[m.id]) || {}) };
     return {
       onTimeDelivery: { benchmark:bench.onTimeDelivery, actual:onTimePct },
       concurrentProjects: { benchmark:bench.concurrentProjects, actual:concurrentProjects },
@@ -134,159 +131,202 @@ export default function Team(){
   };
   const pctFmt = (v:any) => `${v}%`;
 
+  // Capacity Planning — forward-looking load per person for the next 6 weeks, built from each
+  // person's own open (not-yet-approved) assigned milestones/sub tasks, bucketed by which week their
+  // deadline falls in. Genuinely new: unlike the old single-number "headroom" report, this shows
+  // *when* someone gets stretched, not just how stretched they are right now.
+  const WEEKS = 6;
+  const weeks = useMemo(() => Array.from({length:WEEKS}, (_,i) => ({
+    start: S.addDays(S.TODAY_ISO, i*7),
+    end: S.addDays(S.TODAY_ISO, i*7+6),
+  })), []);
+  const loadFor = (name:string, weekIdx:number) => {
+    const w = weeks[weekIdx];
+    return itemsAssignedTo(name).filter((it:any)=>!S.isApproved(it) && it.deadline && it.deadline>=w.start && it.deadline<=w.end).length;
+  };
+  const loadCellCls = (n:number) => n===0?'bg-slate-50 text-slate-300':n<=2?'bg-amber-100 text-amber-700':'bg-red-100 text-red-700';
+
   return (
     <div>
       <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
         <S.SectionTitle sub="Consultants, associates, managers, partners — roles, utilization & capacity">Team Management</S.SectionTitle>
         <div className="flex items-center gap-2 shrink-0">
-          <button onClick={()=>setAdding(a=>!a)} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add Team Member</button>
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
-            <button onClick={()=>setView('list')} title="List view" className={`px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${view==='list'?'bg-white text-brand-700 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
-              <S.Icon name="list" className="w-3.5 h-3.5"/> List
+            <button onClick={()=>setTab('roster')} title="Roster" className={`px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${tab==='roster'?'bg-white text-brand-700 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+              <S.Icon name="list" className="w-3.5 h-3.5"/> Roster
             </button>
-            <button onClick={()=>setView('grid')} title="Grid view" className={`px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${view==='grid'?'bg-white text-brand-700 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
-              <S.Icon name="grid" className="w-3.5 h-3.5"/> Grid
+            <button onClick={()=>setTab('orgchart')} title="Org Chart" className={`px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${tab==='orgchart'?'bg-white text-brand-700 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+              <S.Icon name="grid" className="w-3.5 h-3.5"/> Org Chart
+            </button>
+            <button onClick={()=>setTab('capacity')} title="Capacity Planning" className={`px-2.5 py-1.5 rounded-md flex items-center gap-1.5 text-xs font-medium transition-colors ${tab==='capacity'?'bg-white text-brand-700 shadow-sm':'text-slate-500 hover:text-slate-700'}`}>
+              <S.Icon name="calendar" className="w-3.5 h-3.5"/> Capacity Planning
             </button>
           </div>
         </div>
       </div>
+      <div className="text-xs text-slate-400 mb-3">Everyone here is a teammate in <Link to="/admin" className="text-brand-600 hover:text-brand-700">Administration → Users</Link> — add, remove or deactivate someone there and it's reflected here automatically.</div>
 
-      {adding && (
-        <S.Card className="p-3 mb-4 border-2 border-dashed border-brand-300 bg-brand-50/30">
-          <div className="text-xs text-slate-500 mb-2">Pick someone already added in Administration → Users. Their designation fills in as a starting Role — department, utilization, availability and capacity can be filled in afterwards, right in the table below.</div>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 items-end">
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Name</label>
-              {availableUsers.length>0 ? (
-                <select value={draft.name} onChange={e=>pickUser(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-                  <option value="">— Select —</option>
-                  {availableUsers.map((u:any)=><option key={u.id} value={u.name}>{u.name} · {u.designation}</option>)}
-                </select>
-              ) : (
-                <input value={draft.name} onChange={e=>setDraft(d=>({...d,name:e.target.value}))} placeholder="Full name" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-              )}
-            </div>
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Role</label>
-              <input value={draft.role} onChange={e=>setDraft(d=>({...d,role:e.target.value}))} placeholder="e.g. Project Manager" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Department</label>
-              <select value={draft.dept} onChange={e=>setDraft(d=>({...d,dept:e.target.value}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
-                <option value="">— Select —</option>
-                {deptOptsFor(draft.dept).map(d=><option key={d} value={d}>{d}</option>)}
-              </select></div>
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Utilization %</label>
-              <input type="text" inputMode="numeric" pattern="[0-9]*" value={draft.util} onChange={e=>setDraft(d=>({...d,util:e.target.value.replace(/[^0-9]/g,'')}))} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Availability</label>
-              <input value={draft.avail} onChange={e=>setDraft(d=>({...d,avail:e.target.value}))} placeholder="e.g. 30%" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Capacity</label>
-              <input value={draft.capacity} onChange={e=>setDraft(d=>({...d,capacity:e.target.value}))} placeholder="e.g. 40h/wk" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
-          </div>
-          <div className="flex gap-1.5 mt-2">
-            <button onClick={addMember} disabled={!draft.name.trim()} className="text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-40 text-white rounded-lg px-3 py-2">Add</button>
-            <button onClick={()=>{setAdding(false);setDraft(blankDraft);}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50">Cancel</button>
-            {availableUsers.length>1 && (
-              <button onClick={()=>{ setTeam(ts => [...ts, ...availableUsers.map((u:any)=>({ name:u.name, role:u.designation, dept:'', util:0, avail:'', capacity:'40h/wk' }))]); logActivity({ module:'Team Management', action:`Added all ${availableUsers.length} remaining users to the team` }); setAdding(false); setDraft(blankDraft); }}
-                className="text-xs border border-brand-300 text-brand-700 rounded-lg px-3 py-2 hover:bg-brand-50 ml-auto">Add all {availableUsers.length} remaining users</button>
-            )}
-          </div>
-        </S.Card>
-      )}
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 mt-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Team Size</div><div className="text-2xl font-bold text-slate-800 mt-1">{team.length}</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Avg Utilization</div><div className="text-2xl font-bold text-blue-600 mt-1">{avgUtil}%</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Avg Availability</div><div className="text-2xl font-bold text-emerald-600 mt-1">{avgAvail}%</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Overloaded (&gt;90%)</div><div className="text-2xl font-bold text-red-600 mt-1">{overloaded.length}</div></S.Card>
       </div>
 
-      {view==='list' ? (
+      {tab==='roster' && (<>
+        <S.Card className="p-3 mb-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Search</label>
+              <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Name…" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm w-40 focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Department</label>
+              <select value={fDept} onChange={e=>setFDept(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">All</option>{deptOptsPresent.map((d:any)=><option key={d} value={d}>{d}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
+              <select value={fRole} onChange={e=>setFRole(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">All</option>{roleOpts.map((r:any)=><option key={r} value={r}>{r}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Level</label>
+              <select value={fLevel} onChange={e=>setFLevel(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">All</option>{levelOpts.map((l:any)=><option key={l} value={l}>{l}</option>)}
+              </select></div>
+            <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Utilization</label>
+              <select value={fBand} onChange={e=>setFBand(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-brand-500">
+                <option value="">All</option><option value="healthy">Healthy</option><option value="busy">Busy</option><option value="overloaded">Overloaded</option>
+              </select></div>
+            {filtersActive && <button onClick={clearFilters} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5">Clear filters</button>}
+            <div className="text-xs text-slate-400 ml-auto self-center">{filteredTeam.length} of {team.length}</div>
+          </div>
+        </S.Card>
+
         <S.Card className="overflow-hidden">
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
-              <tr><S.Th>Name</S.Th><S.Th>Role</S.Th><S.Th>Department</S.Th><S.Th>Utilization</S.Th><S.Th>Availability</S.Th><S.Th>Capacity</S.Th><S.Th>Status</S.Th><S.Th>Actions</S.Th></tr>
+              <tr><S.Th>Name</S.Th><S.Th>Designation</S.Th><S.Th>Level</S.Th><S.Th>Department</S.Th><S.Th>Utilization</S.Th><S.Th>Availability</S.Th><S.Th>Weekly Capacity</S.Th><S.Th>Status</S.Th></tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {team.map(m=>(
-                <tr key={m.name} className="hover:bg-slate-50">
+              {filteredTeam.map((m:any)=>(
+                <tr key={m.id||m.name} className="hover:bg-slate-50">
                   <S.Td>
                     <div className="flex items-center gap-2.5">
                       <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold shrink-0">{initials(m.name)}</div>
                       <span className="font-medium text-slate-800 whitespace-nowrap">{m.name}</span>
                     </div>
                   </S.Td>
+                  <S.Td className="text-slate-600 whitespace-nowrap">{m.role || '—'}</S.Td>
+                  <S.Td>{m.level ? <S.Badge cls="bg-violet-50 text-violet-700">{m.level}</S.Badge> : <span className="text-slate-300">—</span>}</S.Td>
                   <S.Td>
-                    <input aria-label={`Role for ${m.name}`} defaultValue={m.role} placeholder="e.g. Project Manager" onBlur={e=>patchMember(m.name,'role',e.target.value)}
-                      className="w-32 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
-                  </S.Td>
-                  <S.Td>
-                    <select aria-label={`Department for ${m.name}`} value={m.dept||''} onChange={e=>patchMember(m.name,'dept',e.target.value)}
-                      className="w-28 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white">
-                      <option value="">— Select —</option>
-                      {deptOptsFor(m.dept).map(d=><option key={d} value={d}>{d}</option>)}
-                    </select>
+                    {canEdit ? (
+                      <select aria-label={`Department for ${m.name}`} value={m.dept||''} onChange={e=>setDept(m.id,e.target.value)}
+                        className="w-28 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white">
+                        <option value="">— Select —</option>
+                        {deptOptsFor(m.dept).map(d=><option key={d} value={d}>{d}</option>)}
+                      </select>
+                    ) : (m.dept || '—')}
                   </S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2 min-w-[140px]">
                       <div className="w-16 h-2 bg-slate-100 rounded-full shrink-0"><div className={`h-2 rounded-full ${utilBarColor(m.util)}`} style={{width:Math.min(100,m.util||0)+'%'}}></div></div>
-                      <input aria-label={`Utilization percent for ${m.name}`} type="text" inputMode="numeric" pattern="[0-9]*" defaultValue={m.util} onBlur={e=>patchMember(m.name,'util',e.target.value.replace(/[^0-9]/g,''))}
-                        className="w-12 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1 py-1 text-xs text-slate-500 focus:outline-none bg-transparent focus:bg-white"/>
-                      <span className="text-xs text-slate-400">%</span>
+                      <span className="text-xs text-slate-500">{m.util}%</span>
                     </div>
                   </S.Td>
+                  <S.Td className="text-slate-500">{m.avail}</S.Td>
                   <S.Td>
-                    <input aria-label={`Availability for ${m.name}`} defaultValue={m.avail} placeholder="e.g. 30%" onBlur={e=>patchMember(m.name,'avail',e.target.value)}
-                      className="w-20 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
-                  </S.Td>
-                  <S.Td>
-                    <input aria-label={`Capacity for ${m.name}`} defaultValue={m.capacity} placeholder="e.g. 40h/wk" onBlur={e=>patchMember(m.name,'capacity',e.target.value)}
-                      className="w-24 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
+                    {canEdit ? (
+                      <input aria-label={`Weekly capacity for ${m.name}`} defaultValue={m.capacity} placeholder="e.g. 40h/wk" onBlur={e=>setCapacity(m.id,e.target.value)}
+                        className="w-24 border border-transparent hover:border-slate-200 focus:border-brand-400 rounded px-1.5 py-1 text-sm text-slate-600 focus:outline-none bg-transparent focus:bg-white"/>
+                    ) : (m.capacity || '—')}
                   </S.Td>
                   <S.Td>{m.util>90 ? <S.Badge cls="bg-red-100 text-red-700">Overloaded</S.Badge> : <S.Badge cls="bg-emerald-100 text-emerald-700">Healthy</S.Badge>}</S.Td>
-                  <S.Td>
-                    {!canDelete ? null : confirmRemove===m.name ? (
-                      <span className="inline-flex items-center gap-1 whitespace-nowrap">
-                        <button onClick={()=>removeMember(m.name)} className="text-xs text-white bg-red-500 hover:bg-red-600 rounded px-2 py-1">Confirm</button>
-                        <button onClick={()=>setConfirmRemove(null)} className="text-xs text-slate-500 hover:bg-slate-100 rounded px-2 py-1">Cancel</button>
-                      </span>
-                    ) : (
-                      <button onClick={()=>setConfirmRemove(m.name)} title="Remove" aria-label={`Remove ${m.name}`} className="text-slate-400 hover:text-red-600 hover:bg-red-50 rounded px-2 py-1 text-xs"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
-                    )}
-                  </S.Td>
                 </tr>
               ))}
-              {team.length===0 && (
-                <tr><td colSpan={8} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add Team Member" above.</td></tr>
+              {filteredTeam.length===0 && (
+                <tr><td colSpan={8} className="text-center text-sm text-slate-400 py-8">{team.length===0 ? <>No team members yet — add one in <Link to="/admin" className="text-brand-600 hover:text-brand-700">Administration → Users</Link>.</> : 'No one matches these filters.'}</td></tr>
               )}
             </tbody>
           </table>
           </div>
         </S.Card>
-      ) : (
-        depts.map(([dept,members]: any) =>(
-          <div key={dept} className="mb-6">
-            <div className="flex items-center gap-2 mb-2.5 pb-1.5 border-b border-slate-200">
-              <span className="font-semibold text-slate-700 text-sm">{dept}</span>
-              <S.Badge cls="bg-slate-100 text-slate-500">{members.length} member{members.length===1?'':'s'}</S.Badge>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {members.map(m=>(
-                <S.Card key={m.name} className="p-4">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="w-10 h-10 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-semibold shrink-0">{initials(m.name)}</div>
-                    <div className="min-w-0"><div className="font-medium text-slate-800 truncate">{m.name}</div><div className="text-xs text-slate-400 truncate">{m.role}</div></div>
-                    {m.util>90 && <S.Badge cls="bg-red-100 text-red-700 ml-auto shrink-0">overloaded</S.Badge>}
-                  </div>
-                  <div className="flex justify-between text-xs text-slate-500 mb-1"><span>Utilization</span><span>{m.util}%</span></div>
-                  <div className="h-2 bg-slate-100 rounded-full mb-2.5"><div className={`h-2 rounded-full ${utilBarColor(m.util)}`} style={{width:m.util+'%'}}></div></div>
-                  <div className="flex justify-between text-xs text-slate-400"><span>Available: {m.avail}</span><span>Capacity: {m.capacity}</span></div>
-                </S.Card>
-              ))}
-            </div>
+      </>)}
+
+      {tab==='orgchart' && (
+        // Tiered by Hierarchy Level (L1 = most senior) rather than an individual manager-report tree
+        // -- the app doesn't have a "reports to" field on a person, only the L1-L9 seniority tier
+        // (Administration -> Users -> Hierarchy Level), so this groups by that, which is the honest
+        // shape of the data available.
+        <div>
+          {levelOpts.length===0 && <div className="text-sm text-slate-400 py-8 text-center">No team members yet.</div>}
+          {[...levelOpts].sort((a,b)=>S.levelNum(a)-S.levelNum(b)).map(level=>{
+            const members = filteredTeam.filter((m:any)=>m.level===level);
+            if(!members.length) return null;
+            const designation = S.designationForLevel(level, admin);
+            return (
+              <div key={level} className="mb-5">
+                <div className="flex items-center gap-2 mb-2.5 pb-1.5 border-b border-slate-200">
+                  <S.Badge cls="bg-violet-50 text-violet-700">{level}</S.Badge>
+                  <span className="font-semibold text-slate-700 text-sm">{designation || 'Unmapped designation'}</span>
+                  <S.Badge cls="bg-slate-100 text-slate-500">{members.length} member{members.length===1?'':'s'}</S.Badge>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+                  {members.map((m:any)=>(
+                    <S.Card key={m.id||m.name} className="p-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-9 h-9 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-xs font-semibold shrink-0">{initials(m.name)}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-medium text-slate-800 truncate text-sm">{m.name}</div>
+                          <div className="text-xs text-slate-400 truncate">{m.role}{m.dept?` · ${m.dept}`:''}</div>
+                        </div>
+                        {m.util>90 && <S.Badge cls="bg-red-100 text-red-700 shrink-0">{m.util}%</S.Badge>}
+                      </div>
+                    </S.Card>
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {tab==='capacity' && (
+        <S.Card className="overflow-hidden">
+          <div className="px-4 pt-3 pb-2">
+            <div className="font-semibold text-slate-800">Capacity Planning — Next {WEEKS} Weeks</div>
+            <div className="text-xs text-slate-400 mt-0.5">Count of each person's own open (not yet approved) milestones/sub tasks whose deadline falls in that week — where the load is coming from, not just how stretched someone is right now.</div>
           </div>
-        ))
+          <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50 border-b border-slate-200">
+              <tr>
+                <S.Th>Name</S.Th>
+                {weeks.map((w,i)=><S.Th key={i}>{w.start.slice(5)} – {w.end.slice(5)}</S.Th>)}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {filteredTeam.map((m:any)=>(
+                <tr key={m.id||m.name} className="hover:bg-slate-50">
+                  <S.Td>
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-semibold shrink-0">{initials(m.name)}</div>
+                      <span className="font-medium text-slate-800 whitespace-nowrap">{m.name}</span>
+                    </div>
+                  </S.Td>
+                  {weeks.map((w,i)=>{ const n = loadFor(m.name, i); return (
+                    <S.Td key={i}><div className={`text-center rounded px-2 py-1 text-xs font-medium ${loadCellCls(n)}`}>{n||'—'}</div></S.Td>
+                  );})}
+                </tr>
+              ))}
+              {filteredTeam.length===0 && (
+                <tr><td colSpan={WEEKS+1} className="text-center text-sm text-slate-400 py-8">No team members yet.</td></tr>
+              )}
+            </tbody>
+          </table>
+          </div>
+        </S.Card>
       )}
 
       {/* Team Productivity — benchmarks set in Administration -> Team Productivity, actuals computed
-          live from Project Master + Billing Tracker (see productivityFor above). Collapsible — click
+          live from Project Master + Phase Management (see productivityFor above). Collapsible — click
           the header to expand/collapse; open by default. */}
       <S.Card className="overflow-hidden mt-5">
         <button onClick={()=>setProductivityOpen(o=>!o)} className="w-full flex items-center justify-between gap-2 px-4 pt-3 pb-2 text-left">
@@ -305,10 +345,10 @@ export default function Team(){
             <tr><S.Th>Name</S.Th><S.Th>On-Time Deliverable Completion</S.Th><S.Th>Projects Handling at a Time</S.Th><S.Th>On-Time Client Sign-off</S.Th></tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {team.map(m=>{
+            {team.map((m:any)=>{
               const p = productivityFor(m);
               return (
-                <tr key={m.name} className="hover:bg-slate-50">
+                <tr key={m.id||m.name} className="hover:bg-slate-50">
                   <S.Td>
                     <div className="flex items-center gap-2.5">
                       <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-semibold shrink-0">{initials(m.name)}</div>
@@ -322,7 +362,7 @@ export default function Team(){
               );
             })}
             {team.length===0 && (
-              <tr><td colSpan={4} className="text-center text-sm text-slate-400 py-8">Add team members above to see productivity benchmarks.</td></tr>
+              <tr><td colSpan={4} className="text-center text-sm text-slate-400 py-8">Add team members in Administration → Users to see productivity benchmarks.</td></tr>
             )}
           </tbody>
         </table>
