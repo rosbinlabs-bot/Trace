@@ -303,8 +303,9 @@ export default function Phases(){
   const StatusAlertIcon = ({item, onClear}: any) => {
     if(!item.statusAlert) return null;
     return (
-      <span onClick={e=>{e.stopPropagation(); onClear();}} title={`Reporting officer changed status to "${item.statusAlert.status}" — click to dismiss`} className="text-red-500 hover:text-red-600 animate-pulse cursor-pointer shrink-0 inline-flex">
-        <S.Icon name="alert" className="w-3.5 h-3.5"/>
+      <span onClick={e=>{e.stopPropagation(); onClear();}} title={`Reporting officer changed status to "${item.statusAlert.status}" — click to dismiss`} className="relative inline-flex items-center justify-center shrink-0 cursor-pointer w-3.5 h-3.5">
+        <span className="absolute inset-0 rounded-full bg-red-400 opacity-75 animate-ping"></span>
+        <S.Icon name="info" className="relative w-3.5 h-3.5 text-red-600"/>
       </span>
     );
   };
