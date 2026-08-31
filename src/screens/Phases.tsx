@@ -44,6 +44,11 @@ export default function Phases(){
   // Only Admin/Super Admin may delete a phase, milestone or sub task -- every other actor tier used
   // to be able to click these buttons with no check at all (the Associate-deletes-a-phase bug).
   const canDelete = role==='admin' && !readOnly;
+  // Once a deadline has been entered on a phase, milestone or sub task, only Admin/Super Admin
+  // (role==='admin') may change it -- otherwise any tagged team member could quietly slide a
+  // date after the fact, which is exactly the mismanagement risk this guards against. Setting a
+  // deadline for the first time (still empty) stays open to whoever could already edit that field.
+  const deadlineLocked = (val?: string) => !!val && role!=='admin';
 
   const ITEM_STATUS_OPTS = (settings.itemStatuses && settings.itemStatuses.length) ? settings.itemStatuses : S.DEFAULT_PROJECT_SETTINGS.itemStatuses;
 
@@ -543,8 +548,8 @@ export default function Phases(){
                       <input className={inpFor('milestone')+" font-medium"} value={ms.name} disabled={msDis} onChange={e=>mutMs(ph.id,ms.id,m=>({...m,name:e.target.value}))} placeholder="Milestone"/>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-slate-400">Deadline</label>
-                      <input type="date" className={inpFor('milestone')+(msOverdue?" border-red-400 text-red-600":"")} value={ms.deadline} disabled={msDis} onChange={e=>mutMs(ph.id,ms.id,m=>({...m,deadline:e.target.value}))}/>
+                      <label className="text-[10px] text-slate-400">Deadline {deadlineLocked(ms.deadline) && <span title="Locked — only Admin/Super Admin can change a deadline once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
+                      <input type="date" className={inpFor('milestone')+(msOverdue?" border-red-400 text-red-600":"")} value={ms.deadline} disabled={msDis || deadlineLocked(ms.deadline)} onChange={e=>mutMs(ph.id,ms.id,m=>({...m,deadline:e.target.value}))}/>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Actual date</label>
@@ -588,7 +593,7 @@ export default function Phases(){
                       </button>
                       <input className={inpFor('subtask')+" flex-1 min-w-[140px]"+(overdue?" border-red-300":"")} value={s.name} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
                       <S.AssigneeChips assignees={s.assignees} roster={roster} disabled={genDis} accent={S.LEVEL.subtask} onAdd={nm=>addStAssignee(ph.id,ms.id,s.id,nm)} onRemove={nm=>removeStAssignee(ph.id,ms.id,s.id,nm)}/>
-                      <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={genDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
+                      <input type="date" title={deadlineLocked(s.deadline) ? "Locked — only Admin/Super Admin can change a deadline once set" : undefined} className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={genDis || deadlineLocked(s.deadline)} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
                       <span className="text-[11px] text-slate-400 whitespace-nowrap">done {S.itemDoneDate(s) || '—'}</span>
                       <StatusControl item={s} level="subtask" onChange={val=>setStStatus(ph.id,ms.id,s.id,val)}/>
                       <S.ApprovalFlow item={s} actorLevel={readOnly?null:actor} kind="subtask" project={projMeta} admin={admin}
@@ -633,8 +638,8 @@ export default function Phases(){
                       <input type="date" className={inpFor('phase')} value={ph.start} disabled={startLocked} onChange={e=>mutPhase(ph.id, x=>({...x,start:e.target.value}))}/>
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] text-slate-400">Deadline</label>
-                      <input type="date" className={inpFor('phase')} value={ph.end} onChange={e=>mutPhase(ph.id, x=>({...x,end:e.target.value}))}/>
+                      <label className="text-[10px] text-slate-400">Deadline {deadlineLocked(ph.end) && <span title="Locked — only Admin/Super Admin can change a deadline once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
+                      <input type="date" className={inpFor('phase')} value={ph.end} disabled={readOnly || deadlineLocked(ph.end)} onChange={e=>mutPhase(ph.id, x=>({...x,end:e.target.value}))}/>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Actual completed</label>
@@ -674,6 +679,7 @@ export default function Phases(){
       <div className="mt-4 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-1.5">
         <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
         <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
+        <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
       </div>
 
       {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
@@ -693,8 +699,8 @@ export default function Phases(){
 
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div className="flex flex-col gap-1">
-                  <label className="text-[10px] text-slate-400">Deadline {overdue && <span className="text-red-500">— overdue</span>}</label>
-                  <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
+                  <label className="text-[10px] text-slate-400">Deadline {overdue && <span className="text-red-500">— overdue</span>} {deadlineLocked(s.deadline) && <span title="Locked — only Admin/Super Admin can change a deadline once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
+                  <input type="date" className={inpFor('subtask')+(overdue?" border-red-400 text-red-600":"")} value={s.deadline} disabled={stDis || deadlineLocked(s.deadline)} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,deadline:e.target.value}))}/>
                 </div>
                 <div className="flex flex-col gap-1">
                   <label className="text-[10px] text-slate-400">Actual date</label>
