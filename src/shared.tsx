@@ -342,7 +342,15 @@ export const APPROVAL_STAGES = ['Internal Review','Partner Review','Client Revie
    (Associate, Project Manager, Project Head, Strategic Lead, BD) and each designation maps to one
    permission level (Officer, Manager, Admin, Super Admin), which in turn drives a module-by-module
    capability matrix. All of it is editable and persisted to localStorage. */
-export const DESIGNATIONS = ['Associate','Project Manager','Project Head','Strategic Lead','BD'];
+// Redefined 2026-08-31: designations are now admin-editable (add/rename/remove in Administration ->
+// Roles & Permissions), stored per-tenant as admin.designations. DEFAULT_DESIGNATIONS is the seed
+// value for a brand-new tenant; DESIGNATIONS stays as a plain alias for the few call sites with no
+// admin context available (Login.tsx's pre-auth signup form, before any tenant data is loaded) --
+// everywhere admin context IS available, use designationsList(admin) instead so a tenant's own edited
+// list applies rather than this fixed default.
+export const DEFAULT_DESIGNATIONS = ['Associate','Project Manager','Project Head','Strategic Lead','BD'];
+export const DESIGNATIONS = DEFAULT_DESIGNATIONS;
+export const designationsList = (admin: any): string[] => (admin?.designations && admin.designations.length) ? admin.designations : DEFAULT_DESIGNATIONS;
 export const PERMISSION_LEVELS = ['Officer','Manager','Admin','Super Admin'];
 export const DEFAULT_DESIGNATION_LEVEL: any = {
   'Associate':'Officer',
@@ -529,6 +537,7 @@ export const PRODUCTIVITY_METRICS = [
 ];
 export const DEFAULT_PRODUCTIVITY_BENCHMARK: any = { onTimeDelivery:90, concurrentProjects:2, onTimeClientSignoff:90 };
 export const DEFAULT_ADMIN_DATA: any = {
+  designations: DEFAULT_DESIGNATIONS,
   designationLevel: DEFAULT_DESIGNATION_LEVEL,
   designationHierarchyLevel: DEFAULT_HIERARCHY_LEVEL,
   matrix: DEFAULT_PERMISSION_MATRIX,

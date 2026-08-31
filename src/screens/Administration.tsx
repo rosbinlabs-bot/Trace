@@ -148,26 +148,104 @@ function RolesPermissionsPanel(){
   // themselves, so an Edit-level Admin (who can otherwise manage Users/Company/Billing) still can't
   // grant themselves more access by editing the matrix -- only Full (Super Admin by default) can.
   const canEditRoles = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Full');
+  const designations = S.designationsList(admin);
+  const [newDesignation, setNewDesignation] = useState('');
+  const [designationDrafts, setDesignationDrafts] = useState<{[k:string]:string}>({});
+  const usersWithDesignation = (d:string) => (admin.users||[]).filter((u:any)=>u.designation===d);
   const setLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationLevel', dl => ({ ...dl, [designation]: level })); logRoles(`Set "${designation}" permission level to "${level}"`); };
   const setHierarchyLevel = (designation, level) => { if(!canEditRoles) return; patchAdmin('designationHierarchyLevel', dl => ({ ...(dl||{}), [designation]: level })); logRoles(`Set "${designation}" hierarchy level to "${level}"`); };
   const setCap = (mod, level, cap) => { if(!canEditRoles) return; patchAdmin('matrix', m => ({ ...m, [mod]: { ...m[mod], [level]: cap } })); logRoles(`Set "${mod}" capability for "${level}" to "${cap}"`); };
-  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('designationHierarchyLevel', ()=>({...S.DEFAULT_HIERARCHY_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); logRoles('Reset Roles & Permissions to defaults'); };
+  const resetDefaults = () => { if(!canEditRoles) return; patchAdmin('designations', ()=>[...S.DEFAULT_DESIGNATIONS]); patchAdmin('designationLevel', ()=>({...S.DEFAULT_DESIGNATION_LEVEL})); patchAdmin('designationHierarchyLevel', ()=>({...S.DEFAULT_HIERARCHY_LEVEL})); patchAdmin('matrix', ()=>JSON.parse(JSON.stringify(S.DEFAULT_PERMISSION_MATRIX))); logRoles('Reset Roles & Permissions to defaults'); };
+  // Designations are admin-editable (added 2026-08-31): add / rename / remove them here, then link
+  // each one's Permission Level and Hierarchy Level in the two tables below. A brand-new designation
+  // seeds at the lowest tier of both (Officer / L9) -- least-privilege by default until deliberately
+  // raised, rather than silently inheriting whatever the first PERMISSION_LEVELS/HIERARCHY_LEVELS
+  // option happens to be.
+  const addDesignation = () => {
+    if(!canEditRoles) return;
+    const v = newDesignation.trim();
+    if(!v || designations.some(d=>d.toLowerCase()===v.toLowerCase())){ setNewDesignation(''); return; }
+    patchAdmin('designations', () => [...designations, v]);
+    patchAdmin('designationLevel', dl => ({ ...dl, [v]: 'Officer' }));
+    patchAdmin('designationHierarchyLevel', dl => ({ ...(dl||{}), [v]: 'L9' }));
+    logRoles(`Added designation "${v}"`);
+    setNewDesignation('');
+  };
+  // Renames the designation everywhere it's referenced -- the designations list itself, both level
+  // maps (moving the value from the old key to the new one), and every teammate currently holding it
+  // (Administration -> Users) -- so nobody's account silently falls back to "no designation" mid-edit.
+  const renameDesignation = (oldName:string, rawNew:string) => {
+    const clearDraft = () => setDesignationDrafts(ds=>{ const next={...ds}; delete next[oldName]; return next; });
+    if(!canEditRoles){ clearDraft(); return; }
+    const v = rawNew.trim();
+    if(!v || v===oldName){ clearDraft(); return; }
+    if(designations.some(d=>d!==oldName && d.toLowerCase()===v.toLowerCase())){ clearDraft(); return; }
+    patchAdmin('designations', () => designations.map(d=>d===oldName?v:d));
+    patchAdmin('designationLevel', dl => { const cp={...dl}; cp[v]=cp[oldName]; delete cp[oldName]; return cp; });
+    patchAdmin('designationHierarchyLevel', dl => { const cp={...(dl||{})}; cp[v]=cp[oldName]; delete cp[oldName]; return cp; });
+    const affected = usersWithDesignation(oldName);
+    if(affected.length) patchAdmin('users', (us:any[]) => us.map((u:any)=>u.designation===oldName ? {...u, designation:v} : u));
+    logRoles(`Renamed designation "${oldName}" to "${v}"${affected.length?` (updated ${affected.length} teammate${affected.length===1?'':'s'})`:''}`);
+    clearDraft();
+  };
+  // Blocked while anyone currently holds the designation (reassign them first, in Administration ->
+  // Users) and while it's the last remaining one -- both enforced on the button itself (disabled +
+  // tooltip) below, this is just a safety net against a stale click slipping through.
+  const removeDesignation = (d:string) => {
+    if(!canEditRoles || designations.length<=1 || usersWithDesignation(d).length) return;
+    if(!window.confirm(`Remove designation "${d}"?\n\nThis cannot be undone.`)) return;
+    patchAdmin('designations', () => designations.filter(x=>x!==d));
+    patchAdmin('designationLevel', dl => { const cp={...dl}; delete cp[d]; return cp; });
+    patchAdmin('designationHierarchyLevel', dl => { const cp={...(dl||{})}; delete cp[d]; return cp; });
+    logRoles(`Removed designation "${d}"`);
+  };
   return (
     <div className="space-y-5">
-      {!canEditRoles && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access to Roles & Permissions — only a Super Admin (Full capability on Administration) can change designation levels or the capability matrix.</div>}
+      {!canEditRoles && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access to Roles & Permissions — only a Super Admin (Full capability on Administration) can change designations, designation levels or the capability matrix.</div>}
       <div className="flex justify-between items-start gap-3 flex-wrap">
-        <div className="text-sm text-slate-500 max-w-2xl">Every person is assigned one <b>designation</b>. Each designation maps to exactly one <b>permission level</b>, which drives the capability matrix below. Both are fully editable. The <b>Client</b> column is separate — it's not assigned via designation, it applies automatically to every Client-type login added from Administration → Users → Add Client.</div>
+        <div className="text-sm text-slate-500 max-w-2xl">Every person is assigned one <b>designation</b>. Each designation maps to exactly one <b>permission level</b>, which drives the capability matrix below. Designations, and both level mappings, are fully editable. The <b>Client</b> column is separate — it's not assigned via designation, it applies automatically to every Client-type login added from Administration → Users → Add Client.</div>
         {canEditRoles && <button onClick={resetDefaults} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset to Defaults</button>}
       </div>
 
       <S.Card className="p-4">
+        <div className="font-semibold text-slate-800 mb-1 flex items-center gap-2"><S.Icon name="briefcase" className="w-4 h-4 text-slate-400"/> Designations</div>
+        <div className="text-xs text-slate-400 mb-3">Rename, add or remove designations here — Permission Level and Hierarchy Level for each are linked in the two tables below. A designation currently held by someone can't be removed until they're reassigned in Administration → Users.</div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 mb-3">
+          {designations.map(d=>{
+            const inUse = usersWithDesignation(d);
+            return (
+              <div key={d} className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5">
+                <input value={designationDrafts[d] ?? d} disabled={!canEditRoles}
+                  onChange={e=>setDesignationDrafts(ds=>({...ds, [d]:e.target.value}))}
+                  onBlur={()=>renameDesignation(d, designationDrafts[d] ?? d)}
+                  onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();(e.target as HTMLInputElement).blur();}}}
+                  className="flex-1 min-w-0 bg-transparent text-sm text-slate-700 focus:outline-none disabled:text-slate-400"/>
+                {canEditRoles && (
+                  <button onClick={()=>removeDesignation(d)} disabled={inUse.length>0 || designations.length<=1}
+                    title={inUse.length>0 ? `Held by ${inUse.length} teammate${inUse.length===1?'':'s'} — reassign them first` : designations.length<=1 ? 'At least one designation is required' : 'Remove designation'}
+                    className="text-slate-300 hover:text-red-500 disabled:opacity-30 disabled:hover:text-slate-300 shrink-0"><S.Icon name="trash" className="w-3.5 h-3.5"/></button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {canEditRoles && (
+          <div className="flex gap-1.5">
+            <input value={newDesignation} onChange={e=>setNewDesignation(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();addDesignation();}}} placeholder="Add new designation…"
+              className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+            <button onClick={addDesignation} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">+ Add</button>
+          </div>
+        )}
+      </S.Card>
+
+      <S.Card className="p-4">
         <div className="font-semibold text-slate-800 mb-1 flex items-center gap-2"><S.Icon name="briefcase" className="w-4 h-4 text-slate-400"/> Designation → Permission Level</div>
-        <div className="text-xs text-slate-400 mb-3">Associate, Project Manager, Project Head, Strategic Lead and BD each hold one of four permission levels.</div>
+        <div className="text-xs text-slate-400 mb-3">Each designation above holds one of four permission levels.</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {S.DESIGNATIONS.map(d=>(
+          {designations.map(d=>(
             <div key={d} className="border border-slate-200 rounded-lg p-3">
               <div className="text-sm font-medium text-slate-700 mb-2">{d}</div>
-              <select value={admin.designationLevel[d]} disabled={!canEditRoles} onChange={e=>setLevel(d, e.target.value)}
+              <select value={admin.designationLevel[d] || 'Officer'} disabled={!canEditRoles} onChange={e=>setLevel(d, e.target.value)}
                 className="w-full border border-slate-200 rounded-lg px-2 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500">
                 {S.PERMISSION_LEVELS.map(l=><option key={l} value={l}>{l}</option>)}
               </select>
@@ -180,7 +258,7 @@ function RolesPermissionsPanel(){
         <div className="font-semibold text-slate-800 mb-1 flex items-center gap-2"><S.Icon name="structure" className="w-4 h-4 text-slate-400"/> Designation → Hierarchy Level</div>
         <div className="text-xs text-slate-400 mb-3">A separate axis from Permission Level above — this is seniority (L1 = most senior, up to L9), not capability. Project Master's Project Team and Phase Management's whole approval chain (who approves Sub Tasks/Milestones/Phases, and the Implemented escalation order) are driven entirely by hierarchy level. This table just sets the default level a designation seeds when picked; each person's actual level (Administration → Users, or their entry on a specific project's team) can still be set individually.</div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-          {S.DESIGNATIONS.map(d=>(
+          {designations.map(d=>(
             <div key={d} className="border border-slate-200 rounded-lg p-3">
               <div className="text-sm font-medium text-slate-700 mb-2">{d}</div>
               <select value={S.designationHierarchyLevel(d, admin)} disabled={!canEditRoles} onChange={e=>setHierarchyLevel(d, e.target.value)}
@@ -398,7 +476,7 @@ function UsersPanel(){
               <input autoComplete="off" value={draft.email} onChange={e=>setDraft(d=>({...d,email:e.target.value}))} placeholder="name@company.com" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Designation</label>
               <select value={draft.designation} onChange={e=>{ const designation=e.target.value; setDraft(d=>({...d,designation, level: levelTouched ? d.level : (S.designationHierarchyLevel(designation, admin)||d.level) })); }} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
-                {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
+                {S.designationsList(admin).map(d=><option key={d}>{d}</option>)}
               </select></div>
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Level</label>
               <select value={draft.level} onChange={e=>{setLevelTouched(true); setDraft(d=>({...d,level:e.target.value}));}} className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -549,7 +627,7 @@ function UsersPanel(){
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
-                          {S.DESIGNATIONS.map(d=><option key={d}>{d}</option>)}
+                          {S.designationsList(admin).map(d=><option key={d}>{d}</option>)}
                         </select>
                       ) : u.designation}
                     </S.Td>
