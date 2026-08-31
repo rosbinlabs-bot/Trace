@@ -361,7 +361,7 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, draft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', status:'Active', joined: S.TODAY_ISO }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', status:'Active', joined: S.TODAY_ISO, password: draft.password }]);
       logUser(`Added teammate "${name}" (${email}, ${draft.designation})`);
       setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
@@ -380,7 +380,7 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, clientDraft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO, password: clientDraft.password }]);
       logUser(`Added client login "${name}" (${email})`);
       setClientDraft({ name:'', email:'', projectId:'', password: defaultPasswordFor('') }); setClientPwTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
@@ -415,11 +415,11 @@ function UsersPanel(){
     setBusy(null);
   };
   const doReset = async () => {
-    if(!canEditUsers) return;
-    if(!resetFor || !resetFor.password || resetFor.password.length<8) { setErr('Password must be at least 8 characters.'); return; }
+    if(!canEditUsers || !resetFor) return;
     setErr(''); setBusy(resetFor.user.id);
     try {
       await db.resetUserPassword(resetFor.user.email, resetFor.password);
+      patchAdmin('users', (us:any[]) => us.map(x=>x.id===resetFor.user.id?{...x,password:resetFor.password}:x));
       logUser(`Reset password for "${resetFor.user.name}"`);
       setResetDone({ name: resetFor.user.name, email: resetFor.user.email, password: resetFor.password });
       setResetFor(null);
@@ -450,7 +450,7 @@ function UsersPanel(){
   return (
     <div>
       <div className="flex justify-between items-center mb-3 gap-3 flex-wrap">
-        <div className="text-sm text-slate-500 max-w-2xl">Everyone who can sign in, their designation and derived permission level. Deactivate blocks sign-in but keeps the record; Remove deletes the login entirely.</div>
+        <div className="text-sm text-slate-500 max-w-2xl">Everyone who can sign in, their designation and derived permission level. Deactivate blocks sign-in but keeps the record; Remove deletes the login entirely. Password shows the last one set here — if someone signs in and changes it themselves afterward, this won't reflect that.</div>
         {canEditUsers && <button onClick={()=>setAddMode(m=>m?null:'menu')} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-2 whitespace-nowrap inline-flex items-center gap-1.5"><S.Icon name="userplus" className="w-3.5 h-3.5"/> Add User</button>}
       </div>
 
@@ -539,15 +539,13 @@ function UsersPanel(){
       {resetFor && (
         <S.Card className="p-3 mb-3 border-2 border-dashed border-amber-300 bg-amber-50/30">
           <div className="text-xs text-slate-600 mb-2">Reset password for <b>{resetFor.user.name}</b> ({resetFor.user.email})</div>
-          <div className="flex gap-1.5 items-end">
-            <div className="flex flex-col gap-1 flex-1">
-              <label className="text-[10px] text-slate-400">New Password</label>
-              <input autoComplete="new-password" value={resetFor.password} onChange={e=>setResetFor(r=>({...r,password:e.target.value}))} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-            </div>
-            <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>setResetFor(r=>({...r,password:defaultPasswordFor(r.user.name)}))} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2 py-1.5"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+          <div className="flex gap-1.5 items-center flex-wrap">
+            <div className="text-xs text-slate-500">New password will be:</div>
+            <div className="text-sm font-mono font-semibold text-slate-800 bg-white border border-slate-200 rounded-lg px-2.5 py-1.5">{resetFor.password}</div>
             <button onClick={doReset} disabled={busy===resetFor.user.id} className="text-xs bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white rounded-lg px-3 py-2 whitespace-nowrap">{busy===resetFor.user.id?'Resetting…':'Reset Password'}</button>
             <button onClick={()=>{setResetFor(null);setErr('');}} className="text-xs border border-slate-200 text-slate-500 rounded-lg px-3 py-2 hover:bg-slate-50 whitespace-nowrap">Cancel</button>
           </div>
+          <div className="text-[11px] text-slate-400 mt-2">Always the first 4 letters of their name + "1234" — same rule new logins get. They'll be asked to set their own password on next sign-in.</div>
         </S.Card>
       )}
 
@@ -639,7 +637,7 @@ function UsersPanel(){
           <S.Card className="overflow-hidden mb-6">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {teamUsers.map((u:any)=>{
@@ -647,6 +645,7 @@ function UsersPanel(){
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
                     {NameEmailCells({u})}
+                    <S.Td className="font-mono text-xs">{canEditUsers ? (u.password || '—') : '—'}</S.Td>
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -681,7 +680,7 @@ function UsersPanel(){
                   );
                 })}
                 {teamUsers.length===0 && (
-                  <tr><td colSpan={8} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
+                  <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">No team members yet — click "Add User" above.</td></tr>
                 )}
               </tbody>
             </table>
@@ -696,7 +695,7 @@ function UsersPanel(){
           <S.Card className="overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {clientUsers.map((u:any)=>{
@@ -704,6 +703,7 @@ function UsersPanel(){
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
                     {NameEmailCells({u})}
+                    <S.Td className="font-mono text-xs">{canEditUsers ? (u.password || '—') : '—'}</S.Td>
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.project||''} onChange={e=>setClientProject(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-1.5 py-1 text-xs max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-violet-500">
@@ -722,7 +722,7 @@ function UsersPanel(){
                   );
                 })}
                 {clientUsers.length===0 && (
-                  <tr><td colSpan={7} className="text-center text-sm text-slate-400 py-8">No clients yet — click "Add User" above and choose Add Client.</td></tr>
+                  <tr><td colSpan={8} className="text-center text-sm text-slate-400 py-8">No clients yet — click "Add User" above and choose Add Client.</td></tr>
                 )}
               </tbody>
             </table>
