@@ -49,12 +49,13 @@ export default function Phases(){
   // date after the fact, which is exactly the mismanagement risk this guards against. Setting a
   // deadline for the first time (still empty) stays open to whoever could already edit that field.
   const deadlineLocked = (val?: string) => !!val && role!=='admin';
-  // Non-Admin/Super Admin accounts can't pick (or type) a start date or deadline earlier than
-  // 7 days out, anywhere in Phase Management -- prevents an unrealistic same-week deadline being
-  // set on a phase, milestone or sub task by anyone below that permission tier. Admin/Super Admin
-  // are exempt (e.g. to backdate a correction). Native `min` on the date input blocks picker
-  // selection; minSelectableDate is undefined (no restriction) for role==='admin'.
-  const minSelectableDate = role==='admin' ? undefined : S.addDays(S.TODAY_ISO, 7);
+  // Corrected 2026-08-31: the rule is a backdating limit, not a forward lead time -- non-Admin/
+  // Super Admin accounts can't pick (or type) a start date or deadline older than 7 days AGO,
+  // anywhere in Phase Management (prevents quietly backdating a phase/milestone/sub task well into
+  // the past). Today and every future date remain freely selectable for everyone. Admin/Super Admin
+  // are exempt (e.g. to backdate a correction further than that). Native `min` on the date input
+  // blocks picker selection; minSelectableDate is undefined (no restriction) for role==='admin'.
+  const minSelectableDate = role==='admin' ? undefined : S.addDays(S.TODAY_ISO, -7);
 
   const ITEM_STATUS_OPTS = (settings.itemStatuses && settings.itemStatuses.length) ? settings.itemStatuses : S.DEFAULT_PROJECT_SETTINGS.itemStatuses;
 
@@ -686,7 +687,7 @@ export default function Phases(){
         <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
         <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
         <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
-        <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is at least 7 days from today, on a phase, milestone or sub task.</div>
+        <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is no more than 7 days in the past, on a phase, milestone or sub task.</div>
       </div>
 
       {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
