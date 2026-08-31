@@ -770,6 +770,7 @@ export default function Phases(){
                         <span className="flex-1 min-w-0 truncate text-slate-400" title="No file on record">{d.n}</span>
                       )}
                       {d.size && <span className="text-[10px] text-slate-400 whitespace-nowrap">{(d.size/1024).toFixed(0)} KB</span>}
+                      {d.uploadedAt && <span className="text-[10px] text-slate-400 whitespace-nowrap" title="Upload date">{new Date(d.uploadedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})}</span>}
                       {!stDis && <button onClick={()=>removeStDoc(ph.id,ms.id,s.id,i)} className="text-red-400 hover:text-red-600">✕</button>}
                     </div>
                   ))}

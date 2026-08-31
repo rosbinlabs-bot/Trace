@@ -1373,6 +1373,7 @@ export function DocsChips({docs, onAttach, onRemove, onDownload, disabled, downl
           ) : (
             <span className="truncate max-w-[70px]" title={d.path ? d.n : `${d.n} — no file on record`}>{d.n}</span>
           )}
+          {d.uploadedAt && <span className="text-slate-400 whitespace-nowrap shrink-0" title={`Uploaded ${new Date(d.uploadedAt).toLocaleString('en-US',{dateStyle:'medium', timeStyle:'short'})}`}>{new Date(d.uploadedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short'})}</span>}
           {!disabled && <button onClick={()=>onRemove(i)} className="text-red-400">×</button>}
         </span>
       ))}
