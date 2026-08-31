@@ -24,6 +24,18 @@ export default function Portal(){
   const [openMs, setOpenMs] = useState({});
   const [remarkDraft, setRemarkDraft] = useState({});
   const [expandedApproval, setExpandedApproval] = useState(null);
+  // Attachment downloads on a pending item -- same private/tenant-scoped Supabase Storage bucket
+  // (db.getPhaseDocDownloadUrl) Phase Management uses, so a client sees and can pull the exact same
+  // files the project team attached to the milestone/sub task they're being asked to sign off on.
+  const [downloadingDocId, setDownloadingDocId] = useState<string|null>(null);
+  const [docErr, setDocErr] = useState('');
+  const downloadDoc = async (d:any) => {
+    if(!d.path) return;
+    setDocErr(''); setDownloadingDocId(d.id||d.path);
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path), '_blank'); }
+    catch(e:any) { setDocErr(e.message || 'Could not generate a download link.'); }
+    setDownloadingDocId(null);
+  };
   // Declared here (not below, alongside the rest of the issue-raising logic) so it's called
   // unconditionally on every render, same as every other useState above -- the early "no projects"
   // return right below this would otherwise skip it on some renders and violate the Rules of Hooks.
@@ -310,6 +322,27 @@ export default function Portal(){
                 {open && (
                   <div className="px-4 py-3 border-t border-violet-100 bg-white space-y-3">
                     <div className="text-xs text-slate-500">Approved internally by the project team — your sign-off marks this <b>Implemented</b>, the most important status in the project.</div>
+                    <div>
+                      <label className="text-[10px] text-slate-400 block mb-1.5">Attachments</label>
+                      {(item.docs||[]).length===0 ? (
+                        <div className="text-xs text-slate-300">No attachments on this item.</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {(item.docs||[]).map((d:any,i:number)=>(
+                            <div key={d.id||i} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs">
+                              <S.Icon name={downloadingDocId===(d.id||d.path) ? 'refresh' : S.docIcon(d.n)} className={`w-3.5 h-3.5 shrink-0 ${downloadingDocId===(d.id||d.path) ? 'text-brand-500' : S.docIconTone(d.n)}`}/>
+                              {d.path ? (
+                                <button onClick={()=>downloadDoc(d)} className="flex-1 min-w-0 truncate text-left hover:underline hover:text-brand-700" title="Download">{d.n}</button>
+                              ) : (
+                                <span className="flex-1 min-w-0 truncate text-slate-400" title="No file on record">{d.n}</span>
+                              )}
+                              {d.size && <span className="text-[10px] text-slate-400 whitespace-nowrap">{(d.size/1024).toFixed(0)} KB</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {docErr && <div className="text-xs text-red-500 mt-1">{docErr}</div>}
+                    </div>
                     {canAct ? (
                       <>
                         <div className="flex gap-2">
