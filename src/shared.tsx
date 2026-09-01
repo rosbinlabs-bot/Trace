@@ -334,23 +334,52 @@ export const isSuperAdmin = (email: string, admin: any) => {
 // except Client logins), 'clients' (Client logins only), or 'all' (everyone). A message posted
 // before the audience picker existed has no `audience` field at all -- treated as 'teammates' so
 // old announcements keep behaving exactly as they always did (clients never saw them).
-// `active:false` lets a Super Admin retire one without deleting its history/audit trail. Dismissal
-// is tracked per account, not on the message itself, via that account's own Administration -> Users
-// record (`dismissedFlashIds`, see App.tsx's FlashMessageGate) -- so "never show the same message
-// again" is remembered no matter which device/browser someone next logs in from, same as everything
-// else in Administration -> Users. Returns every active message targeted at this account's audience
-// that it hasn't dismissed yet, oldest first, so more than one undismissed message queues (shown one
-// at a time) instead of the newest silently replacing an unseen older one.
+// `active:false` lets a Super Admin retire one without deleting its history/audit trail.
+//
+// `expiryType` controls how long/how often it keeps showing, same backward-compat treatment as
+// `audience` -- a message with none set (posted before this existed) is treated as 'onetime', its
+// original and only behavior:
+//   - 'onetime'  : shown until this account dismisses it, then never again. No date cutoff.
+//   - 'oneday'   : same per-account dismiss-once rule, but ALSO stops being offered to anyone
+//                  (dismissed or not) 1 day after it was posted -- e.g. someone who hasn't logged in
+//                  yet simply never sees it once that day has passed.
+//   - 'threeday' : identical to 'oneday' but with a 3-day cutoff instead of 1.
+//   - 'repeat'   : ignores per-account dismissal entirely -- instead each account is shown it again
+//                  on every subsequent login (the only trigger this app has for "showing it again")
+//                  until either it's been shown to that account `repeatCount` times, or today is
+//                  past `repeatUntil`, whichever comes first.
+// flashExpired() below is the shared "has this message's own clock run out" check (independent of
+// any one account's dismissal/seen-count), used both here and by Administration's History list to
+// show an "Expired" badge on a message nobody can be shown anymore.
+export const flashExpired = (m: any): boolean => {
+  const et = m.expiryType || 'onetime';
+  if (et === 'oneday') return (+TODAY - +new Date(m.createdAt)) >= 864e5;
+  if (et === 'threeday') return (+TODAY - +new Date(m.createdAt)) >= 3 * 864e5;
+  if (et === 'repeat') return !!m.repeatUntil && TODAY_ISO > m.repeatUntil;
+  return false;
+};
+
+// Dismissal/seen-tracking is tracked per account, not on the message itself, via that account's own
+// Administration -> Users record -- `dismissedFlashIds` (a plain Set of ids, for onetime/oneday/
+// threeday) or `flashRepeatCounts` (an {id: count} map, for repeat) -- see App.tsx's
+// FlashMessageGate. That's remembered no matter which device/browser someone next logs in from,
+// same as everything else in Administration -> Users. Returns every active, unexpired message
+// targeted at this account's audience that it's still owed a showing of, oldest first, so more than
+// one queues (shown one at a time) instead of the newest silently replacing an unseen older one.
 export const pendingFlashMessages = (admin: any, myProfile: any, role?: string): any[] => {
   if (!myProfile) return [];
   const dismissed = new Set(myProfile.dismissedFlashIds || []);
+  const repeatCounts = myProfile.flashRepeatCounts || {};
   const audienceMatches = (m: any) => {
     const aud = m.audience || 'teammates';
     if (aud === 'all') return true;
     return role === 'client' ? aud === 'clients' : aud === 'teammates';
   };
   return (admin?.flashMessages || [])
-    .filter((m: any) => m.active !== false && !dismissed.has(m.id) && audienceMatches(m))
+    .filter((m: any) => m.active !== false && audienceMatches(m) && !flashExpired(m))
+    .filter((m: any) => (m.expiryType || 'onetime') === 'repeat'
+      ? (repeatCounts[m.id] || 0) < (m.repeatCount || 1)
+      : !dismissed.has(m.id))
     .sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
 };
 

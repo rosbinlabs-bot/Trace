@@ -101,17 +101,21 @@ function ClientGate({ admin, email, children }: { admin: any; email: string; chi
 // Blocking pop-up for Administration -> Flash Messages (Super Admin only), shown right after login
 // to whichever audience the Super Admin targeted the message at -- Teammates, Clients, or All (see
 // S.pendingFlashMessages). Deliberately has no backdrop onClick/Escape close -- the only way out is
-// the button, which stamps this account's own dismissal (S.pendingFlashMessages reads it back out
-// via myProfile.dismissedFlashIds) so the same message is gone for good, from any device, the moment
-// it's acknowledged. More than one undismissed message queues one at a time rather than racing --
-// dismissing the first re-renders with the next one still in the queue.
+// the button, which stamps this account's own dismissal/seen-count (see S.pendingFlashMessages'
+// comment on expiryType) so the message behaves the way it was scheduled to -- gone for good once
+// acknowledged for One Time/One Day/3 Days, or counted toward its repeat quota for Repeat -- from
+// any device, the moment it's acknowledged. More than one undismissed message queues one at a time
+// rather than racing -- dismissing the first re-renders with the next one still in the queue.
 function FlashMessageGate({ admin, myProfile, patchAdmin, role }: { admin: any; myProfile: any; patchAdmin: (key: string, updater: any) => void; role: string }) {
   const queue = S.pendingFlashMessages(admin, myProfile, role);
   const current = queue[0];
   if (!current || !myProfile) return null;
   const dismiss = () => {
+    const isRepeat = (current.expiryType || 'onetime') === 'repeat';
     patchAdmin('users', (us: any[]) => us.map((u: any) => u.id === myProfile.id
-      ? { ...u, dismissedFlashIds: [...(u.dismissedFlashIds || []), current.id] }
+      ? (isRepeat
+          ? { ...u, flashRepeatCounts: { ...(u.flashRepeatCounts || {}), [current.id]: ((u.flashRepeatCounts || {})[current.id] || 0) + 1 } }
+          : { ...u, dismissedFlashIds: [...(u.dismissedFlashIds || []), current.id] })
       : u));
   };
   return (
