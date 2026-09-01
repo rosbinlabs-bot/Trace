@@ -1088,46 +1088,52 @@ function FlashMessagesPanel(){
         <S.Badge cls="bg-amber-50 text-amber-700">Super Admin only</S.Badge>
       </div>
       <S.Card className="p-4 mb-4">
-        <div className="text-xs text-slate-500 mb-2">Whoever you send this to sees it as a pop-up at their next login — how long it keeps showing depends on the option you pick below.</div>
+        <div className="text-xs text-slate-500 mb-3">Whoever you send this to sees it as a pop-up at their next login — how long it keeps showing depends on the option you pick below.</div>
         <textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={3} placeholder="Write an announcement…" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"/>
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-3">
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-400 mr-1">Send to</span>
-            {FLASH_AUDIENCES.map(a=>(
-              <button key={a.id} onClick={()=>setAudience(a.id as any)}
-                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${audience===a.id?'bg-brand-600 border-brand-600 text-white font-medium':'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                {a.label}
-              </button>
-            ))}
+        <div className="mt-4 space-y-3">
+          <div>
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1.5">Send to</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {FLASH_AUDIENCES.map(a=>(
+                <button key={a.id} onClick={()=>setAudience(a.id as any)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${audience===a.id?'bg-brand-600 border-brand-600 text-white font-medium':'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                  {a.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-slate-400 mr-1">Expiry</span>
-            {FLASH_EXPIRY_TYPES.map(t=>(
-              <button key={t.id} onClick={()=>setExpiryType(t.id as any)}
-                className={`text-xs px-2.5 py-1 rounded-lg border transition-colors ${expiryType===t.id?'bg-brand-600 border-brand-600 text-white font-medium':'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
-                {t.label}
-              </button>
-            ))}
+          <div>
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wide mb-1.5">Expiry</div>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {FLASH_EXPIRY_TYPES.map(t=>(
+                <button key={t.id} onClick={()=>setExpiryType(t.id as any)}
+                  className={`text-xs px-3 py-1.5 rounded-lg border transition-colors ${expiryType===t.id?'bg-brand-600 border-brand-600 text-white font-medium':'border-slate-200 text-slate-500 hover:bg-slate-50'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
         {expiryType==='repeat' && (
-          <div className="flex flex-wrap items-end gap-3 mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
-            <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Day of month</label>
-              <select value={repeatDay} onChange={e=>setRepeatDay(Number(e.target.value))}
-                className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200">
-                {Array.from({length:31}, (_,i)=>i+1).map(d=><option key={d} value={d}>{flashOrdinal(d)}</option>)}
-              </select>
+          <div className="mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3.5">
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">Day of month</label>
+                <select value={repeatDay} onChange={e=>setRepeatDay(Number(e.target.value))}
+                  className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200">
+                  {Array.from({length:31}, (_,i)=>i+1).map(d=><option key={d} value={d}>{flashOrdinal(d)}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[11px] text-slate-400 block mb-1">Number of months</label>
+                <input type="number" min={1} value={repeatCount} onChange={e=>setRepeatCount(Math.max(1, Number(e.target.value)||1))}
+                  className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200"/>
+              </div>
             </div>
-            <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Number of months</label>
-              <input type="number" min={1} value={repeatCount} onChange={e=>setRepeatCount(Math.max(1, Number(e.target.value)||1))}
-                className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200"/>
-            </div>
-            <div className="text-[11px] text-slate-400 pb-1.5">Shown only on the {flashOrdinal(repeatDay)} of each month, for the next {repeatCount} month{repeatCount===1?'':'s'} — not every day in between. A month shorter than day {repeatDay} shows it on that month's last day instead.</div>
+            <div className="text-[11px] text-slate-400 leading-relaxed mt-2.5">Shown only on the {flashOrdinal(repeatDay)} of each month, for the next {repeatCount} month{repeatCount===1?'':'s'} — not every day in between. A month shorter than day {repeatDay} shows it on that month's last day instead.</div>
           </div>
         )}
-        <div className="flex justify-end mt-3">
+        <div className="flex justify-end mt-4">
           <button onClick={post} disabled={!draft.trim() || !repeatValid} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg px-4 py-2">Post Flash Message</button>
         </div>
       </S.Card>
