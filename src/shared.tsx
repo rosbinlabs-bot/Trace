@@ -344,32 +344,68 @@ export const isSuperAdmin = (email: string, admin: any) => {
 //                  (dismissed or not) 1 day after it was posted -- e.g. someone who hasn't logged in
 //                  yet simply never sees it once that day has passed.
 //   - 'threeday' : identical to 'oneday' but with a 3-day cutoff instead of 1.
-//   - 'repeat'   : ignores per-account dismissal entirely -- instead each account is shown it again
-//                  on every subsequent login (the only trigger this app has for "showing it again")
-//                  until either it's been shown to that account `repeatCount` times, or today is
-//                  past `repeatUntil`, whichever comes first.
+//   - 'repeat'   : a monthly reminder, NOT "keep showing until dismissed N times" -- picking day
+//                  `repeatDay` and count `repeatCount` (e.g. the 12th, 10 times) means "only on the
+//                  12th of each of the next 10 months," full stop. It's invisible every other day,
+//                  even to someone who's never seen it. flashOccurrenceMonths() below computes that
+//                  fixed list of 'YYYY-MM' months up front from the post date -- there's no "waiting
+//                  for someone to see it" that stretches the schedule out; a person who never logs
+//                  in on the right day just misses that month's occurrence, same as anyone who
+//                  misses a real calendar reminder. A month whose length is short of `repeatDay`
+//                  (e.g. day 31 in April) lands on that month's last day instead of being skipped,
+//                  same convention this app's own monthly billing cron already uses.
 // flashExpired() below is the shared "has this message's own clock run out" check (independent of
 // any one account's dismissal/seen-count), used both here and by Administration's History list to
 // show an "Expired" badge on a message nobody can be shown anymore.
+const daysInMonth = (y: number, m0: number) => new Date(y, m0 + 1, 0).getDate(); // m0 = 0-indexed month
+export const flashOccurrenceMonths = (m: any): string[] => {
+  const day = m.repeatDay, count = m.repeatCount || 1;
+  if (!day) return [];
+  const posted = new Date(m.createdAt);
+  let y = posted.getFullYear(), mo = posted.getMonth(); // 0-indexed
+  // If the post date is already past this month's occurrence day, the first occurrence is next month.
+  if (posted.getDate() > Math.min(day, daysInMonth(y, mo))) mo += 1;
+  const months: string[] = [];
+  for (let i = 0; i < count; i++) {
+    let yy = y, mm = mo + i;
+    while (mm > 11) { mm -= 12; yy += 1; }
+    months.push(`${yy}-${String(mm + 1).padStart(2, '0')}`);
+  }
+  return months;
+};
+// Is today one of a repeat message's scheduled occurrence days?
+const isFlashOccurrenceToday = (m: any): boolean => {
+  const ym = TODAY_ISO.slice(0, 7);
+  const months = flashOccurrenceMonths(m);
+  if (!months.includes(ym)) return false;
+  const [y, mo] = ym.split('-').map(Number);
+  const effectiveDay = Math.min(m.repeatDay, daysInMonth(y, mo - 1));
+  return Number(TODAY_ISO.slice(8, 10)) === effectiveDay;
+};
 export const flashExpired = (m: any): boolean => {
   const et = m.expiryType || 'onetime';
   if (et === 'oneday') return (+TODAY - +new Date(m.createdAt)) >= 864e5;
   if (et === 'threeday') return (+TODAY - +new Date(m.createdAt)) >= 3 * 864e5;
-  if (et === 'repeat') return !!m.repeatUntil && TODAY_ISO > m.repeatUntil;
+  if (et === 'repeat') {
+    const months = flashOccurrenceMonths(m);
+    return !months.length || TODAY_ISO.slice(0, 7) > months[months.length - 1];
+  }
   return false;
 };
 
 // Dismissal/seen-tracking is tracked per account, not on the message itself, via that account's own
-// Administration -> Users record -- `dismissedFlashIds` (a plain Set of ids, for onetime/oneday/
-// threeday) or `flashRepeatCounts` (an {id: count} map, for repeat) -- see App.tsx's
-// FlashMessageGate. That's remembered no matter which device/browser someone next logs in from,
-// same as everything else in Administration -> Users. Returns every active, unexpired message
-// targeted at this account's audience that it's still owed a showing of, oldest first, so more than
-// one queues (shown one at a time) instead of the newest silently replacing an unseen older one.
+// Administration -> Users record -- `dismissedFlashIds`, a plain array of ids someone has closed
+// (see App.tsx's FlashMessageGate). For onetime/oneday/threeday the id is just the message's own id
+// (dismiss once, done forever). For repeat, each monthly occurrence gets its own composite id
+// (`${message.id}::YYYY-MM`), so dismissing this month's showing doesn't touch next month's -- the
+// message becomes eligible again on its next scheduled day. Remembered no matter which device/
+// browser someone next logs in from, same as everything else in Administration -> Users. Returns
+// every active, unexpired message targeted at this account's audience that it's owed a showing of
+// right now, oldest first, so more than one queues (shown one at a time) instead of the newest
+// silently replacing an unseen older one.
 export const pendingFlashMessages = (admin: any, myProfile: any, role?: string): any[] => {
   if (!myProfile) return [];
   const dismissed = new Set(myProfile.dismissedFlashIds || []);
-  const repeatCounts = myProfile.flashRepeatCounts || {};
   const audienceMatches = (m: any) => {
     const aud = m.audience || 'teammates';
     if (aud === 'all') return true;
@@ -378,7 +414,7 @@ export const pendingFlashMessages = (admin: any, myProfile: any, role?: string):
   return (admin?.flashMessages || [])
     .filter((m: any) => m.active !== false && audienceMatches(m) && !flashExpired(m))
     .filter((m: any) => (m.expiryType || 'onetime') === 'repeat'
-      ? (repeatCounts[m.id] || 0) < (m.repeatCount || 1)
+      ? isFlashOccurrenceToday(m) && !dismissed.has(`${m.id}::${TODAY_ISO.slice(0, 7)}`)
       : !dismissed.has(m.id))
     .sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
 };

@@ -1010,19 +1010,25 @@ const FLASH_AUDIENCES = [
 const flashAudienceLabel = (aud: string) => FLASH_AUDIENCES.find(a=>a.id===(aud||'teammates'))?.label || 'Teammates';
 
 // How long/how often a message keeps showing -- see S.pendingFlashMessages/S.flashExpired for the
-// full behavior each of these drives. 'repeat' additionally needs a repeatUntil date and a
-// repeatCount, gathered by the two extra inputs FlashMessagesPanel shows only when it's selected.
+// full behavior each of these drives. 'repeat' additionally needs a day-of-month (repeatDay) and a
+// number of monthly occurrences (repeatCount), gathered by the two extra inputs FlashMessagesPanel
+// shows only when it's selected -- e.g. day 12, count 10 means "only on the 12th, for the next 10
+// months," not "keep showing until someone's seen it 10 times."
 const FLASH_EXPIRY_TYPES = [
   { id:'onetime', label:'One Time' },
   { id:'oneday', label:'One Day' },
   { id:'threeday', label:'3 Days' },
   { id:'repeat', label:'Repeat' },
 ];
+const flashOrdinal = (n: number): string => {
+  const s = ['th','st','nd','rd'], v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+};
 const flashExpiryLabel = (m: any): string => {
   const et = m.expiryType || 'onetime';
   if (et === 'oneday') return 'One Day';
   if (et === 'threeday') return '3 Days';
-  if (et === 'repeat') return `Repeat · up to ${m.repeatCount||1}x until ${m.repeatUntil||'—'}`;
+  if (et === 'repeat') return `Repeat · ${flashOrdinal(m.repeatDay||1)} of the month · ${m.repeatCount||1}mo`;
   return 'One Time';
 };
 
@@ -1033,7 +1039,7 @@ function FlashMessagesPanel(){
   const [draft, setDraft] = useState('');
   const [audience, setAudience] = useState<'teammates'|'clients'|'all'>('teammates');
   const [expiryType, setExpiryType] = useState<'onetime'|'oneday'|'threeday'|'repeat'>('onetime');
-  const [repeatUntil, setRepeatUntil] = useState('');
+  const [repeatDay, setRepeatDay] = useState(S.TODAY_ISO ? Number(S.TODAY_ISO.slice(8,10)) : 1);
   const [repeatCount, setRepeatCount] = useState(3);
   const messages = [...(admin.flashMessages || [])].sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
   // Who a given message is actually for, by its own stored audience -- a message with no audience
@@ -1046,25 +1052,27 @@ function FlashMessagesPanel(){
     if (a === 'clients') return activeUsers.filter((u: any) => u.type === 'Client');
     return activeUsers.filter((u: any) => u.type !== 'Client');
   };
-  // A Repeat message isn't a one-off dismissal, so "seen" here means "shown at least once" --
-  // read off flashRepeatCounts instead of dismissedFlashIds (see App.tsx's FlashMessageGate).
-  const seenCount = (m: any) => audienceFor(m.audience).filter((u: any) =>
-    (m.expiryType||'onetime')==='repeat' ? ((u.flashRepeatCounts||{})[m.id]||0) > 0 : (u.dismissedFlashIds || []).includes(m.id)
-  ).length;
+  // A Repeat message dismisses per occurrence month, not once overall (see App.tsx's
+  // FlashMessageGate) -- "seen" here means "shown at least one of its scheduled months so far",
+  // i.e. any dismissedFlashIds entry starting with this message's id.
+  const seenCount = (m: any) => audienceFor(m.audience).filter((u: any) => {
+    const ids: string[] = u.dismissedFlashIds || [];
+    return (m.expiryType||'onetime')==='repeat' ? ids.some(id => id.startsWith(`${m.id}::`)) : ids.includes(m.id);
+  }).length;
 
-  const repeatValid = expiryType!=='repeat' || (repeatUntil >= S.TODAY_ISO && repeatCount >= 1);
+  const repeatValid = expiryType!=='repeat' || (repeatDay>=1 && repeatDay<=31 && repeatCount>=1);
 
   const post = () => {
     const text = draft.trim();
     if (!text || !repeatValid) return;
     const msg: any = { id: S.uid('FLASH'), text, audience, expiryType, createdBy: profile?.name || email, createdAt: new Date().toISOString(), active: true };
-    if (expiryType === 'repeat') { msg.repeatUntil = repeatUntil; msg.repeatCount = repeatCount; }
+    if (expiryType === 'repeat') { msg.repeatDay = repeatDay; msg.repeatCount = repeatCount; }
     patchAdmin('flashMessages', (ms: any[]) => [...(ms || []), msg]);
     logActivity({ module: 'Administration', action: `Posted a flash message to ${flashAudienceLabel(audience)} (${flashExpiryLabel(msg)}): "${text.length > 60 ? text.slice(0, 60) + '…' : text}"` });
     setDraft('');
     setAudience('teammates');
     setExpiryType('onetime');
-    setRepeatUntil('');
+    setRepeatDay(Number(S.TODAY_ISO.slice(8,10)));
     setRepeatCount(3);
   };
   const setActive = (id: string, active: boolean) => {
@@ -1105,16 +1113,18 @@ function FlashMessagesPanel(){
         {expiryType==='repeat' && (
           <div className="flex flex-wrap items-end gap-3 mt-3 bg-slate-50 border border-slate-200 rounded-lg p-3">
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Repeat until</label>
-              <input type="date" min={S.TODAY_ISO} value={repeatUntil} onChange={e=>setRepeatUntil(e.target.value)}
-                className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200"/>
+              <label className="text-[11px] text-slate-400 block mb-1">Day of month</label>
+              <select value={repeatDay} onChange={e=>setRepeatDay(Number(e.target.value))}
+                className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200">
+                {Array.from({length:31}, (_,i)=>i+1).map(d=><option key={d} value={d}>{flashOrdinal(d)}</option>)}
+              </select>
             </div>
             <div>
-              <label className="text-[11px] text-slate-400 block mb-1">Number of times</label>
+              <label className="text-[11px] text-slate-400 block mb-1">Number of months</label>
               <input type="number" min={1} value={repeatCount} onChange={e=>setRepeatCount(Math.max(1, Number(e.target.value)||1))}
                 className="w-20 border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-brand-200"/>
             </div>
-            <div className="text-[11px] text-slate-400 pb-1.5">Shown again each login until either is reached.</div>
+            <div className="text-[11px] text-slate-400 pb-1.5">Shown only on the {flashOrdinal(repeatDay)} of each month, for the next {repeatCount} month{repeatCount===1?'':'s'} — not every day in between. A month shorter than day {repeatDay} shows it on that month's last day instead.</div>
           </div>
         )}
         <div className="flex justify-end mt-3">
