@@ -104,12 +104,15 @@ export default function Calendar(){
     addDeadline(i.due, `Issue: ${i.desc||i.id}`, i.project, 'issue');
   });
 
-  // User-created calendar events, filtered by the project dropdown (events with no project always
-  // show; events tied to a project the signed-in person isn't tagged to are left out entirely, same
-  // reasoning as the deadlines above).
+  // User-created calendar events, filtered by the project dropdown. For staff, an event with no
+  // project set is a General/company-wide event (e.g. an internal kickoff) and always shows -- only
+  // events tied to a project they aren't tagged to are left out, same reasoning as the deadlines
+  // above. A client, though, has no notion of "General" -- a project-less event is still someone
+  // else's internal business, so for a client account only events tied to their own project are
+  // shown; everything else (including project-less ones) is left out entirely.
   const eventsByDate: any = {};
   calEvents
-    .filter(ev => !ev.project || myTaggedProjectNames.has(ev.project))
+    .filter(ev => role==='client' ? myTaggedProjectNames.has(ev.project) : (!ev.project || myTaggedProjectNames.has(ev.project)))
     .filter(ev => !projFilterName || !ev.project || ev.project===projFilterName)
     .forEach(ev => { (eventsByDate[ev.date] = eventsByDate[ev.date]||[]).push(ev); });
 
