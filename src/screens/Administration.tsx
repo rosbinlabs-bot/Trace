@@ -994,6 +994,70 @@ function NotificationsPanel(){
   );
 }
 
+// Flash Messages — Super Admin only (same S.isSuperAdmin gate as the Log Book tab below), lets a
+// Super Admin post an announcement that every teammate (never a Client login -- see App.tsx's Shell,
+// which only mounts FlashMessageGate for role!=='client') sees as a blocking pop-up the next time
+// they land in the app, one at a time if more than one is still unseen. Deactivating a message here
+// just stops it queuing for anyone who hasn't seen it yet -- it doesn't un-show it for people who
+// already dismissed it, and history stays for reference (nothing is ever hard-deleted).
+function FlashMessagesPanel(){
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { profile, email } = React.useContext(S.CurrentUserContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
+  const [draft, setDraft] = useState('');
+  const messages = [...(admin.flashMessages || [])].sort((a: any, b: any) => (a.createdAt < b.createdAt ? 1 : -1));
+  // Who this is even for -- every Active, non-Client teammate -- so each message can show "seen by
+  // X of Y teammates" instead of a raw, context-free dismissal count.
+  const audience = (admin.users || []).filter((u: any) => u.status === 'Active' && u.type !== 'Client');
+  const seenCount = (id: string) => audience.filter((u: any) => (u.dismissedFlashIds || []).includes(id)).length;
+
+  const post = () => {
+    const text = draft.trim();
+    if (!text) return;
+    const msg = { id: S.uid('FLASH'), text, createdBy: profile?.name || email, createdAt: new Date().toISOString(), active: true };
+    patchAdmin('flashMessages', (ms: any[]) => [...(ms || []), msg]);
+    logActivity({ module: 'Administration', action: `Posted a flash message: "${text.length > 60 ? text.slice(0, 60) + '…' : text}"` });
+    setDraft('');
+  };
+  const setActive = (id: string, active: boolean) => {
+    patchAdmin('flashMessages', (ms: any[]) => (ms || []).map((m: any) => m.id === id ? { ...m, active } : m));
+    logActivity({ module: 'Administration', action: `${active ? 'Reactivated' : 'Deactivated'} a flash message` });
+  };
+
+  return (
+    <div>
+      <div className="flex items-center gap-2 mb-4">
+        <S.Icon name="notifications" className="w-4 h-4 text-brand-600"/>
+        <span className="text-sm font-semibold text-slate-700">Flash Messages</span>
+        <S.Badge cls="bg-amber-50 text-amber-700">Super Admin only</S.Badge>
+      </div>
+      <S.Card className="p-4 mb-4">
+        <div className="text-xs text-slate-500 mb-2">Every teammate (not Client logins) sees this as a pop-up they must close at their next login — once closed, it's gone for good on their account.</div>
+        <textarea value={draft} onChange={e=>setDraft(e.target.value)} rows={3} placeholder="Write an announcement for the whole team…" className="w-full border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-brand-200"/>
+        <div className="flex justify-end mt-2">
+          <button onClick={post} disabled={!draft.trim()} className="bg-brand-600 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg px-4 py-2">Post Flash Message</button>
+        </div>
+      </S.Card>
+      <div className="text-xs font-medium text-slate-500 mb-2">History</div>
+      <div className="space-y-2">
+        {messages.map((m: any) => (
+          <S.Card key={m.id} className={`p-3 ${m.active===false ? 'opacity-60' : ''}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="text-sm text-slate-700 whitespace-pre-wrap flex-1">{m.text}</div>
+              <S.Badge cls={m.active===false ? 'bg-slate-100 text-slate-500' : 'bg-emerald-100 text-emerald-700'}>{m.active===false ? 'Inactive' : 'Active'}</S.Badge>
+            </div>
+            <div className="flex items-center justify-between gap-3 mt-2 text-[11px] text-slate-400">
+              <span>{m.createdBy} · {new Date(m.createdAt).toLocaleString()} · seen by {seenCount(m.id)} of {audience.length} teammates</span>
+              <button onClick={()=>setActive(m.id, m.active===false)} className="text-brand-600 hover:text-brand-700 font-medium whitespace-nowrap">{m.active===false ? 'Reactivate' : 'Deactivate'}</button>
+            </div>
+          </S.Card>
+        ))}
+        {messages.length===0 && <div className="text-sm text-slate-400">No flash messages posted yet.</div>}
+      </div>
+    </div>
+  );
+}
+
 // User Login Log Book — last tab in Administration, Super Admin only (S.isSuperAdmin gates both the
 // tab button itself in Admin() below and this panel's body, same defense-in-depth pattern the rest
 // of this file uses e.g. canEditUsers/iAmSuperAdmin in UsersPanel). Two feeds, both fetched on demand
@@ -1291,7 +1355,7 @@ export default function Admin(){
   // If permissions changed under someone currently sitting on this tab (e.g. their Super Admin
   // override was just revoked in another tab), fall back rather than leave them stranded on a panel
   // whose tab button no longer renders.
-  React.useEffect(() => { if (tab==='loginLogBook' && !iAmSuperAdmin) setTab('overview'); }, [tab, iAmSuperAdmin]);
+  React.useEffect(() => { if ((tab==='loginLogBook' || tab==='flashMessages') && !iAmSuperAdmin) setTab('overview'); }, [tab, iAmSuperAdmin]);
   const groups = {
     'Organization':['Company','Branch','Departments','Holiday Calendar','Working Days'],
     'Access':['Roles','Permissions','Audit Logs'],
@@ -1310,7 +1374,7 @@ export default function Admin(){
     ['productivity','Team Productivity'],
     ['notifications','Notifications'],
     ['projectSettings','Project Settings'],
-    ...(iAmSuperAdmin ? [['loginLogBook','User Login Log Book']] : []),
+    ...(iAmSuperAdmin ? [['flashMessages','Flash Messages'],['loginLogBook','User Login Log Book']] : []),
   ];
   return (
     <div>
@@ -1359,6 +1423,7 @@ export default function Admin(){
       {tab==='productivity' && <ProductivityPanel/>}
       {tab==='notifications' && <NotificationsPanel/>}
       {tab==='projectSettings' && <ProjectSettingsPanel/>}
+      {tab==='flashMessages' && iAmSuperAdmin && <FlashMessagesPanel/>}
       {tab==='loginLogBook' && iAmSuperAdmin && <LoginLogBookPanel/>}
     </div>
   );

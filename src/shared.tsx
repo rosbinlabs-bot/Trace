@@ -329,6 +329,23 @@ export const isSuperAdmin = (email: string, admin: any) => {
   return effectivePermissionLevel(u, admin) === 'Super Admin';
 };
 
+// Flash Messages (Administration -> Flash Messages, Super Admin only) -- announcements posted to
+// every teammate (never clients) as a blocking pop-up at their next login. `active:false` lets a
+// Super Admin retire one without deleting its history/audit trail. Dismissal is tracked per account,
+// not on the message itself, via that account's own Administration -> Users record
+// (`dismissedFlashIds`, see App.tsx's FlashMessageGate) -- so "never show the same message again"
+// is remembered no matter which device/browser someone next logs in from, same as everything else in
+// Administration -> Users. Returns every active message this account hasn't dismissed yet, oldest
+// first, so more than one undismissed message queues (shown one at a time) instead of the newest
+// silently replacing an unseen older one.
+export const pendingFlashMessages = (admin: any, myProfile: any): any[] => {
+  if (!myProfile) return [];
+  const dismissed = new Set(myProfile.dismissedFlashIds || []);
+  return (admin?.flashMessages || [])
+    .filter((m: any) => m.active !== false && !dismissed.has(m.id))
+    .sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
+};
+
 // Canonical project roles used for member selection & phase tagging
 export const PROJECT_ROLES = ['Strategic Lead','Project Head','Project Manager','Associate'];
 
@@ -580,6 +597,9 @@ export const DEFAULT_ADMIN_DATA: any = {
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
   extras: DEFAULT_ADMIN_EXTRAS,
   productivity: {},
+  // Administration -> Flash Messages (Super Admin only) -- {id, text, createdBy, createdAt, active}.
+  // See pendingFlashMessages/isSuperAdmin below.
+  flashMessages: [],
 };
 // Single context for the whole Administration area — the live object is loaded from Supabase
 // (db.loadAll -> App.tsx), with DEFAULT_ADMIN_DATA used only to fill in any key that has no row yet.
@@ -1313,22 +1333,35 @@ export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, a
   return out;
 };
 
+// How many days an item has been sitting in review, based on reviewSince (stamped the moment it
+// first queues for review — see applyStatus's Completed branch and Phases.tsx's markImplementedMs/
+// markImplementedSt). null when there's no reviewSince to measure from (nothing queued yet). Shared
+// by the Dashboard's approval-bottleneck panel, Approvals.tsx's Pending Approvals table, and
+// totalPendingApprovals below so all three agree on how long something has actually been stuck.
+export const daysPending = (item: any): number | null => item.reviewSince ? Math.max(0, -daysLeft(item.reviewSince)) : null;
+// An item counts as genuinely "stuck" (red/urgent) once it's been sitting in review this long. Below
+// this it still shows up everywhere it needs to (Approvals.tsx's table, the sidebar badge count) but
+// in a neutral color — the point isn't hiding fresh approvals, just not flagging something as urgent
+// the instant it's marked Completed by someone who doesn't personally qualify to finalize it.
+export const STUCK_APPROVAL_DAYS = 3;
 // Total items anywhere in the approval pipeline (Sub Task/Milestone review, the Implemented
 // escalation chain, or Client sign-off — anything with a non-empty `review`) across the given
-// projects' phase trees. Exactly the same count Approvals.tsx (Client Approval Workflow) tallies as
-// its "Pending Approvals" total — factored out here so the sidebar's Phase Management/Client Approval
-// notification badges (App.tsx) show that identical number without re-walking the tree separately.
-export const totalPendingApprovals = (projects: any[], tree: any): number => {
-  let n = 0;
+// projects' phase trees, split into `total` (every pending item, shown right away) and `stuck` (been
+// sitting in review >= STUCK_APPROVAL_DAYS days, per daysPending above). The sidebar's Phase
+// Management/Client Approval notification badge (App.tsx) shows `total` as its number and uses
+// `stuck` to decide whether to render red or a neutral color.
+export const totalPendingApprovals = (projects: any[], tree: any): { total: number; stuck: number } => {
+  let total = 0, stuck = 0;
+  const tally = (item: any) => { if (item.review) { total++; if ((daysPending(item) ?? 0) >= STUCK_APPROVAL_DAYS) stuck++; } };
   projects.forEach((p: any) => {
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
-        if (ms.review) n++;
-        (ms.subtasks||[]).forEach((s: any) => { if (s.review) n++; });
+        tally(ms);
+        (ms.subtasks||[]).forEach((s: any) => tally(s));
       });
     });
   });
-  return n;
+  return { total, stuck };
 };
 export const phaseActualEnd = (ph) => {
   const dates = ph.milestones.map(itemDoneDate).filter(Boolean);

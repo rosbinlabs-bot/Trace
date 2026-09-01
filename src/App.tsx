@@ -98,17 +98,52 @@ function ClientGate({ admin, email, children }: { admin: any; email: string; chi
   return <>{children}</>;
 }
 
+// Blocking pop-up for Administration -> Flash Messages (Super Admin only), shown to every teammate
+// (never clients -- Shell only renders this when role!=='client') right after login, before they can
+// touch anything else underneath. Deliberately has no backdrop onClick/Escape close -- the only way
+// out is the button, which stamps this account's own dismissal (S.pendingFlashMessages reads it back
+// out via myProfile.dismissedFlashIds) so the same message is gone for good, from any device, the
+// moment it's acknowledged. More than one undismissed message queues one at a time rather than
+// racing -- dismissing the first re-renders with the next one still in the queue.
+function FlashMessageGate({ admin, myProfile, patchAdmin }: { admin: any; myProfile: any; patchAdmin: (key: string, updater: any) => void }) {
+  const queue = S.pendingFlashMessages(admin, myProfile);
+  const current = queue[0];
+  if (!current || !myProfile) return null;
+  const dismiss = () => {
+    patchAdmin('users', (us: any[]) => us.map((u: any) => u.id === myProfile.id
+      ? { ...u, dismissedFlashIds: [...(u.dismissedFlashIds || []), current.id] }
+      : u));
+  };
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+      <S.Card className="max-w-md w-full p-5 shadow-2xl">
+        <div className="flex items-center gap-2.5 mb-3">
+          <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+            <S.Icon name="notifications" className="w-4 h-4" />
+          </span>
+          <div className="font-semibold text-slate-800">Announcement</div>
+          {queue.length > 1 && <S.Badge cls="bg-slate-100 text-slate-500 ml-auto">{queue.length} new</S.Badge>}
+        </div>
+        <div className="text-sm text-slate-700 whitespace-pre-wrap mb-5 max-h-[50vh] overflow-y-auto">{current.text}</div>
+        <button onClick={dismiss} className="w-full bg-brand-600 hover:bg-brand-700 text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors">
+          Got it{queue.length > 1 ? ` — next (${queue.length - 1} more)` : ''}
+        </button>
+      </S.Card>
+    </div>
+  );
+}
+
 function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any; onSignOut: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = React.useContext(S.RoleContext);
-  const { admin } = React.useContext(S.AdminDataContext);
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { tree } = React.useContext(S.PhaseDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
   // Total items anywhere in the approval pipeline across every project this account can see -- shown
   // as a small notification badge on the Phase Management and Client Approval sidebar tabs, so the
   // count of outstanding approvals is visible without opening either screen. Clients never see these
   // two tabs (CLIENT_NAV omits them), so there's nothing to compute for that role.
-  const pendingApprovalsBadge = role==='client' ? 0 : S.totalPendingApprovals(projects, tree);
+  const pendingApprovalsBadge = role==='client' ? { total: 0, stuck: 0 } : S.totalPendingApprovals(projects, tree);
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -161,6 +196,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
 
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
+      {role !== 'client' && <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} />}
       <div className="flex h-screen overflow-hidden bg-slate-100">
         {/* Sidebar */}
         <aside className={`bg-white border-r border-slate-200 flex flex-col transition-all ${collapsed ? 'w-16' : 'w-60'}`}>
@@ -185,14 +221,17 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                 )}
                 {group.items.map((item: any) => {
                   // Only Phase Management and Client Approval carry a live pending-approvals count
-                  // today (see pendingApprovalsBadge above) -- shown as a small red badge over the
-                  // icon so it reads the same whether the sidebar is expanded or collapsed to icons.
-                  const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge : 0;
+                  // today (see pendingApprovalsBadge above) -- shown as a small badge over the icon so
+                  // it reads the same whether the sidebar is expanded or collapsed to icons. Neutral
+                  // grey until something's actually been stuck >= S.STUCK_APPROVAL_DAYS days -- red is
+                  // reserved for genuinely stale approvals, not the instant an item is marked
+                  // Completed by someone who doesn't personally qualify to finalize it.
+                  const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge : { total: 0, stuck: 0 };
                   return (
                   <NavLink
                     key={item.id}
                     to={`/${item.id}`}
-                    title={badgeCount>0 ? `${item.label} — ${badgeCount} pending approval${badgeCount===1?'':'s'}` : item.label}
+                    title={badgeCount.total>0 ? `${item.label} — ${badgeCount.total} pending approval${badgeCount.total===1?'':'s'}${badgeCount.stuck>0?` (${badgeCount.stuck} stuck ${S.STUCK_APPROVAL_DAYS}+ days)`:''}` : item.label}
                     // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
                     // click lands, so by the time the route actually changes the code is usually already
                     // there and the loading spinner doesn't show at all. Calling the same import()
@@ -211,9 +250,9 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   >
                     <span className="relative shrink-0 inline-flex">
                       <S.Icon name={item.id} className="w-[18px] h-[18px]" />
-                      {badgeCount>0 && (
-                        <span className="absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-[3px] rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center leading-none ring-2 ring-white">
-                          {badgeCount>99?'99+':badgeCount}
+                      {badgeCount.total>0 && (
+                        <span className={`absolute -top-1.5 -right-2 min-w-[15px] h-[15px] px-[3px] rounded-full text-white text-[9px] font-semibold flex items-center justify-center leading-none ring-2 ring-white ${badgeCount.stuck>0?'bg-red-500':'bg-slate-400'}`}>
+                          {badgeCount.total>99?'99+':badgeCount.total}
                         </span>
                       )}
                     </span>

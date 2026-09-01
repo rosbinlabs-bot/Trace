@@ -35,7 +35,9 @@ export default function Approvals(){
 
   // How long an item has been sitting in review, stamped the moment it first queued (item.reviewSince)
   // — same aging signal Dashboard's Approval Bottlenecks widget uses, so the two never disagree.
-  const daysPending = (item:any) => item.reviewSince ? Math.max(0, -S.daysLeft(item.reviewSince)) : null;
+  // Shared with Dashboard.tsx and shared.tsx's totalPendingApprovals (S.daysPending) so "how long
+  // has this been stuck" is computed identically everywhere in the app.
+  const daysPending = (item:any) => S.daysPending(item);
 
   // Who's actually expected to act next — the approver level for a Sub Task/Milestone decision, the
   // next name in the Implemented chain, or the Client Owner once it's reached sign-off.
@@ -164,7 +166,7 @@ export default function Approvals(){
                       <S.Td className="font-medium max-w-[220px] truncate" title={e.item.name}>{e.item.name}</S.Td>
                       <S.Td><S.Badge cls={S.statusColor('Pending')}>{e.stage}</S.Badge></S.Td>
                       <S.Td className="text-slate-500 max-w-[140px] truncate" title={e.waitingOn}>{e.waitingOn}</S.Td>
-                      <S.Td>{e.days!==null ? <span className={`font-medium ${e.days>=5?'text-red-600':e.days>=2?'text-amber-600':'text-slate-500'}`}>{e.days}d</span> : <span className="text-slate-300">—</span>}</S.Td>
+                      <S.Td>{e.days!==null ? <span className={`font-medium ${e.days>=S.STUCK_APPROVAL_DAYS?'text-red-600':'text-slate-500'}`}>{e.days}d</span> : <span className="text-slate-300">—</span>}</S.Td>
                     </tr>
                   ))}
                 </tbody>

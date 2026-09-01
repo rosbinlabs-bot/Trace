@@ -129,7 +129,9 @@ export default function Dashboard(){
 
   // ---- approval bottlenecks — who's actually sitting on a pending decision, and for how long
   // (via reviewSince, stamped the moment an item first queues for review). ----
-  const daysPending = (item:any) => item.reviewSince ? Math.max(0, -S.daysLeft(item.reviewSince)) : null;
+  // Shared with Approvals.tsx and shared.tsx's totalPendingApprovals (S.daysPending) so "how long
+  // has this been stuck" agrees everywhere in the app.
+  const daysPending = (item:any) => S.daysPending(item);
   const approverFor = (entry:any) => {
     const p = projects.find((pp:any)=>pp.name===entry.project);
     if (!p) return { name:'—', level:'' };
@@ -268,7 +270,7 @@ export default function Dashboard(){
                 <span className="text-xs text-slate-400 whitespace-nowrap">Risk Management</span>
               </div>
             )}
-            {oldestPending && oldestPending.days!==null && oldestPending.days>=3 && (
+            {oldestPending && oldestPending.days!==null && oldestPending.days>=S.STUCK_APPROVAL_DAYS && (
               <button type="button" onClick={()=>goToBottleneck(oldestPending)} className="w-full flex flex-wrap justify-between gap-2 py-2 text-sm text-left hover:bg-red-50/60 rounded-lg px-1 -mx-1 transition-colors">
                 <span className="text-slate-700">Approval stuck {oldestPending.days}d on {oldestPending.approver.name} ({oldestPending.approver.level}) — {(oldestPending.item as any).name}, {oldestPending.project}</span>
                 <span className="text-xs text-slate-400 whitespace-nowrap">Phase Management →</span>
