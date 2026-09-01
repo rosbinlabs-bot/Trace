@@ -390,6 +390,12 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                       whole client experience rather than a second, separately-configured toggle. */}
                   <Route path="/monthlyplan" element={<ClientGate admin={admin} email={email}><MonthlyPlan /></ClientGate>} />
                   <Route path="/calendar" element={<ClientGate admin={admin} email={email}><CalendarScreen /></ClientGate>} />
+                  {/* Added 2026-09-01: Implementation Tracker, same treatment as Monthly Plan/Calendar
+                      above -- Implementation.tsx already reads projects/tree straight from
+                      ProjectsDataContext/PhaseDataContext, both already scoped to just the client's
+                      one tagged project, and the screen has no edit controls at all (pure read-only
+                      status cards), so no extra view-only gating was needed inside the screen itself. */}
+                  <Route path="/implementation" element={<ClientGate admin={admin} email={email}><Implementation /></ClientGate>} />
                   <Route path="*" element={<Navigate to="/portal" replace />} />
                 </>
               ) : (

@@ -770,6 +770,7 @@ export const CLIENT_NAV = [
     { id:'structure', label:'Project Structure' },
     { id:'monthlyplan', label:'Monthly Plan' },
     { id:'calendar', label:'Calendar' },
+    { id:'implementation', label:'Implementation Tracker' },
   ]},
 ];
 
