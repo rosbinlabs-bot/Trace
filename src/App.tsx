@@ -1,5 +1,5 @@
 import React, { useState, useEffect, Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import * as S from './shared';
 import * as db from './db';
 import { supabase } from './supabaseClient';
@@ -133,6 +133,60 @@ function FlashMessageGate({ admin, myProfile, patchAdmin }: { admin: any; myProf
   );
 }
 
+// Personalized "what's waiting on you" pop-up, shown to EVERY signed-in account -- teammates AND
+// Client logins both, unlike FlashMessageGate above -- once per login. Reuses S.myPendingApprovals /
+// S.clientPendingApprovals, the exact same lists Dashboard's "My Pending Approvals" card, Approvals.tsx
+// and Client Portal's "Pending Your Approval" card already show, so this pop-up can never disagree
+// with any of them. Sequenced to only appear once Shell's FlashMessageGate has nothing left queued
+// (see the render order below) so the two pop-ups never stack on top of each other. Unlike the admin
+// announcement, this reflects live, ever-changing data -- so closing it only hides it for the rest of
+// this session (plain useState, nothing persisted); it isn't a permanent "seen" flag, since what's
+// pending today may be cleared or replaced by tomorrow. Each row color-codes by S.daysPending exactly
+// the way Approvals.tsx's own table already does -- neutral under S.STUCK_APPROVAL_DAYS, red at or
+// above it -- and clicking a row jumps straight to that item (Phase Management for staff, Client
+// Portal for a client) via the same {projectId,phaseId,msId,stId} deep-link shape both screens
+// already read from router state.
+function PendingApprovalsFlash({ role, items }: { role: string; items: any[] }) {
+  const navigate = useNavigate();
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed || !items.length) return null;
+  const openItem = (it: any) => {
+    setDismissed(true);
+    navigate(role === 'client' ? '/portal' : '/phases', { state: { projectId: it.projectId, phaseId: it.phaseId, msId: it.msId, stId: it.stId } });
+  };
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+      <S.Card className="max-w-lg w-full p-5 shadow-2xl">
+        <div className="flex items-center gap-2.5 mb-1">
+          <span className="w-9 h-9 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center shrink-0">
+            <S.Icon name="approvals" className="w-4 h-4" />
+          </span>
+          <div className="font-semibold text-slate-800">{role === 'client' ? 'Pending your sign-off' : 'Pending your approval'}</div>
+          <S.Badge cls="bg-slate-100 text-slate-500 ml-auto">{items.length}</S.Badge>
+        </div>
+        <div className="text-xs text-slate-500 mb-3">
+          {items.length} item{items.length === 1 ? '' : 's'} {role === 'client' ? 'in Client Portal' : 'in Phase Management'} {items.length === 1 ? 'is' : 'are'} waiting on you. Anything pending {S.STUCK_APPROVAL_DAYS}+ days is highlighted in red.
+        </div>
+        <div className="max-h-[50vh] overflow-y-auto space-y-1.5 mb-4 -mx-1 px-1">
+          {items.map((it: any, i: number) => {
+            const stuck = it.days !== null && it.days !== undefined && it.days >= S.STUCK_APPROVAL_DAYS;
+            return (
+              <button key={i} onClick={() => openItem(it)} className={`w-full flex items-center justify-between gap-2 text-left text-sm rounded-lg px-3 py-2 border transition-colors ${stuck ? 'bg-red-50 border-red-200 hover:bg-red-100' : 'bg-slate-50 border-slate-200 hover:bg-slate-100'}`}>
+                <span className="flex-1 min-w-0">
+                  <span className="block truncate text-slate-700">{it.label}</span>
+                  <span className="block text-[11px] text-slate-400 truncate">{it.project}</span>
+                </span>
+                <span className={`shrink-0 text-xs font-medium whitespace-nowrap ${stuck ? 'text-red-600' : 'text-slate-400'}`}>{it.days !== null && it.days !== undefined ? `${it.days}d` : 'new'}</span>
+              </button>
+            );
+          })}
+        </div>
+        <button onClick={() => setDismissed(true)} className="w-full bg-brand-600 hover:bg-brand-700 text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors">Close</button>
+      </S.Card>
+    </div>
+  );
+}
+
 function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any; onSignOut: () => void }) {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = React.useContext(S.RoleContext);
@@ -194,9 +248,18 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Announcements (FlashMessageGate) take priority and block everything else -- teammates only,
+  // never clients (see FlashMessageGate's own comment). Once there's nothing left queued there (or
+  // for a client, who never sees one at all), PendingApprovalsFlash takes over if this account has
+  // anything genuinely pending on it -- the two are mutually exclusive so they never stack.
+  const announcementQueue = role !== 'client' ? S.pendingFlashMessages(admin, myProfile) : [];
+  const myPendingItems = role === 'client' ? S.clientPendingApprovals(projects, tree) : S.myPendingApprovals(projects, tree, myProfile, admin);
+
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
-      {role !== 'client' && <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} />}
+      {announcementQueue.length > 0
+        ? <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} />
+        : <PendingApprovalsFlash role={role} items={myPendingItems} />}
       <div className="flex h-screen overflow-hidden bg-slate-100">
         {/* Sidebar */}
         <aside className={`bg-white border-r border-slate-200 flex flex-col transition-all ${collapsed ? 'w-16' : 'w-60'}`}>

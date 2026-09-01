@@ -1308,7 +1308,11 @@ export const phaseMilestonesReady = (ph) => ph.milestones.length>0 && ph.milesto
 // Administration -> Users hierarchy level) — just walked across every project the account can see
 // (not only whichever tab happens to be selected there) and without Phases.tsx's 2-day urgency
 // filter, since something waiting on YOUR decision is worth surfacing on the Dashboard regardless of
-// deadline. Used by Dashboard.tsx's "My Pending Approvals" card.
+// deadline. Used by Dashboard.tsx's "My Pending Approvals" card and App.tsx's login pop-up
+// (PendingApprovalsFlash) — each entry carries `days` (via daysPending, null for a phase confirmation
+// since those have no reviewSince) and the ids needed to deep-link straight to the item in Phase
+// Management (same {projectId,phaseId,msId,stId} shape Phases.tsx's own deep-link effect reads),
+// sorted most-overdue-first so the most urgent items lead in either surface.
 export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, admin: any) => {
   if (!myProfile) return [];
   const out: any[] = [];
@@ -1320,17 +1324,37 @@ export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, a
     const phApprover = approverLevelFor('phase', p);
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
-        if (myLevel===msApprover && ms.review==='Pending Review') out.push({ project:p.name, label:`Approve milestone — ${ms.name}` });
-        if (ms.review==='Implemented Review' && !ms.headApprovedImpl && (ms.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${ms.name}` });
+        if (myLevel===msApprover && ms.review==='Pending Review') out.push({ project:p.name, label:`Approve milestone — ${ms.name}`, days:daysPending(ms), projectId:p.id, phaseId:ph.id, msId:ms.id });
+        if (ms.review==='Implemented Review' && !ms.headApprovedImpl && (ms.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${ms.name}`, days:daysPending(ms), projectId:p.id, phaseId:ph.id, msId:ms.id });
         (ms.subtasks||[]).forEach((s: any) => {
-          if (myLevel===stApprover && s.review==='Pending Review') out.push({ project:p.name, label:`Approve sub task — ${s.name}` });
-          if (s.review==='Implemented Review' && !s.headApprovedImpl && (s.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${s.name}` });
+          if (myLevel===stApprover && s.review==='Pending Review') out.push({ project:p.name, label:`Approve sub task — ${s.name}`, days:daysPending(s), projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id });
+          if (s.review==='Implemented Review' && !s.headApprovedImpl && (s.implChain||[])[0]===myLevel) out.push({ project:p.name, label:`Approve Implemented — ${s.name}`, days:daysPending(s), projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id });
         });
       });
-      if (myLevel===phApprover && phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold) out.push({ project:p.name, label:`Confirm phase complete — ${ph.name}` });
+      if (myLevel===phApprover && phaseMilestonesReady(ph) && !ph.headConfirmedComplete && !ph.onHold) out.push({ project:p.name, label:`Confirm phase complete — ${ph.name}`, days:null, projectId:p.id, phaseId:ph.id });
     });
   });
-  return out;
+  return out.sort((a,b)=>(b.days??-1)-(a.days??-1));
+};
+// Same "what's waiting on me" concept as myPendingApprovals above, for a Client-type account instead
+// of staff — mirrors Portal.tsx's own "Pending Your Approval" card filter exactly (Implemented
+// Review, the internal chain fully walked to headApprovedImpl, not yet clientApprovedImpl) so the
+// two never disagree. `projects` is expected already scoped to what this account can see (App.tsx's
+// ProjectsDataContext already filters a client login down to just their own tagged project) — this
+// does not re-scope by project itself. Used by App.tsx's login pop-up (PendingApprovalsFlash).
+export const clientPendingApprovals = (projects: any[], tree: any): any[] => {
+  const out: any[] = [];
+  projects.forEach((p: any) => {
+    (tree[p.id]||[]).forEach((ph: any) => {
+      (ph.milestones||[]).forEach((ms: any) => {
+        if (ms.review==='Implemented Review' && ms.headApprovedImpl && !ms.clientApprovedImpl) out.push({ project:p.name, label:`Sign off milestone — ${ms.name}`, days:daysPending(ms), projectId:p.id, phaseId:ph.id, msId:ms.id });
+        (ms.subtasks||[]).forEach((s: any) => {
+          if (s.review==='Implemented Review' && s.headApprovedImpl && !s.clientApprovedImpl) out.push({ project:p.name, label:`Sign off sub task — ${s.name}`, days:daysPending(s), projectId:p.id, phaseId:ph.id, msId:ms.id, stId:s.id });
+        });
+      });
+    });
+  });
+  return out.sort((a,b)=>(b.days??-1)-(a.days??-1));
 };
 
 // How many days an item has been sitting in review, based on reviewSince (stamped the moment it
