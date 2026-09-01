@@ -98,15 +98,15 @@ function ClientGate({ admin, email, children }: { admin: any; email: string; chi
   return <>{children}</>;
 }
 
-// Blocking pop-up for Administration -> Flash Messages (Super Admin only), shown to every teammate
-// (never clients -- Shell only renders this when role!=='client') right after login, before they can
-// touch anything else underneath. Deliberately has no backdrop onClick/Escape close -- the only way
-// out is the button, which stamps this account's own dismissal (S.pendingFlashMessages reads it back
-// out via myProfile.dismissedFlashIds) so the same message is gone for good, from any device, the
-// moment it's acknowledged. More than one undismissed message queues one at a time rather than
-// racing -- dismissing the first re-renders with the next one still in the queue.
-function FlashMessageGate({ admin, myProfile, patchAdmin }: { admin: any; myProfile: any; patchAdmin: (key: string, updater: any) => void }) {
-  const queue = S.pendingFlashMessages(admin, myProfile);
+// Blocking pop-up for Administration -> Flash Messages (Super Admin only), shown right after login
+// to whichever audience the Super Admin targeted the message at -- Teammates, Clients, or All (see
+// S.pendingFlashMessages). Deliberately has no backdrop onClick/Escape close -- the only way out is
+// the button, which stamps this account's own dismissal (S.pendingFlashMessages reads it back out
+// via myProfile.dismissedFlashIds) so the same message is gone for good, from any device, the moment
+// it's acknowledged. More than one undismissed message queues one at a time rather than racing --
+// dismissing the first re-renders with the next one still in the queue.
+function FlashMessageGate({ admin, myProfile, patchAdmin, role }: { admin: any; myProfile: any; patchAdmin: (key: string, updater: any) => void; role: string }) {
+  const queue = S.pendingFlashMessages(admin, myProfile, role);
   const current = queue[0];
   if (!current || !myProfile) return null;
   const dismiss = () => {
@@ -248,17 +248,18 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Announcements (FlashMessageGate) take priority and block everything else -- teammates only,
-  // never clients (see FlashMessageGate's own comment). Once there's nothing left queued there (or
-  // for a client, who never sees one at all), PendingApprovalsFlash takes over if this account has
-  // anything genuinely pending on it -- the two are mutually exclusive so they never stack.
-  const announcementQueue = role !== 'client' ? S.pendingFlashMessages(admin, myProfile) : [];
+  // Announcements (FlashMessageGate) take priority and block everything else -- targeted at
+  // whichever audience the Super Admin picked (Teammates/Clients/All), so a client account can now
+  // see one too if it was aimed at them. Once there's nothing left queued there (or none was ever
+  // targeted at this account), PendingApprovalsFlash takes over if this account has anything
+  // genuinely pending on it -- the two are mutually exclusive so they never stack.
+  const announcementQueue = S.pendingFlashMessages(admin, myProfile, role);
   const myPendingItems = role === 'client' ? S.clientPendingApprovals(projects, tree) : S.myPendingApprovals(projects, tree, myProfile, admin);
 
   return (
     <div className={theme === 'dark' ? 'dark' : ''}>
       {announcementQueue.length > 0
-        ? <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} />
+        ? <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} role={role} />
         : <PendingApprovalsFlash role={role} items={myPendingItems} />}
       <div className="flex h-screen overflow-hidden bg-slate-100">
         {/* Sidebar */}

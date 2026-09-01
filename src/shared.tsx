@@ -329,20 +329,28 @@ export const isSuperAdmin = (email: string, admin: any) => {
   return effectivePermissionLevel(u, admin) === 'Super Admin';
 };
 
-// Flash Messages (Administration -> Flash Messages, Super Admin only) -- announcements posted to
-// every teammate (never clients) as a blocking pop-up at their next login. `active:false` lets a
-// Super Admin retire one without deleting its history/audit trail. Dismissal is tracked per account,
-// not on the message itself, via that account's own Administration -> Users record
-// (`dismissedFlashIds`, see App.tsx's FlashMessageGate) -- so "never show the same message again"
-// is remembered no matter which device/browser someone next logs in from, same as everything else in
-// Administration -> Users. Returns every active message this account hasn't dismissed yet, oldest
-// first, so more than one undismissed message queues (shown one at a time) instead of the newest
-// silently replacing an unseen older one.
-export const pendingFlashMessages = (admin: any, myProfile: any): any[] => {
+// Flash Messages (Administration -> Flash Messages, Super Admin only) -- announcements posted as a
+// blocking pop-up at the recipient's next login, targeted by `audience`: 'teammates' (everyone
+// except Client logins), 'clients' (Client logins only), or 'all' (everyone). A message posted
+// before the audience picker existed has no `audience` field at all -- treated as 'teammates' so
+// old announcements keep behaving exactly as they always did (clients never saw them).
+// `active:false` lets a Super Admin retire one without deleting its history/audit trail. Dismissal
+// is tracked per account, not on the message itself, via that account's own Administration -> Users
+// record (`dismissedFlashIds`, see App.tsx's FlashMessageGate) -- so "never show the same message
+// again" is remembered no matter which device/browser someone next logs in from, same as everything
+// else in Administration -> Users. Returns every active message targeted at this account's audience
+// that it hasn't dismissed yet, oldest first, so more than one undismissed message queues (shown one
+// at a time) instead of the newest silently replacing an unseen older one.
+export const pendingFlashMessages = (admin: any, myProfile: any, role?: string): any[] => {
   if (!myProfile) return [];
   const dismissed = new Set(myProfile.dismissedFlashIds || []);
+  const audienceMatches = (m: any) => {
+    const aud = m.audience || 'teammates';
+    if (aud === 'all') return true;
+    return role === 'client' ? aud === 'clients' : aud === 'teammates';
+  };
   return (admin?.flashMessages || [])
-    .filter((m: any) => m.active !== false && !dismissed.has(m.id))
+    .filter((m: any) => m.active !== false && !dismissed.has(m.id) && audienceMatches(m))
     .sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
 };
 
