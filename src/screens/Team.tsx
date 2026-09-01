@@ -61,7 +61,6 @@ export default function Team(){
   // over picking a single one -- each answers a different question ("scan everyone" vs. "who has
   // room for this" vs. "tell me about this one person") and none of them replaces the others.
   const [tab, setTab] = useState<'roster'|'board'|'directory'>('roster');
-  const [productivityOpen, setProductivityOpen] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const toggleExpanded = (id:string) => setExpandedIds(s => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next; });
   const [drawerId, setDrawerId] = useState<string|null>(null);
@@ -444,50 +443,6 @@ export default function Team(){
         </div>
       )}
 
-      {/* Team Productivity — benchmarks set in Administration -> Team Productivity, actuals computed
-          live from Project Master + Phase Management (see productivityFor above). Everyone side by
-          side, unlike the per-person detail above — collapsible, open by default. */}
-      <S.Card className="overflow-hidden mt-5">
-        <button onClick={()=>setProductivityOpen(o=>!o)} className="w-full flex items-center justify-between gap-2 px-4 pt-3 pb-2 text-left">
-          <div>
-            <div className="font-semibold text-slate-800 inline-flex items-center gap-1.5">
-              <span className="text-slate-400 text-xs w-3 inline-block">{productivityOpen?'▼':'▶'}</span>
-              Team Productivity — Benchmarks vs Actuals
-            </div>
-            <div className="text-xs text-slate-400 mt-0.5">Benchmarks are set in Administration → Team Productivity. Actuals are live — on-time % is measured against each person's own assigned milestones/sub tasks in Phase Management, and current project load comes from Project Master (a Premium-tier project counts as two).</div>
-          </div>
-        </button>
-        {productivityOpen && (
-        <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200">
-            <tr><S.Th>Name</S.Th><S.Th>On-Time Deliverable Completion</S.Th><S.Th>Projects Handling at a Time</S.Th><S.Th>On-Time Client Sign-off</S.Th></tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {team.map((m:any)=>{
-              const p = productivityFor(m);
-              return (
-                <tr key={m.id||m.name} className="hover:bg-slate-50">
-                  <S.Td>
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center text-[11px] font-semibold shrink-0">{initials(m.name)}</div>
-                      <span className="font-medium text-slate-800 whitespace-nowrap">{m.name}</span>
-                    </div>
-                  </S.Td>
-                  <S.Td><MetricCell actual={p.onTimeDelivery.actual} benchmark={p.onTimeDelivery.benchmark} fmt={pctFmt}/></S.Td>
-                  <S.Td><MetricCell actual={p.concurrentProjects.actual} benchmark={p.concurrentProjects.benchmark} lowerIsBetter/></S.Td>
-                  <S.Td><MetricCell actual={p.onTimeClientSignoff.actual} benchmark={p.onTimeClientSignoff.benchmark} fmt={pctFmt}/></S.Td>
-                </tr>
-              );
-            })}
-            {team.length===0 && (
-              <tr><td colSpan={4} className="text-center text-sm text-slate-400 py-8">Add team members in Administration → Users to see productivity benchmarks.</td></tr>
-            )}
-          </tbody>
-        </table>
-        </div>
-        )}
-      </S.Card>
     </div>
   );
 }
