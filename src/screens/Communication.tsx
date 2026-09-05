@@ -100,7 +100,11 @@ function AttachmentView({ a, onDownload, downloading }: any) {
 // reply composer. Deliberately a top-level component (not defined inline inside Communication()) --
 // an incoming realtime message re-renders Communication on every keystroke someone else makes
 // elsewhere in the channel, and a component redefined inline on every render would remount (losing
-// whatever the person was mid-typing) every single time that happens.
+// whatever the person was mid-typing) every single time that happens. Communication() forces an
+// intentional remount instead by keying each usage on the active project/thread (see the two
+// <Composer key=.../> render sites below) -- that's what clears a draft/tags left over from a
+// channel or thread you've since switched away from, without touching this component on every
+// unrelated re-render.
 function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }: {
   roster: { name: string; label: string }[];
   subtasks: { id: string; name: string; phaseId: string; msId: string; phaseName?: string; msName?: string }[];
@@ -162,6 +166,19 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
   };
   const mentionOptions = mentionQuery === null ? [] : roster.filter((r) => r.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 6);
   const taskOptions = taskQuery === null ? [] : subtasks.filter((t) => t.name.toLowerCase().includes(taskQuery.toLowerCase())).slice(0, 6);
+  // Lets someone un-tag a person or un-reference a sub task after picking it, without having to hunt
+  // through the raw text for "@Name"/"#Task Name" and delete it by hand -- strips that one occurrence
+  // out of the text alongside dropping it from the tracked list.
+  const escRe = (v: string) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const removeMention = (name: string) => {
+    setMentions((ms) => ms.filter((m) => m !== name));
+    setText((tx) => tx.replace(new RegExp(`@${escRe(name)}\\s?`), ''));
+  };
+  const removeTaskRef = (id: string) => {
+    const t = taskRefs.find((x) => x.id === id);
+    setTaskRefs((ts) => ts.filter((x) => x.id !== id));
+    if (t) setText((tx) => tx.replace(new RegExp(`#${escRe(t.name)}\\s?`), ''));
+  };
 
   const addFiles = (list: FileList | null) => { if (list) setFiles((fs) => [...fs, ...Array.from(list)]); };
   const removeFile = (i: number) => setFiles((fs) => fs.filter((_, j) => j !== i));
@@ -254,8 +271,18 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
       </div>
       {(mentions.length > 0 || taskRefs.length > 0) && (
         <div className="flex flex-wrap gap-1 mb-1">
-          {mentions.map((m) => <span key={`@${m}`} className="text-[10px] bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">@{m}</span>)}
-          {taskRefs.map((t) => <span key={t.id} className="text-[10px] bg-violet-50 text-violet-700 rounded-full px-2 py-0.5">#{t.name}</span>)}
+          {mentions.map((m) => (
+            <span key={`@${m}`} className="inline-flex items-center gap-1 text-[10px] bg-brand-50 text-brand-700 rounded-full pl-2 pr-1 py-0.5">
+              @{m}
+              <button type="button" onClick={() => removeMention(m)} className="text-brand-400 hover:text-red-500 leading-none">✕</button>
+            </span>
+          ))}
+          {taskRefs.map((t) => (
+            <span key={t.id} className="inline-flex items-center gap-1 text-[10px] bg-violet-50 text-violet-700 rounded-full pl-2 pr-1 py-0.5">
+              #{t.name}
+              <button type="button" onClick={() => removeTaskRef(t.id)} className="text-violet-400 hover:text-red-500 leading-none">✕</button>
+            </span>
+          ))}
         </div>
       )}
       {err && <div className="text-[11px] text-red-500 mb-1">{err}</div>}
@@ -430,7 +457,7 @@ export default function Communication() {
             ))}
           </div>
 
-          <Composer roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
+          <Composer key={`composer-${activeProj}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
         </S.Card>
 
         {/* Thread panel — opens alongside the feed when a message's Reply is clicked */}
@@ -448,7 +475,7 @@ export default function Communication() {
                 <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact />
               ))}
             </div>
-            <Composer roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
+            <Composer key={`thread-composer-${activeProj}-${openThreadId}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
           </S.Card>
         )}
       </div>
