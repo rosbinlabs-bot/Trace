@@ -44,15 +44,35 @@ export const CURRENT_MONTH_END = (() => {
   return `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 })();
 export const CURRENT_MONTH_LABEL = new Date(TODAY_ISO+'T00:00:00').toLocaleString('en-US',{month:'long',year:'numeric'});
-export const monthsBetween = (a, b) => (!a || !b) ? 0 : Math.max(0, (+new Date(b) - +new Date(a)) / (30.44 * 864e5));
+// Calendar-accurate month count between two ISO dates -- NOT a day-count / 30.44-average shortcut.
+// That average (365.25/12) approximates a "typical" month, but any specific 6-month span made of
+// real calendar months (e.g. Sep, Oct, Nov, Dec, Jan, Feb) can easily total fewer than 6*30.44 days
+// -- Sep 2 -> Mar 2 is 181 days, and 181/30.44 rounds to 5.9, not 6. That silently undercounted
+// "Total Project Months" (and therefore Total Value = months x fee) by a full displayed decimal on
+// exactly the clean, whole-number contracts this matters most for. Real fix: walk forward from the
+// start date in whole calendar months (JS Date normalizes month overflow for us) until we're at or
+// past the end date, then express the leftover days as a fraction of the specific calendar month
+// they fall in (not a fixed average) -- so a start/end pair exactly N calendar months apart always
+// comes out to precisely N.0, and everything is done in UTC getters/constructors so the result
+// doesn't depend on the browser's or server's local timezone.
+export const monthsBetween = (a, b) => {
+  if (!a || !b) return 0;
+  const start = new Date(a), end = new Date(b);
+  if (end <= start) return 0;
+  let months = (end.getUTCFullYear() - start.getUTCFullYear()) * 12 + (end.getUTCMonth() - start.getUTCMonth());
+  let anchor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + months, start.getUTCDate()));
+  let guard = 0;
+  while (anchor > end && guard < 24) { months -= 1; anchor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + months, start.getUTCDate())); guard++; }
+  const nextAnchor = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + months + 1, start.getUTCDate()));
+  const remDays = (+end - +anchor) / 864e5;
+  const monthSpan = (+nextAnchor - +anchor) / 864e5;
+  return Math.max(0, months + (monthSpan > 0 ? remDays / monthSpan : 0));
+};
 export const projTotalMonths = (p) => monthsBetween(p.start, p.end);
-// Revenue math rounds months to the same 1-decimal precision Project Master actually displays
-// ("Total Project Months") before multiplying by the fee. monthsBetween is a day-count / 30.44
-// average, so a project that's really 6 calendar months (e.g. Aug 12 -> Feb 11) lands on something
-// like 6.0118 rather than an exact 6 -- shown as "6.0" either way, but multiplying the UNROUNDED
-// 6.0118 by the fee silently added a few thousand rupees the person could never see or explain from
-// the number on screen. Rounding to 1 decimal first keeps "Total Value" mathematically consistent
-// with "Total Project Months × Monthly Fee" exactly as displayed.
+// Revenue math still rounds months to the same 1-decimal precision Project Master displays
+// ("Total Project Months") before multiplying by the fee, so "Total Value" always matches
+// "Total Project Months x Monthly Fee" exactly as shown on screen (guards against any leftover
+// floating-point dust from the division above, e.g. 6.000000000000001).
 const roundToDisplayedMonths = (months) => Math.round(months * 10) / 10;
 export const projTargetRevenue = (p) => Math.round(roundToDisplayedMonths(projTotalMonths(p)) * (Number(p.monthlyFee)||0));
 export const projElapsedMonths = (p) => monthsBetween(p.start, (new Date(TODAY_ISO) < new Date(p.end) ? TODAY_ISO : p.end));
