@@ -160,12 +160,17 @@ export default function Reports(){
   const billingTypeMixData = countProjectsBy('billing');
   const categoryMixData = countProjectsBy('category');
 
-  // Collections Aging — how much (and how many invoices) are overdue-and-unreceived, bucketed.
+  // Collections Aging — how much (and how many open items) are overdue-and-unreceived, bucketed.
+  // Reads S.outstandingCollections (2026-08-24 fix), same as Dashboard's widget -- this report was
+  // still reading `invoices` alone, which only ever gets a row once a Payment Receipt is confirmed
+  // Received, so an unconfirmed/partial receipt overdue past its due date was invisible here even
+  // after Dashboard's aging was fixed to catch it. See project_trace_pmt_collections_aging memory.
   const agingBucketDefs = ['Not Due Yet','0–30d Overdue','31–60d Overdue','61–90d Overdue','90d+ Overdue'];
+  const openReceivables = S.outstandingCollections(projects, invoices);
   const agingData = (() => {
     const amt: any = {}, cnt: any = {};
     agingBucketDefs.forEach(k=>{ amt[k]=0; cnt[k]=0; });
-    (invoices||[]).filter((i:any)=>i.status!=='Received').forEach((i:any)=>{
+    openReceivables.forEach((i:any)=>{
       const dl = S.daysLeft(i.dueDate||S.TODAY_ISO);
       let key = 'Not Due Yet';
       if (dl<0) { const od=Math.abs(dl); key = od<=30?'0–30d Overdue': od<=60?'31–60d Overdue': od<=90?'61–90d Overdue':'90d+ Overdue'; }
@@ -308,7 +313,7 @@ export default function Reports(){
       case 'billingaging':
         return (
           <div>
-            <Charts.ChartBlock title="Outstanding Amount by Age" sub="Invoices not yet marked Received, bucketed by days past due">
+            <Charts.ChartBlock title="Outstanding Amount by Age" sub="Outstanding payments not yet fully received — Billing Tracker invoices and Project Master Payment Receipts — bucketed by days past due">
               <Charts.BarChartMini data={agingData} xKey="bucket" bars={[{key:'amount', color:'#ef4444', name:'Amount (₹)'}]} height={240}/>
             </Charts.ChartBlock>
             {miniTable(agingData.map((a:any)=>(
@@ -317,7 +322,7 @@ export default function Reports(){
                 <S.Td>{a.count}</S.Td>
                 <S.Td>₹{S.fmt(a.amount)}</S.Td>
               </tr>
-            )), ['Age Bucket','Invoice Count','Amount Outstanding'])}
+            )), ['Age Bucket','Open Item Count','Amount Outstanding'])}
           </div>
         );
       case 'portfoliomix':
