@@ -426,6 +426,7 @@ export default function Portal(){
       {/* Simple timeline: Phase -> Milestone -> Sub Task, deadline & status only */}
       <S.Card className="p-4">
         <div className="font-semibold text-slate-800 mb-3">Project Timeline</div>
+        {docErr && <div className="text-xs text-red-500 mb-2">{docErr}</div>}
         <div className="space-y-2">
           {phases.map(ph=>{
             const phOpen = !!openPhase[ph.id]; const phStatus = S.derivedPhaseStatus(ph);
@@ -446,18 +447,52 @@ export default function Portal(){
                   {ph.milestones.map(ms=>{ const msOpen = !!openMs[ms.id]; const msDelayed = S.isOverdue(ms); return (
                     <div key={ms.id}>
                       <button onClick={()=>toggleMs(ms.id)} className={`w-full flex flex-wrap items-center gap-3 px-3 py-2 pl-8 text-left hover:bg-slate-50 ${msDelayed?'bg-red-50/30':''}`}>
-                        <span className="text-slate-300 text-xs w-4">{ms.subtasks&&ms.subtasks.length ? (msOpen?'▼':'▶') : '·'}</span>
+                        <span className="text-slate-300 text-xs w-4">{(ms.subtasks&&ms.subtasks.length) || (ms.docs&&ms.docs.length) ? (msOpen?'▼':'▶') : '·'}</span>
                         <span className="text-sm text-slate-700 flex-1">{ms.name}</span>
+                        {(ms.docs||[]).length>0 && <span title={`${ms.docs.length} attachment${ms.docs.length>1?'s':''}`}><S.Icon name="attachment" className="w-3.5 h-3.5 text-slate-400 shrink-0"/></span>}
                         <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {ms.deadline || '—'}</span>
                         {msDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(ms.deadline)}d overdue</S.Badge>}
                         <S.Badge cls={S.statusColor(ms.status)}>{ms.status}</S.Badge>
                       </button>
+                      {msOpen && (ms.docs||[]).length>0 && (
+                        <div className="pl-16 pr-3 py-2 bg-slate-50/60 space-y-1">
+                          {ms.docs.map((d:any,i:number)=>(
+                            <div key={d.id||i} className="flex items-center gap-2 bg-white border border-slate-100 rounded-lg px-2.5 py-1.5 text-xs">
+                              <S.Icon name={downloadingDocId===(d.id||d.path) ? 'refresh' : S.docIcon(d.n)} className={`w-3.5 h-3.5 shrink-0 ${downloadingDocId===(d.id||d.path) ? 'text-brand-500' : S.docIconTone(d.n)}`}/>
+                              {d.path ? (
+                                <button onClick={()=>downloadDoc(d)} className="flex-1 min-w-0 truncate text-left hover:underline hover:text-brand-700" title="Download">{d.n}</button>
+                              ) : (
+                                <span className="flex-1 min-w-0 truncate text-slate-400" title="No file on record">{d.n}</span>
+                              )}
+                              {d.size && <span className="text-[10px] text-slate-400 whitespace-nowrap">{(d.size/1024).toFixed(0)} KB</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                       {msOpen && (ms.subtasks||[]).map(s=>{ const stDelayed = S.isOverdue(s); return (
-                        <div key={s.id} className={`flex flex-wrap items-center gap-3 px-3 py-2 pl-16 text-left ${stDelayed?'bg-red-50/30':''}`}>
-                          <span className="text-sm text-slate-600 flex-1">{s.name}</span>
-                          <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {s.deadline || '—'}</span>
-                          {stDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(s.deadline)}d overdue</S.Badge>}
-                          <S.Badge cls={S.statusColor(s.status)}>{s.status}</S.Badge>
+                        <div key={s.id}>
+                          <div className={`flex flex-wrap items-center gap-3 px-3 py-2 pl-16 text-left ${stDelayed?'bg-red-50/30':''}`}>
+                            <span className="text-sm text-slate-600 flex-1">{s.name}</span>
+                            {(s.docs||[]).length>0 && <span title={`${s.docs.length} attachment${s.docs.length>1?'s':''}`}><S.Icon name="attachment" className="w-3.5 h-3.5 text-slate-400 shrink-0"/></span>}
+                            <span className="text-xs text-slate-400 whitespace-nowrap">Deadline {s.deadline || '—'}</span>
+                            {stDelayed && <S.Badge cls="bg-red-100 text-red-700">{-S.daysLeft(s.deadline)}d overdue</S.Badge>}
+                            <S.Badge cls={S.statusColor(s.status)}>{s.status}</S.Badge>
+                          </div>
+                          {(s.docs||[]).length>0 && (
+                            <div className="pl-20 pr-3 pb-2 space-y-1">
+                              {s.docs.map((d:any,i:number)=>(
+                                <div key={d.id||i} className="flex items-center gap-2 bg-slate-50 rounded-lg px-2.5 py-1.5 text-xs">
+                                  <S.Icon name={downloadingDocId===(d.id||d.path) ? 'refresh' : S.docIcon(d.n)} className={`w-3.5 h-3.5 shrink-0 ${downloadingDocId===(d.id||d.path) ? 'text-brand-500' : S.docIconTone(d.n)}`}/>
+                                  {d.path ? (
+                                    <button onClick={()=>downloadDoc(d)} className="flex-1 min-w-0 truncate text-left hover:underline hover:text-brand-700" title="Download">{d.n}</button>
+                                  ) : (
+                                    <span className="flex-1 min-w-0 truncate text-slate-400" title="No file on record">{d.n}</span>
+                                  )}
+                                  {d.size && <span className="text-[10px] text-slate-400 whitespace-nowrap">{(d.size/1024).toFixed(0)} KB</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );})}
                     </div>
