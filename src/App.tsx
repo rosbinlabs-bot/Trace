@@ -39,6 +39,7 @@ const importScreen = {
   portal: () => import('./screens/Portal'),
   reports: () => import('./screens/Reports'),
   admin: () => import('./screens/Administration'),
+  communication: () => import('./screens/Communication'),
 };
 const SuperAdminPanel = lazy(() => import('./screens/SuperAdminPanel'));
 const Dashboard = lazy(importScreen.dashboard);
@@ -60,6 +61,7 @@ const Team = lazy(importScreen.team);
 const Portal = lazy(importScreen.portal);
 const Reports = lazy(importScreen.reports);
 const Administration = lazy(importScreen.admin);
+const Communication = lazy(importScreen.communication);
 
 const THEME_STORAGE_KEY = 'rosbinTrace.theme.v1';
 const loadTheme = (): 'light' | 'dark' => {
@@ -424,6 +426,7 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   <Route path="/issues" element={<Gate module={S.NAV_MODULE.issues} admin={admin} email={email}><Issues /></Gate>} />
                   <Route path="/changes" element={<Gate module={S.NAV_MODULE.changes} admin={admin} email={email}><Changes /></Gate>} />
                   <Route path="/team" element={<Gate module={S.NAV_MODULE.team} admin={admin} email={email}><Team /></Gate>} />
+                  <Route path="/communication" element={<Gate module={S.NAV_MODULE.communication} admin={admin} email={email}><Communication /></Gate>} />
                   <Route path="/portal" element={<Gate module={S.NAV_MODULE.portal} admin={admin} email={email}><Portal /></Gate>} />
                   <Route path="/reports" element={<Gate module={S.NAV_MODULE.reports} admin={admin} email={email}><Reports /></Gate>} />
                   <Route path="/admin" element={<Gate module={S.NAV_MODULE.admin} admin={admin} email={email}><Administration /></Gate>} />
@@ -718,6 +721,7 @@ export default function App() {
   const [deliverables, setDeliverablesState] = useState<any[]>([]);
   const [invoices, setInvoicesState] = useState<any[]>([]);
   const [monthlyPlan, setMonthlyPlanState] = useState<any>({});
+  const [channelMessages, setChannelMessagesState] = useState<any[]>([]);
 
   // Timestamps of our own most recent local edit, one bucket per synced data type (keyed by
   // whatever identifies a "row" for that type: project id for the phase tree, project+month for
@@ -768,6 +772,7 @@ export default function App() {
         setCalendarEventsState(data.events);
         setLibraryDocsState(data.docs);
         setDeliverablesState(data.deliverables);
+        setChannelMessagesState(data.channelMessages);
         setInvoicesState(data.invoices);
         setMonthlyPlanState(data.monthlyPlan);
         setLoading(false);
@@ -836,6 +841,7 @@ export default function App() {
       invoices: mergeById(setInvoicesState, db.invoiceFromDb, 'id', echo.invoices),
       team: mergeById(setTeamState, db.teamFromDb, 'name', echo.team),
       notifications: mergeById(setNotifications, db.notificationFromDb),
+      channel_messages: mergeById(setChannelMessagesState, db.channelMessageFromDb),
       phase_trees: (payload: any) => {
         setPhaseTreeState((prev: any) => {
           if (payload.eventType === 'DELETE') {
@@ -969,6 +975,16 @@ export default function App() {
     db.insertNotification(full).catch((e) => console.error('Supabase sync failed:', e));
   };
 
+  // Communication (see screens/Communication.tsx): same optimistic-append-then-write-through
+  // pattern as addNotification above -- appears in the sender's own feed instantly, and syncs to
+  // Supabase/every other tab in the background. Realtime (channel_messages handler above) is what
+  // lands it for everyone else, live.
+  const postChannelMessage = (m: any) => {
+    const full = { id: S.uid('MSG'), createdAt: new Date().toISOString(), ...m };
+    setChannelMessagesState((ms) => [...ms, full]);
+    db.insertChannelMessage(full).catch((e) => console.error('Supabase sync failed:', e));
+  };
+
   // User Login Log Book (S.ActivityLogContext) -- fire-and-forget write straight to activity_logs,
   // no local state kept (see db.ts's insertActivityLog/fetchActivityLogs). session?.user?.email is
   // read directly rather than the `myEmail` const further down so this doesn't care about its own
@@ -1093,6 +1109,12 @@ export default function App() {
   const visibleRisks = isProjectScoped ? risks.filter((r: any) => visibleProjectNames.has(r.project)) : risks;
   const visibleIssues = isProjectScoped ? issues.filter((i: any) => visibleProjectNames.has(i.project)) : issues;
   const visibleDeliverables = isProjectScoped ? deliverables.filter((d: any) => visibleProjectNames.has(d.project)) : deliverables;
+  // Communication is staff-only (never reaches Client Portal or its route table), so this only ever
+  // needs the same non-admin project-scoping every other project-tagged list above already uses --
+  // no separate role==='client' branch like visibleNotifications has.
+  const visibleChannelMessages = isProjectScoped
+    ? channelMessages.filter((m: any) => (m.projectId ? visibleProjectIds.has(m.projectId) : visibleProjectNames.has(m.project)))
+    : channelMessages;
   const visibleCalendarEvents = isProjectScoped ? calendarEvents.filter((e: any) => !e.project || visibleProjectNames.has(e.project)) : calendarEvents;
 
   if (session === undefined) return <LoadingScreen />;
@@ -1114,6 +1136,7 @@ export default function App() {
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team: liveTeam, setTeam: () => {} }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
+                <S.CommDataContext.Provider value={{ messages: visibleChannelMessages, postMessage: postChannelMessage }}>
                 <S.GovernanceDataContext.Provider value={{ risks: visibleRisks, setRisks, issues: visibleIssues, setIssues, changes, setChanges }}>
                   <S.CalendarDataContext.Provider value={{ events: visibleCalendarEvents, setEvents: setCalendarEvents }}>
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>
@@ -1133,6 +1156,7 @@ export default function App() {
                     </S.LibraryDataContext.Provider>
                   </S.CalendarDataContext.Provider>
                 </S.GovernanceDataContext.Provider>
+                </S.CommDataContext.Provider>
               </S.PhaseDataContext.Provider>
             </S.TeamDataContext.Provider>
           </S.ProjectsDataContext.Provider>

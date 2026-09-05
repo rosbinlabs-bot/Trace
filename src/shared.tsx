@@ -230,6 +230,15 @@ export const PROJECT_STATUSES = ['Yet to Start','In Progress','On Hold','Dropped
 // e.g. approving an item in Phase Management is what makes it appear for client sign-off in Portal.
 export const PhaseDataContext = React.createContext<any>({ tree:{}, setTree:()=>{}, notifications:[], addNotification:()=>{} });
 
+// Communication: one Slack-like channel per project (see screens/Communication.tsx). `messages` is
+// already scoped to projects the signed-in account can see (same isProjectScoped treatment as
+// risks/issues/notifications in App.tsx); postMessage appends locally and writes through to
+// Supabase (channel_messages table), same optimistic-update-then-fire-and-forget pattern as
+// addNotification above. Lifted to App level (not local screen state) so Realtime inserts from a
+// teammate land here even while the account is on a different screen, ready the moment they open
+// Communication -- and so a channel's history survives navigating away and back.
+export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{} });
+
 // User Login Log Book (Administration -> last tab, Super Admin only — S.isSuperAdmin below).
 // logActivity() is a fire-and-forget write straight to the activity_logs table (App.tsx's
 // insertActivityLog) — unlike notifications/PhaseDataContext, entries aren't kept in local app state
@@ -531,7 +540,7 @@ export const implementChainFor = (project: any, actorLevel: string): string[] =>
   const actorNum = levelNum(actorLevel);
   return projectLevelNumsPresent(project).filter(n => n < actorNum).sort((a, b) => b - a).map(n => `L${n}`);
 };
-export const PERMISSION_MODULES = ['Project Master','Phase Management','Monthly Plan','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Reports','Documents','Client Portal','Administration'];
+export const PERMISSION_MODULES = ['Project Master','Phase Management','Monthly Plan','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Communication','Reports','Documents','Client Portal','Administration'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
 export const CAPABILITY_COLOR: any = { 'None':'bg-slate-100 text-slate-400','View':'bg-blue-100 text-blue-700','Edit':'bg-amber-100 text-amber-700','Approve':'bg-violet-100 text-violet-700','Full':'bg-emerald-100 text-emerald-700' };
 // Client is NOT one of the four staff PERMISSION_LEVELS (it isn't reachable via any DESIGNATIONS ->
@@ -550,6 +559,7 @@ export const DEFAULT_PERMISSION_MATRIX: any = {
   'Financials & Billing':    { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
   'Risk / Issue / Change':   { Officer:'View', Manager:'Edit', Admin:'Approve', 'Super Admin':'Full', Client:'None' },
   'Team Management':         { Officer:'View', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
+  'Communication':           { Officer:'Edit', Manager:'Edit', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
   'Reports':                 { Officer:'View', Manager:'View', Admin:'View', 'Super Admin':'Full', Client:'None' },
   'Documents':               { Officer:'Edit', Manager:'Edit', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
   'Client Portal':           { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'Edit' },
@@ -751,6 +761,9 @@ export const ICON_PATHS = {
   alert: '<path d="M12 4 2 20h20L12 4Z"/><path d="M12 10v4M12 17v.4"/>',
   info: '<circle cx="12" cy="12" r="9"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
   message: '<path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 9 9 0 0 1-3.6-.7L3 21l1.9-4.3a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.9-8.4 8.5 8.5 0 0 1 8.1 6.5Z"/><path d="M8 11h8M8 14.2h5"/>',
+  communication: '<path d="M21 11.5a8.4 8.4 0 0 1-8.9 8.4 9 9 0 0 1-3.6-.7L3 21l1.9-4.3a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.9-8.4 8.5 8.5 0 0 1 8.1 6.5Z"/>',
+  mic: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><path d="M12 19v3"/><path d="M8 22h8"/>',
+  send: '<path d="M22 2 11 13"/><path d="M22 2 15 22l-4-9-9-4 20-7Z"/>',
   refresh: '<path d="M20 11a8 8 0 0 0-14-4M4 6v4h4"/><path d="M4 13a8 8 0 0 0 14 4M20 18v-4h-4"/>',
   download: '<path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 19h16"/>',
   rocket: '<path d="M12 2c3 1.5 5 4.8 5 9 0 2-.5 3.7-1.3 5L12 20l-3.7-4c-.8-1.3-1.3-3-1.3-5 0-4.2 2-7.5 5-9Z"/><circle cx="12" cy="10" r="1.8"/><path d="M8 17l-2.5 2.5M16 17l2.5 2.5"/>',
@@ -804,6 +817,9 @@ export const NAV = [
     { id:'monthlyplan', label:'Monthly Plan' },
     { id:'deliverables', label:'Deliverables' },
     { id:'implementation', label:'Implementation Tracker' },
+  ]},
+  { group:'Collaboration', items:[
+    { id:'communication', label:'Communication' },
   ]},
   { group:'Views', items:[
     { id:'gantt', label:'Gantt Chart' },
@@ -864,6 +880,7 @@ export const NAV_MODULE: any = {
   implementation: 'Deliverables',
   gantt: 'Phase Management',
   calendar: null,
+  communication: 'Communication',
   approvals: 'Deliverables',
   documents: 'Documents',
   doclibrary: 'Documents',
