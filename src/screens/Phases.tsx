@@ -252,11 +252,29 @@ export default function Phases(){
     setDownloadingDocId(null);
   };
 
-  // ---- remarks: a running comment log on a sub task, added from the detail modal ----
+  // ---- remarks: a running comment log on a milestone or sub task, added from the detail panel/modal.
+  // Posting one also raises a project notification and sets item.remarkAlert ({by, at} | null) -- a
+  // persistent red message-beacon (see RemarkAlertIcon below) so a tagged teammate who missed the
+  // notification still sees it on the item itself. Unlike statusAlert this never auto-clears -- a
+  // remark isn't superseded by any later action the way a status is -- so it's dismissed only by
+  // clicking it (same manual-dismiss-only rule Portal.tsx's postRemark follows for a client remark). ----
+  const addMsRemark = (phId, msId, text) => {
+    if(!text.trim()) return;
+    const by = myProfile?.name||myEmail; const at = new Date().toISOString();
+    mutMs(phId, msId, m => ({...m, remarks:[...(m.remarks||[]), { id:S.uid('RMK'), text:text.trim(), by, at }], remarkAlert:{by, at}}));
+    const ph=phases.find(p=>p.id===phId); const ms=ph?.milestones?.find(m=>m.id===msId);
+    logPhase(`Added a remark on milestone "${ms?.name||''}"`);
+    if(ph && ms) notifyProject({ level:'milestone', itemName:ms.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, type:'Remark Added', priority:'normal',
+      message:`${by} added a remark on milestone "${ms.name}" (${ph.name}): "${text.trim()}"` });
+  };
   const addStRemark = (phId, msId, stId, text) => {
     if(!text.trim()) return;
-    mutSt(phId, msId, stId, s => ({...s, remarks:[...(s.remarks||[]), { id:S.uid('RMK'), text:text.trim(), by:myProfile?.name||myEmail, at:new Date().toISOString() }]}));
-    const ph=phases.find(p=>p.id===phId); const st=ph?.milestones?.find(m=>m.id===msId)?.subtasks?.find(s=>s.id===stId); logPhase(`Added a remark on sub task "${st?.name||''}"`);
+    const by = myProfile?.name||myEmail; const at = new Date().toISOString();
+    mutSt(phId, msId, stId, s => ({...s, remarks:[...(s.remarks||[]), { id:S.uid('RMK'), text:text.trim(), by, at }], remarkAlert:{by, at}}));
+    const ph=phases.find(p=>p.id===phId); const ms=ph?.milestones?.find(m=>m.id===msId); const st=ms?.subtasks?.find(s=>s.id===stId);
+    logPhase(`Added a remark on sub task "${st?.name||''}"`);
+    if(ph && ms && st) notifyProject({ level:'subtask', itemName:st.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:st.id, type:'Remark Added', priority:'normal',
+      message:`${by} added a remark on sub task "${st.name}" (${ph.name}): "${text.trim()}"` });
   };
 
   // ---- phase-level: start-date lock, On Hold toggle, completion confirmation ----
@@ -317,6 +335,22 @@ export default function Phases(){
   const clearMsAlert = (phId, msId) => mutMs(phId, msId, m => ({...m, statusAlert:null}));
   const clearStAlert = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, statusAlert:null}));
 
+  // Remark alert: a red message-bubble beacon on a Milestone/Sub Task whenever anyone -- a teammate
+  // here in Phase Management, or a client posting from the Client Portal -- adds a remark. Same
+  // item.remarkAlert-riding-the-jsonb-blob pattern as statusAlert above, but always manual-dismiss
+  // only (see addMsRemark/addStRemark above and Portal.tsx's postRemark -- none of them ever auto-clear it).
+  const RemarkAlertIcon = ({item, onClear}: any) => {
+    if(!item.remarkAlert) return null;
+    return (
+      <span onClick={e=>{e.stopPropagation(); onClear();}} title={`${item.remarkAlert.by} added a remark — click to dismiss`} className="relative inline-flex items-center justify-center shrink-0 cursor-pointer w-3.5 h-3.5">
+        <span className="absolute inset-0 rounded-full bg-red-400 opacity-75 animate-ping"></span>
+        <S.Icon name="message" className="relative w-3.5 h-3.5 text-red-600"/>
+      </span>
+    );
+  };
+  const clearMsRemarkAlert = (phId, msId) => mutMs(phId, msId, m => ({...m, remarkAlert:null}));
+  const clearStRemarkAlert = (phId, msId, stId) => mutSt(phId, msId, stId, s => ({...s, remarkAlert:null}));
+
   // Reusable status control for a milestone/sub task row
   const StatusControl = ({item, onChange, level, ms}: any) => {
     // Read-only badges show the milestone's derived status (auto "In Progress" once any sub task is
@@ -354,6 +388,8 @@ export default function Phases(){
   const detailSt = detailMs ? (detailMs.subtasks||[]).find(s=>s.id===detailStIds!.stId) : null;
   const [remarkDraft, setRemarkDraft] = useState('');
   React.useEffect(() => { setRemarkDraft(''); }, [detailStIds]);
+  const [msRemarkDraft, setMsRemarkDraft] = useState('');
+  React.useEffect(() => { setMsRemarkDraft(''); }, [selectedMsId]);
 
   // Deep link from the Dashboard's Approval Bottlenecks widget (and its KPI/Decisions-Needed
   // echoes) — router state carries which project/phase/milestone/sub task was clicked, so it opens
@@ -553,7 +589,7 @@ export default function Phases(){
                 return (
                   <button key={ms.id} onClick={()=>setSelectedMsId(ms.id)}
                     className={`w-full text-left px-3 py-2.5 rounded-xl border-l-[3px] border ${isSel?'border-l-brand-500 border-brand-200 bg-brand-50':`border-l-transparent border-slate-200 hover:bg-slate-50`} ${msOverdue?'bg-red-50/40':''}`}>
-                    <div className={`flex items-center gap-1.5 text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}><span className="truncate">{ms.name || 'Untitled milestone'}</span><StatusAlertIcon item={ms} onClear={()=>clearMsAlert(selPhase.id,ms.id)}/></div>
+                    <div className={`flex items-center gap-1.5 text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}><span className="truncate">{ms.name || 'Untitled milestone'}</span><StatusAlertIcon item={ms} onClear={()=>clearMsAlert(selPhase.id,ms.id)}/><RemarkAlertIcon item={ms} onClear={()=>clearMsRemarkAlert(selPhase.id,ms.id)}/></div>
                     <div className="flex items-center justify-between gap-2 mt-1">
                       <span className={`text-[11px] whitespace-nowrap inline-flex items-center gap-1 ${msOverdue?'text-red-500 font-medium':'text-slate-400'}`}>{msOverdue && <S.Icon name="alert" className="w-3 h-3"/>}{msOverdue?'overdue':`due ${ms.deadline||'—'}`}</span>
                       <S.Badge cls={S.statusColor(msStatus)}>{msStatus}</S.Badge>
@@ -579,7 +615,11 @@ export default function Phases(){
                   <div className="flex flex-wrap items-end gap-3">
                     <div className="flex flex-col gap-1 min-w-[180px]">
                       <label className="text-[10px] text-slate-400">Milestone name</label>
-                      <input className={inpFor('milestone')+" font-medium"} value={ms.name} disabled={msDis} onChange={e=>mutMs(ph.id,ms.id,m=>({...m,name:e.target.value}))} placeholder="Milestone"/>
+                      <div className="flex items-center gap-1.5">
+                        <input className={inpFor('milestone')+" font-medium"} value={ms.name} disabled={msDis} onChange={e=>mutMs(ph.id,ms.id,m=>({...m,name:e.target.value}))} placeholder="Milestone"/>
+                        <StatusAlertIcon item={ms} onClear={()=>clearMsAlert(ph.id,ms.id)}/>
+                        <RemarkAlertIcon item={ms} onClear={()=>clearMsRemarkAlert(ph.id,ms.id)}/>
+                      </div>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Deadline {deadlineLocked(ms.deadline) && <span title="Locked — only Admin/Super Admin can change a deadline once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
@@ -610,6 +650,27 @@ export default function Phases(){
                     onCancelImpl={()=>cancelImplMs(ph.id,ms.id)}/>
                   {!subReady && !ms.review && !msLocked && <span className="text-[11px] text-amber-600">Complete all sub tasks first</span>}
                 </div>
+
+                <div className="mb-4 pb-4 border-b border-slate-100">
+                  <label className="text-[10px] text-slate-400 block mb-1.5">Remarks</label>
+                  <div className="space-y-2 mb-2 max-h-32 overflow-auto">
+                    {(ms.remarks||[]).length===0 && <div className="text-xs text-slate-300">No remarks yet.</div>}
+                    {(ms.remarks||[]).map((r:any)=>(
+                      <div key={r.id} className="bg-slate-50 rounded-lg px-2.5 py-1.5">
+                        <div className="text-xs text-slate-700">{r.text}</div>
+                        <div className="text-[10px] text-slate-400 mt-0.5">{r.by} · {new Date(r.at).toLocaleString('en-US',{dateStyle:'medium', timeStyle:'short'})}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {!readOnly && (
+                    <div className="flex gap-1.5">
+                      <input value={msRemarkDraft} onChange={e=>setMsRemarkDraft(e.target.value)} onKeyDown={e=>{ if(e.key==='Enter' && msRemarkDraft.trim()){ addMsRemark(ph.id,ms.id,msRemarkDraft); setMsRemarkDraft(''); } }}
+                        placeholder="Add a remark…" className="flex-1 border border-slate-200 rounded-lg px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+                      <button onClick={()=>{ if(msRemarkDraft.trim()){ addMsRemark(ph.id,ms.id,msRemarkDraft); setMsRemarkDraft(''); } }} className="text-xs bg-brand-500 hover:bg-brand-600 text-white rounded-lg px-3 py-1.5 whitespace-nowrap">Add</button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-xs font-semibold text-blue-700 bg-blue-50 rounded-full px-2.5 py-1 uppercase tracking-wide">Sub tasks</span>
                   {/* Adding a sub task is never blocked, even once the milestone is approved/locked —
@@ -621,6 +682,7 @@ export default function Phases(){
                     <div key={s.id} id={`st-${s.id}`} className={`flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
                       <StatusAlertIcon item={s} onClear={()=>clearStAlert(ph.id,ms.id,s.id)}/>
+                      <RemarkAlertIcon item={s} onClear={()=>clearStRemarkAlert(ph.id,ms.id,s.id)}/>
                       {/* Opens the full detail modal — view everything, download/upload attachments,
                           add remarks — without disturbing the quick inline fields alongside it. */}
                       <button onClick={()=>setDetailStIds({phId:ph.id, msId:ms.id, stId:s.id})} title="View details" aria-label={`View details for ${s.name || 'sub task'}`} className="text-slate-300 hover:text-brand-600 shrink-0">
@@ -734,6 +796,7 @@ export default function Phases(){
               <div className="flex items-center gap-1.5 mb-3">
                 <input className={inpFor('subtask')+" font-medium text-sm flex-1"+(overdue?" border-red-300":"")} value={s.name} disabled={stDis} onChange={e=>mutSt(ph.id,ms.id,s.id,x=>({...x,name:e.target.value}))} placeholder="Sub task"/>
                 <StatusAlertIcon item={s} onClear={()=>clearStAlert(ph.id,ms.id,s.id)}/>
+                <RemarkAlertIcon item={s} onClear={()=>clearStRemarkAlert(ph.id,ms.id,s.id)}/>
               </div>
 
               <div className="grid grid-cols-2 gap-3 mb-3">

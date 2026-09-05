@@ -204,6 +204,16 @@ export default function Portal(){
     const { level, ph, ms, item } = entry;
     const text = (remarkDraft[item.id]||'').trim();
     if(!text) return;
+    const at = new Date().toISOString();
+    // Same item.remarkAlert red message-beacon flag Phase Management sets when a teammate posts a
+    // remark (see Phases.tsx's addMsRemark/addStRemark) -- the project team needs to notice a client
+    // remark on the item itself too, not only via the notification below. Manual-dismiss only, same
+    // as the staff-side version -- nothing here ever clears it automatically.
+    if(level==='Milestone'){
+      setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, remarkAlert:{by:myClientName, at}})));
+    } else {
+      setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, remarkAlert:{by:myClientName, at}})));
+    }
     notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
       message:`Client remark on "${item.name}" (${ph.name}): "${text}"` });
     logActivity({ module: 'Client Portal', action: `Posted a remark on "${item.name}" (${ph.name})`, project: projMeta.name });
