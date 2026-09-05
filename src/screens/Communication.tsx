@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
+import { supabase } from '../supabaseClient';
 
 // ============================================================================================
 // Communication — one Slack-like channel per project (side nav "Ping"), auto-populated
@@ -65,6 +66,7 @@ function ChatAudioPlayer({ a }: { a: any }) {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState('');
+  const audioRef = useRef<HTMLAudioElement>(null);
   const load = async () => {
     if (url || loading) return;
     setLoading(true); setErr('');
@@ -72,11 +74,16 @@ function ChatAudioPlayer({ a }: { a: any }) {
     catch (e: any) { setErr(e.message || 'Could not load this voice note.'); }
     setLoading(false);
   };
+  // Try to start playback the moment the URL is ready, but don't depend on it -- some browsers
+  // (Safari especially) refuse autoplay once the tap-to-load fetch has put even a short async gap
+  // between the click and playback starting. Native `controls` stay visible either way, so a blocked
+  // attempt just means pressing the player's own play button instead of it starting by itself.
+  useEffect(() => { if (url) audioRef.current?.play().catch(() => {}); }, [url]);
   return (
     <div className="flex items-center gap-2 bg-violet-50 rounded-lg px-2.5 py-2 max-w-xs">
       <S.Icon name={loading ? 'refresh' : 'mic'} className={`w-3.5 h-3.5 shrink-0 ${loading ? 'text-brand-500' : 'text-violet-500'}`} />
       {url
-        ? <audio controls autoPlay src={url} className="h-8 flex-1 min-w-0" />
+        ? <audio ref={audioRef} controls src={url} onError={() => setErr('This voice note could not be played back in this browser.')} className="h-8 flex-1 min-w-0" />
         : <button onClick={load} className="text-xs text-violet-700 hover:text-violet-800 flex-1 text-left truncate">
             {loading ? 'Loading…' : `Voice note${a.duration ? ` · ${fmtClock(a.duration)}` : ''} — tap to play`}
           </button>}
@@ -129,6 +136,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
   const streamRef = useRef<MediaStream | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const timerRef = useRef<any>(null);
+  const recordSecondsRef = useRef(0);
 
   useEffect(() => { if (focusKey !== undefined) taRef.current?.focus(); }, [focusKey]);
   useEffect(() => () => { clearInterval(timerRef.current); streamRef.current?.getTracks().forEach((t) => t.stop()); }, []);
@@ -165,7 +173,10 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
     setTimeout(() => taRef.current?.focus(), 0);
   };
   const mentionOptions = mentionQuery === null ? [] : roster.filter((r) => r.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 6);
-  const taskOptions = taskQuery === null ? [] : subtasks.filter((t) => t.name.toLowerCase().includes(taskQuery.toLowerCase())).slice(0, 6);
+  // No cap here (unlike mentionOptions' 6) -- a bare "#" is meant to browse the whole project's sub
+  // task list, and a project can easily have more than 6; the dropdown already scrolls (max-h-48
+  // overflow-auto below) so a long list is still usable rather than silently truncated.
+  const taskOptions = taskQuery === null ? [] : subtasks.filter((t) => t.name.toLowerCase().includes(taskQuery.toLowerCase()));
   // Lets someone un-tag a person or un-reference a sub task after picking it, without having to hunt
   // through the raw text for "@Name"/"#Task Name" and delete it by hand -- strips that one occurrence
   // out of the text alongside dropping it from the tracked list.
@@ -188,18 +199,25 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
+      // Don't pass a mimeType -- let each browser record in whatever it natively supports (Chrome:
+      // audio/webm;opus, Safari: audio/mp4;aac) rather than forcing one that browser can't actually
+      // encode. mr.mimeType afterwards reports whichever format was actually used.
       const mr = new MediaRecorder(stream);
       chunksRef.current = [];
       mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
       mr.onstop = () => {
-        setPendingAudio({ blob: new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' }), duration: recordSeconds });
+        // recordSecondsRef, not the recordSeconds state var -- this handler is created once, when
+        // recording starts, so a captured state value would always read back as whatever it was at
+        // that instant (0), not the count once stopped.
+        setPendingAudio({ blob: new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' }), duration: recordSecondsRef.current });
         stream.getTracks().forEach((t) => t.stop());
       };
       recorderRef.current = mr;
       mr.start();
+      recordSecondsRef.current = 0;
       setRecordSeconds(0);
       setRecording(true);
-      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+      timerRef.current = setInterval(() => { recordSecondsRef.current += 1; setRecordSeconds(recordSecondsRef.current); }, 1000);
     } catch (e: any) {
       setErr('Microphone access was denied or is unavailable in this browser.');
     }
@@ -341,7 +359,7 @@ export default function Communication() {
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   const { addNotification, tree } = React.useContext(S.PhaseDataContext);
-  const { messages, postMessage, markRead } = React.useContext(S.CommDataContext);
+  const { messages, postMessage, markRead, readMap } = React.useContext(S.CommDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
@@ -360,6 +378,17 @@ export default function Communication() {
   const canPost = !readOnly && S.capAtLeast(S.capabilityFor('Communication', myEmail, admin), 'Edit');
 
   const notifyProject = (payload: any) => addNotification({ projectId: activeProj, project: projMeta.name, tags: roster.map((r: any) => r.name), priority: 'high', ...payload });
+
+  const [onlineNames, setOnlineNames] = useState<Set<string>>(new Set());
+  React.useEffect(() => {
+    const tenantId = db.getTenantId();
+    const myName = myProfile?.name;
+    if (!activeProj || !tenantId || !myName) { setOnlineNames(new Set()); return; }
+    const channel = supabase.channel(`ping-presence:${tenantId}:${activeProj}`, { config: { presence: { key: myName } } });
+    channel.on('presence', { event: 'sync' }, () => setOnlineNames(new Set(Object.keys(channel.presenceState()))));
+    channel.subscribe((status: string) => { if (status === 'SUBSCRIBED') channel.track({ name: myName, at: Date.now() }); });
+    return () => { supabase.removeChannel(channel); };
+  }, [activeProj, myProfile?.name]);
 
   // Flat sub task list for the # picker (S.projectSubtasks), and the click-through from a rendered
   // #reference -- same {projectId,phaseId,msId,stId} deep-link shape Phase Management's own
@@ -395,7 +424,9 @@ export default function Communication() {
       attachments.push({ id: u.id, n: u.name, path: u.path, size: u.size, kind: 'file' });
     }
     if (payload.audio) {
-      const f = new File([payload.audio.blob], `voice-note-${Date.now()}.webm`, { type: payload.audio.blob.type || 'audio/webm' });
+      const audioMime = payload.audio.blob.type || 'audio/webm';
+      const audioExt = audioMime.includes('mp4') ? 'm4a' : audioMime.includes('ogg') ? 'ogg' : audioMime.includes('wav') ? 'wav' : 'webm';
+      const f = new File([payload.audio.blob], `voice-note-${Date.now()}.${audioExt}`, { type: audioMime });
       const u = await db.uploadChatFile(S.uid('CHF'), f);
       attachments.push({ id: u.id, n: u.name, path: u.path, size: u.size, kind: 'audio', duration: payload.audio.duration });
     }
@@ -431,22 +462,35 @@ export default function Communication() {
       <div className="flex gap-3 overflow-x-auto pb-1" style={{ alignItems: 'flex-start' }}>
         {/* Channel rail — one entry per project, same name, mirrors Phase Management's project list */}
         <S.Card className="p-2.5 w-60 shrink-0 space-y-1">
-          {projects.map((p: any) => (
-            <button key={p.id} onClick={() => setActiveProj(p.id)}
-              className={`w-full text-left px-3 py-2.5 rounded-xl border ${activeProj === p.id ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
-              <div className={`flex items-center gap-1.5 text-sm truncate ${activeProj === p.id ? 'font-medium text-brand-700' : 'text-slate-700'}`}>
-                <S.Icon name="communication" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
-                <span className="truncate">{p.name}</span>
-              </div>
-            </button>
-          ))}
+          {projects.map((p: any) => {
+            const unread = S.pingUnreadCount(messages, myEmail, readMap, p.id);
+            return (
+              <button key={p.id} onClick={() => setActiveProj(p.id)}
+                className={`w-full text-left px-3 py-2.5 rounded-xl border ${activeProj === p.id ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
+                <div className={`flex items-center gap-1.5 text-sm truncate ${activeProj === p.id ? 'font-medium text-brand-700' : 'text-slate-700'}`}>
+                  <S.Icon name="communication" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
+                  <span className="truncate flex-1">{p.name}</span>
+                  {unread > 0 && <span className="shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center">{unread > 99 ? '99+' : unread}</span>}
+                </div>
+              </button>
+            );
+          })}
         </S.Card>
 
         {/* Channel feed */}
         <S.Card className="p-4 flex-1 min-w-[320px]">
           <div className="mb-3 pb-3 border-b border-slate-100">
             <div className="text-sm font-semibold text-slate-800">{projMeta.name}</div>
-            <div className="text-[11px] text-slate-400">{roster.length} team member{roster.length === 1 ? '' : 's'} · visible to everyone tagged to this project</div>
+            <div className="text-[11px] text-slate-400 mb-2">{roster.length} team member{roster.length === 1 ? '' : 's'} · visible to everyone tagged to this project</div>
+            <div className="flex flex-wrap gap-1.5">
+              {roster.map((r: any) => (
+                <span key={r.name} title={onlineNames.has(r.name) ? `${r.name} — online now` : r.name}
+                  className="inline-flex items-center gap-1.5 text-[10px] bg-slate-50 text-slate-600 rounded-full pl-1.5 pr-2 py-1">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${onlineNames.has(r.name) ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+                  {r.name}
+                </span>
+              ))}
+            </div>
           </div>
 
           <div className="space-y-4 mb-4 max-h-[55vh] overflow-auto pr-1">

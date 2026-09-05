@@ -273,10 +273,14 @@ export function projectSubtasks(tree: any, projectId: string): { id: string; nam
   return out;
 }
 
-export function pingUnreadCount(messages: any[], email: string, readMap: Record<string, string>): number {
+// `projectId`, when given, scopes the count to just that one channel -- used by the Ping channel
+// rail to show which project actually has the unread messages, instead of only a single combined
+// total on the sidebar tab.
+export function pingUnreadCount(messages: any[], email: string, readMap: Record<string, string>, projectId?: string): number {
   const myEmail = (email || '').toLowerCase();
   let n = 0;
   for (const m of (messages || [])) {
+    if (projectId && m.projectId !== projectId) continue;
     if ((m.authorEmail || '').toLowerCase() === myEmail) continue;
     const key = m.projectId || m.project;
     const lastRead = key ? readMap[key] : null;

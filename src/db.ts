@@ -33,6 +33,7 @@ export async function nextSeqId(prefix: string): Promise<string> {
 // the wrong tenant_id (or none) is rejected server-side regardless of what the client sends.
 let TENANT_ID: string | null = null;
 export const setTenantId = (id: string | null) => { TENANT_ID = id; };
+export const getTenantId = () => TENANT_ID;
 
 // A project loaded before the team[] column existed (or one whose team hasn't been touched since)
 // only has the old 4 fixed columns populated -- synthesize a team[] from them (L1=Strategic Lead,
