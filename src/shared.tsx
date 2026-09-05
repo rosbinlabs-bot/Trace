@@ -819,7 +819,7 @@ export const NAV = [
     { id:'implementation', label:'Implementation Tracker' },
   ]},
   { group:'Collaboration', items:[
-    { id:'communication', label:'Communication' },
+    { id:'communication', label:'Ping' },
   ]},
   { group:'Views', items:[
     { id:'gantt', label:'Gantt Chart' },

@@ -328,7 +328,7 @@ export default function Communication() {
   if (projects.length === 0) {
     return (
       <div>
-        <S.SectionTitle sub="One running channel per project for updates, direction, and file/audio sharing across the whole team">Communication</S.SectionTitle>
+        <S.SectionTitle sub="One running channel per project for updates, direction, and file/audio sharing across the whole team">Ping</S.SectionTitle>
         <S.Card className="p-8 text-center text-sm text-slate-400">You're not tagged to any project yet — nothing to show here.</S.Card>
       </div>
     );
@@ -336,7 +336,7 @@ export default function Communication() {
 
   return (
     <div>
-      <S.SectionTitle sub="One channel per project, auto-populated with that project's team — updates, direction, files, and voice notes in one running feed">Communication</S.SectionTitle>
+      <S.SectionTitle sub="One channel per project, auto-populated with that project's team — updates, direction, files, and voice notes in one running feed">Ping</S.SectionTitle>
       <div className="flex gap-3 overflow-x-auto pb-1" style={{ alignItems: 'flex-start' }}>
         {/* Channel rail — one entry per project, same name, mirrors Phase Management's project list */}
         <S.Card className="p-2.5 w-60 shrink-0 space-y-1">
