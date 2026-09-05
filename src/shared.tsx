@@ -257,6 +257,22 @@ export function loadPingRead(email: string): Record<string, string> {
 export function savePingRead(email: string, map: Record<string, string>) {
   try { typeof localStorage !== 'undefined' && localStorage.setItem(pingReadStorageKey(email), JSON.stringify(map)); } catch (e) {}
 }
+// Flat list of every sub task in one project, for Ping's # picker (Communication.tsx) -- same
+// tree[projectId] -> phases -> milestones -> subtasks shape myPendingApprovals/clientPendingApprovals
+// already walk. Each entry carries {id,phaseId,msId} so a #reference can later deep-link straight to
+// that item in Phase Management, the same {projectId,phaseId,msId,stId} shape used everywhere else.
+export function projectSubtasks(tree: any, projectId: string): { id: string; name: string; phaseId: string; msId: string; phaseName: string; msName: string }[] {
+  const out: any[] = [];
+  (tree[projectId] || []).forEach((ph: any) => {
+    (ph.milestones || []).forEach((ms: any) => {
+      (ms.subtasks || []).forEach((s: any) => {
+        out.push({ id: s.id, name: s.name, phaseId: ph.id, msId: ms.id, phaseName: ph.name, msName: ms.name });
+      });
+    });
+  });
+  return out;
+}
+
 export function pingUnreadCount(messages: any[], email: string, readMap: Record<string, string>): number {
   const myEmail = (email || '').toLowerCase();
   let n = 0;

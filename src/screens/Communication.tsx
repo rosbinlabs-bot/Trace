@@ -1,15 +1,18 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 
 // ============================================================================================
-// Communication — one Slack-like channel per project (side nav "Communication"), auto-populated
+// Communication — one Slack-like channel per project (side nav "Ping"), auto-populated
 // with that project's team (no separate membership list to keep in sync -- same S.buildRoster the
 // rest of the app already uses for Phase Management assignees etc.). A message can carry free text,
 // file attachments, and/or a recorded voice note; replying opens a thread under that message rather
 // than cluttering the main feed; tagging someone with @Name raises a real notification for them
-// (posting itself does not, to avoid flooding the bell on routine chatter). Messages are permanent
-// -- no edit/delete, same as Remarks and the Activity Log elsewhere in this app.
+// (posting itself does not, to avoid flooding the bell on routine chatter). Typing #SubTaskName links
+// a specific sub task into the message -- the way to say "here's the change needed" and point right
+// at the item, clickable straight through to it in Phase Management. Messages are permanent -- no
+// edit/delete, same as Remarks and the Activity Log elsewhere in this app.
 // ============================================================================================
 
 const initials = (name: string) => (name || '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -17,23 +20,40 @@ const fmtTime = (iso: string) => { try { return new Date(iso).toLocaleString('en
 const fmtClock = (totalSec: number) => { const s = Math.max(0, Math.round(totalSec || 0)); const m = Math.floor(s / 60); return `${m}:${String(s % 60).padStart(2, '0')}`; };
 const fmtSize = (bytes: number) => (bytes ? `${(bytes / 1024).toFixed(0)} KB` : '');
 
-// Renders a message body with its @mentions highlighted. Only names the composer's own @ picker
-// actually recorded (message.mentions[]) are ever highlighted -- never a regex guess over free text
-// -- so a name that happens to appear in a sentence for some other reason is never mistaken for a tag.
-function MessageBody({ text, mentions }: { text: string; mentions?: string[] }) {
+// Renders a message body with its @mentions and #subtask references highlighted. Only names/tasks
+// the composer's own @ and # pickers actually recorded (message.mentions[] / message.taskRefs[]) are
+// ever highlighted -- never a regex guess over free text -- so a word that happens to match for some
+// other reason is never mistaken for a tag. A #reference is clickable straight through to that sub
+// task in Phase Management (onOpenTask); a @mention is plain highlight, no click target.
+function MessageBody({ text, mentions, taskRefs, onOpenTask }: { text: string; mentions?: string[]; taskRefs?: any[]; onOpenTask?: (ref: any) => void }) {
   if (!text) return null;
-  const list = (mentions || []).filter(Boolean);
-  if (!list.length) return <>{text}</>;
-  const escaped = [...list].sort((a, b) => b.length - a.length).map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  const re = new RegExp(`(@(?:${escaped.join('|')}))`, 'g');
+  const mentionList = (mentions || []).filter(Boolean);
+  const taskList = (taskRefs || []).filter((t: any) => t && t.name);
+  if (!mentionList.length && !taskList.length) return <>{text}</>;
+  const esc = (n: string) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  type Tok = { key: string; kind: 'mention' | 'task'; ref?: any };
+  const tokens: Tok[] = [
+    ...mentionList.map((n) => ({ key: `@${n}`, kind: 'mention' as const })),
+    ...taskList.map((t) => ({ key: `#${t.name}`, kind: 'task' as const, ref: t })),
+  ];
+  // Longest token first so e.g. "#Design Review" isn't cut short by a shorter "#Design" also present.
+  const ordered = [...tokens].sort((a, b) => b.key.length - a.key.length);
+  const re = new RegExp(`(${ordered.map((t) => esc(t.key)).join('|')})`, 'g');
+  const byKey = new Map(tokens.map((t) => [t.key, t]));
   const parts = text.split(re);
   return (
     <>
-      {parts.map((p, i) =>
-        p.startsWith('@') && list.includes(p.slice(1))
-          ? <span key={i} className="text-brand-700 bg-brand-50 rounded px-1 font-medium">{p}</span>
-          : <React.Fragment key={i}>{p}</React.Fragment>
-      )}
+      {parts.map((p, i) => {
+        const tok = byKey.get(p);
+        if (!tok) return <React.Fragment key={i}>{p}</React.Fragment>;
+        if (tok.kind === 'mention') return <span key={i} className="text-brand-700 bg-brand-50 rounded px-1 font-medium">{p}</span>;
+        return (
+          <button key={i} type="button" onClick={() => onOpenTask?.(tok.ref)}
+            className="text-violet-700 bg-violet-50 hover:bg-violet-100 rounded px-1 font-medium underline decoration-dotted">
+            {p}
+          </button>
+        );
+      })}
     </>
   );
 }
@@ -81,9 +101,10 @@ function AttachmentView({ a, onDownload, downloading }: any) {
 // an incoming realtime message re-renders Communication on every keystroke someone else makes
 // elsewhere in the channel, and a component redefined inline on every render would remount (losing
 // whatever the person was mid-typing) every single time that happens.
-function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
+function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }: {
   roster: { name: string; label: string }[];
-  onSend: (payload: { text: string; files: File[]; audio: { blob: Blob; duration: number } | null; mentions: string[] }) => Promise<void> | void;
+  subtasks: { id: string; name: string; phaseId: string; msId: string; phaseName?: string; msName?: string }[];
+  onSend: (payload: { text: string; files: File[]; audio: { blob: Blob; duration: number } | null; mentions: string[]; taskRefs: any[] }) => Promise<void> | void;
   placeholder?: string;
   disabled?: boolean;
   focusKey?: any;
@@ -92,6 +113,8 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
   const [files, setFiles] = useState<File[]>([]);
   const [mentions, setMentions] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
+  const [taskRefs, setTaskRefs] = useState<any[]>([]);
+  const [taskQuery, setTaskQuery] = useState<string | null>(null);
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
   const [pendingAudio, setPendingAudio] = useState<{ blob: Blob; duration: number } | null>(null);
@@ -109,8 +132,11 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
   const onTextChange = (v: string) => {
     setText(v);
     const pos = taRef.current?.selectionStart ?? v.length;
-    const m = v.slice(0, pos).match(/(?:^|\s)@([a-zA-Z0-9 ]{0,24})$/);
+    const head = v.slice(0, pos);
+    const m = head.match(/(?:^|\s)@([a-zA-Z0-9 ]{0,24})$/);
     setMentionQuery(m ? m[1] : null);
+    const t = head.match(/(?:^|\s)#([a-zA-Z0-9 ]{0,40})$/);
+    setTaskQuery(t ? t[1] : null);
   };
   const pickMention = (name: string) => {
     const pos = taRef.current?.selectionStart ?? text.length;
@@ -121,7 +147,21 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
     setMentionQuery(null);
     setTimeout(() => taRef.current?.focus(), 0);
   };
+  // # opens a picker over the current channel's sub tasks (S.projectSubtasks, passed down from
+  // Communication()) -- selecting one inserts "#Sub Task Name" and records the {id,phaseId,msId}
+  // needed later to jump straight to it (MessageBody's onOpenTask), the same deep-link shape
+  // Phase Management's own pending-approval jumps already use.
+  const pickTask = (t: { id: string; name: string; phaseId: string; msId: string }) => {
+    const pos = taRef.current?.selectionStart ?? text.length;
+    const upTo = text.slice(0, pos), rest = text.slice(pos);
+    const replaced = upTo.replace(/(?:^|\s)#([a-zA-Z0-9 ]{0,40})$/, (full) => (full[0] === ' ' ? ' ' : '') + `#${t.name} `);
+    setText(replaced + rest);
+    setTaskRefs((ts) => (ts.some((x) => x.id === t.id) ? ts : [...ts, t]));
+    setTaskQuery(null);
+    setTimeout(() => taRef.current?.focus(), 0);
+  };
   const mentionOptions = mentionQuery === null ? [] : roster.filter((r) => r.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 6);
+  const taskOptions = taskQuery === null ? [] : subtasks.filter((t) => t.name.toLowerCase().includes(taskQuery.toLowerCase())).slice(0, 6);
 
   const addFiles = (list: FileList | null) => { if (list) setFiles((fs) => [...fs, ...Array.from(list)]); };
   const removeFile = (i: number) => setFiles((fs) => fs.filter((_, j) => j !== i));
@@ -154,8 +194,8 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
     if (!canSubmit) return;
     setSending(true); setErr('');
     try {
-      await onSend({ text: text.trim(), files, audio: pendingAudio, mentions });
-      setText(''); setFiles([]); setPendingAudio(null); setMentions([]); setMentionQuery(null);
+      await onSend({ text: text.trim(), files, audio: pendingAudio, mentions, taskRefs });
+      setText(''); setFiles([]); setPendingAudio(null); setMentions([]); setMentionQuery(null); setTaskRefs([]); setTaskQuery(null);
     } catch (e: any) {
       setErr(e.message || 'Could not send that — try again.');
     } finally {
@@ -188,7 +228,7 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
       <div className="relative">
         <textarea ref={taRef} rows={2} value={text} onChange={(e) => onTextChange(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
-          placeholder={placeholder || 'Post an update… (@ to tag someone)'}
+          placeholder={placeholder || 'Post an update… (@ to tag someone, # to reference a sub task)'}
           className="w-full border-0 focus:outline-none focus:ring-0 text-sm resize-none placeholder:text-slate-400" />
         {mentionOptions.length > 0 && (
           <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-56 max-h-48 overflow-auto z-10">
@@ -200,10 +240,22 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
             ))}
           </div>
         )}
+        {taskQuery !== null && (
+          <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-72 max-h-48 overflow-auto z-10">
+            {taskOptions.length === 0 && <div className="px-3 py-1.5 text-xs text-slate-400">No matching sub tasks</div>}
+            {taskOptions.map((t) => (
+              <button key={t.id} onClick={() => pickTask(t)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50">
+                <span className="font-medium text-slate-700 truncate block">{t.name}</span>
+                <span className="text-slate-400 truncate block">{t.phaseName}{t.msName ? ` › ${t.msName}` : ''}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
-      {mentions.length > 0 && (
+      {(mentions.length > 0 || taskRefs.length > 0) && (
         <div className="flex flex-wrap gap-1 mb-1">
-          {mentions.map((m) => <span key={m} className="text-[10px] bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">@{m}</span>)}
+          {mentions.map((m) => <span key={`@${m}`} className="text-[10px] bg-brand-50 text-brand-700 rounded-full px-2 py-0.5">@{m}</span>)}
+          {taskRefs.map((t) => <span key={t.id} className="text-[10px] bg-violet-50 text-violet-700 rounded-full px-2 py-0.5">#{t.name}</span>)}
         </div>
       )}
       {err && <div className="text-[11px] text-red-500 mb-1">{err}</div>}
@@ -230,7 +282,7 @@ function Composer({ roster, onSend, placeholder, disabled, focusKey }: {
 
 // One message row, reused for both the main feed (with a Reply/thread-count affordance) and the
 // thread panel (parent + its replies, no further nesting -- Slack-style threads are one level deep).
-function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, compact }: any) {
+function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact }: any) {
   return (
     <div className="flex gap-2.5">
       <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-[11px]'} rounded-full bg-brand-100 text-brand-700 font-semibold flex items-center justify-center shrink-0`}>{initials(m.authorName)}</div>
@@ -239,7 +291,7 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, co
           <span className={`font-medium text-slate-800 ${compact ? 'text-xs' : 'text-sm'}`}>{m.authorName}</span>
           <span className="text-[10px] text-slate-400">{fmtTime(m.createdAt)}</span>
         </div>
-        {m.body && <div className={`text-slate-700 whitespace-pre-wrap break-words mt-0.5 ${compact ? 'text-xs' : 'text-sm'}`}><MessageBody text={m.body} mentions={m.mentions} /></div>}
+        {m.body && <div className={`text-slate-700 whitespace-pre-wrap break-words mt-0.5 ${compact ? 'text-xs' : 'text-sm'}`}><MessageBody text={m.body} mentions={m.mentions} taskRefs={m.taskRefs} onOpenTask={onOpenTask} /></div>}
         {(m.attachments || []).length > 0 && (
           <div className="flex flex-wrap gap-1.5 mt-1.5">
             {m.attachments.map((a: any) => <AttachmentView key={a.id} a={a} onDownload={onDownload} downloading={downloadingId === (a.id || a.path)} />)}
@@ -256,11 +308,12 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, co
 }
 
 export default function Communication() {
+  const navigate = useNavigate();
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
-  const { addNotification } = React.useContext(S.PhaseDataContext);
+  const { addNotification, tree } = React.useContext(S.PhaseDataContext);
   const { messages, postMessage, markRead } = React.useContext(S.CommDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
@@ -280,6 +333,12 @@ export default function Communication() {
   const canPost = !readOnly && S.capAtLeast(S.capabilityFor('Communication', myEmail, admin), 'Edit');
 
   const notifyProject = (payload: any) => addNotification({ projectId: activeProj, project: projMeta.name, tags: roster.map((r: any) => r.name), priority: 'high', ...payload });
+
+  // Flat sub task list for the # picker (S.projectSubtasks), and the click-through from a rendered
+  // #reference -- same {projectId,phaseId,msId,stId} deep-link shape Phase Management's own
+  // pending-approval jumps already use (see App.tsx's PendingApprovalsFlash).
+  const subtasks = useMemo(() => S.projectSubtasks(tree, activeProj), [tree, activeProj]);
+  const openTaskRef = (ref: any) => navigate('/phases', { state: { projectId: activeProj, phaseId: ref.phaseId, msId: ref.msId, stId: ref.id } });
 
   const channelMessages = useMemo(() => (messages || []).filter((m: any) => m.projectId === activeProj), [messages, activeProj]);
   // Viewing a channel marks it read (see S.pingUnreadCount/CommDataContext) -- both on first opening
@@ -302,7 +361,7 @@ export default function Communication() {
     setDownloadingId(null);
   };
 
-  const send = async (payload: { text: string; files: File[]; audio: { blob: Blob; duration: number } | null; mentions: string[] }, parentId: string | null) => {
+  const send = async (payload: { text: string; files: File[]; audio: { blob: Blob; duration: number } | null; mentions: string[]; taskRefs: any[] }, parentId: string | null) => {
     const attachments: any[] = [];
     for (const f of payload.files) {
       const u = await db.uploadChatFile(S.uid('CHF'), f);
@@ -316,7 +375,7 @@ export default function Communication() {
     postMessage({
       projectId: activeProj, project: projMeta.name, parentId: parentId || null,
       authorEmail: myEmail, authorName: myProfile?.name || myEmail,
-      body: payload.text, attachments, mentions: payload.mentions,
+      body: payload.text, attachments, mentions: payload.mentions, taskRefs: payload.taskRefs,
     });
     logActivity({ module: 'Communication', action: parentId ? `Replied in "${projMeta.name}" channel` : `Posted in "${projMeta.name}" channel`, project: projMeta.name });
     // Posting a routine update doesn't page anyone -- only an explicit @tag does, same reasoning as
@@ -367,11 +426,11 @@ export default function Communication() {
             {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">No updates yet — be the first to post.</div>}
             {topLevel.map((m: any) => (
               <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
-                replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} />
+                replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef} />
             ))}
           </div>
 
-          <Composer roster={roster} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
+          <Composer roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
         </S.Card>
 
         {/* Thread panel — opens alongside the feed when a message's Reply is clicked */}
@@ -383,13 +442,13 @@ export default function Communication() {
             </div>
             <div className="space-y-3 mb-3 max-h-[45vh] overflow-auto pr-1">
               <div className="pb-3 border-b border-slate-100">
-                <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} />
+                <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} />
               </div>
               {repliesOf(threadParent.id).map((m: any) => (
-                <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} compact />
+                <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact />
               ))}
             </div>
-            <Composer roster={roster} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
+            <Composer roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
           </S.Card>
         )}
       </div>
