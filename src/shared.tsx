@@ -224,6 +224,15 @@ export const addUnique = (list, value) => {
 };
 // Project-level lifecycle status. Only a Project Head or Strategic Lead (or admin) may change it.
 export const PROJECT_STATUSES = ['Yet to Start','In Progress','On Hold','Dropped','Terminated','Completed'];
+// A project on hold (status === 'On Hold') freezes Phase Management for everyone -- no phase/
+// milestone/sub task edits, approvals, or remarks -- until a Super Admin explicitly resumes it from
+// Project Master (see ProjectMaster.tsx's status control and Phases.tsx's `readOnly`). Only a Super
+// Admin may put a project on hold or take it off, in either direction -- this is deliberately a
+// stricter, separate gate from canEditStatus's Admin/Project Head/Strategic Lead rule that still
+// governs every OTHER status transition. This is unrelated to the phase-level `ph.onHold` toggle
+// already in Phases.tsx (a per-phase pause a project's own senior team members can flip) -- that one
+// keeps working independently of this project-wide freeze.
+export const isProjectFrozen = (project: any) => project?.status === 'On Hold';
 
 // Shared Phase Management data (phase/milestone/sub task tree + activity notifications) lifted to
 // App level so both Phase Management and the Client Portal read/write the exact same records —

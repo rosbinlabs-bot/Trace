@@ -23,7 +23,7 @@ export default function Phases(){
   // needs to actually be on THIS project's Team to edit anything here — a Guest (or anyone not tagged
   // at all, which shouldn't normally be reachable since staffVisibleProjects already filters the
   // project tabs) can view and download attachments only.
-  const readOnly = role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
+  const readOnly = (role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name)) || S.isProjectFrozen(projMeta);
   // "Acting as" is scoped to THIS project's actual team now — only the hierarchy levels really
   // present in Project Master's team list show up as tabs, instead of a fixed global list of four
   // (see S.projectLevelNumsPresent). It's derived from the signed-in account's own level on this
@@ -452,6 +452,12 @@ export default function Phases(){
   return (
     <div>
       {docErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{docErr}</div>}
+      {S.isProjectFrozen(projMeta) && (
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-1.5">
+          <S.Icon name="lock" className="w-3.5 h-3.5"/>
+          This project is On Hold — Phase Management is frozen. Only a Super Admin can resume the project (Project Master) to re-enable editing.
+        </div>
+      )}
       <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
         <S.SectionTitle sub="Per-project phases → milestones → sub tasks. Sub Tasks are approved up to L2, Milestones & Phases need L1, and the Implemented escalation walks every level on this project's team up to L1 before the Client Owner signs off in the Client Portal.">Phase Management</S.SectionTitle>
         {!readOnly && (
@@ -724,7 +730,7 @@ export default function Phases(){
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     <div className="flex flex-col gap-1 col-span-2 sm:col-span-1">
                       <label className="text-[10px] text-slate-400">Phase name</label>
-                      <input className={inpFor('phase')+" font-medium"} value={ph.name} onChange={e=>mutPhase(ph.id, x=>({...x,name:e.target.value}))} placeholder="Phase name"/>
+                      <input className={inpFor('phase')+" font-medium"} value={ph.name} disabled={readOnly} onChange={e=>mutPhase(ph.id, x=>({...x,name:e.target.value}))} placeholder="Phase name"/>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Owner</label>
@@ -732,7 +738,7 @@ export default function Phases(){
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Start date {startLocked && <span title="Locked — only L2-or-more-senior can change a start date once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
-                      <input type="date" min={minSelectableDate} className={inpFor('phase')} value={ph.start} disabled={startLocked} onChange={e=>mutPhase(ph.id, x=>({...x,start:e.target.value}))}/>
+                      <input type="date" min={minSelectableDate} className={inpFor('phase')} value={ph.start} disabled={readOnly || startLocked} onChange={e=>mutPhase(ph.id, x=>({...x,start:e.target.value}))}/>
                     </div>
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Deadline {deadlineLocked(ph.end) && <span title="Locked — only Admin/Super Admin can change a deadline once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>

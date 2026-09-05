@@ -130,6 +130,7 @@ export default function ProjectMaster(){
   };
   const raiseSpecialRequest = (type) => {
     if(type==='Extension'){ setExtChooser(true); setReqMenuOpen(false); return; }
+    if(type==='Project Hold Request' && !iAmSuperAdmin){ setReqMenuOpen(false); return; }
     const statusMap = { 'Project Hold Request':'On Hold', 'Project Termination Request':'Terminated', 'Project Completion Request':'Completed' };
     applyLifecycle({ status: statusMap[type], specialRequest:{ type, by:role, on:S.TODAY_ISO } });
     setReqMenuOpen(false);
@@ -394,10 +395,28 @@ export default function ProjectMaster(){
               <S.DateF label="End Date" value={form.end} canEdit={canEdit} onChange={v=>setF('end',v)} />
               <div>
                 <label className="text-xs text-slate-400 block mb-1">Status</label>
-                <select value={form.status} disabled={!canEditStatus} onChange={e=>applyLifecycle({status:e.target.value})} className={S.fieldCls(canEditStatus)}>
-                  {S.PROJECT_STATUSES.map(s=><option key={s} value={s}>{s}</option>)}
-                </select>
-                {!canEditStatus && <div className="text-[11px] text-slate-400 mt-1">Only Project Head or Strategic Lead can update status.</div>}
+                {form.status==='On Hold' ? (
+                  iAmSuperAdmin ? (
+                    <button type="button" onClick={()=>applyLifecycle({status:'In Progress'})} title="Click to remove hold and resume the project" className="text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 font-medium">
+                      On Hold — click to Resume
+                    </button>
+                  ) : (
+                    <S.Badge cls={S.statusColor('On Hold')}>On Hold</S.Badge>
+                  )
+                ) : (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <select value={form.status} disabled={!canEditStatus} onChange={e=>applyLifecycle({status:e.target.value})} className={S.fieldCls(canEditStatus)}>
+                      {S.PROJECT_STATUSES.filter(s=>s!=='On Hold').map(s=><option key={s} value={s}>{s}</option>)}
+                    </select>
+                    {iAmSuperAdmin && (
+                      <button type="button" onClick={()=>applyLifecycle({status:'On Hold'})} title="Freeze Phase Management until resumed" className="text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 text-amber-600 hover:bg-amber-50 whitespace-nowrap">
+                        Put on hold
+                      </button>
+                    )}
+                  </div>
+                )}
+                {!canEditStatus && form.status!=='On Hold' && <div className="text-[11px] text-slate-400 mt-1">Only Project Head or Strategic Lead can update status.</div>}
+                {form.status==='On Hold' && !iAmSuperAdmin && <div className="text-[11px] text-slate-400 mt-1">Only a Super Admin can resume this project.</div>}
               </div>
               <S.SelF label="Priority" value={form.priority} canEdit={canEdit} onChange={v=>setF('priority',v)} opts={PRIORITIES} />
               <S.SelF label="Billing Type" value={form.billing} canEdit={canEdit} onChange={v=>setF('billing',v)} opts={BILLINGS} />
@@ -746,7 +765,7 @@ export default function ProjectMaster(){
                     <button onClick={()=>setReqMenuOpen(o=>!o)} className="text-xs px-3 py-2 rounded-lg border border-orange-300 text-orange-700 bg-orange-50 hover:bg-orange-100 flex items-center gap-1"><S.Icon name="alert" className="w-3.5 h-3.5"/> Special Request</button>
                     {reqMenuOpen && (
                       <div className="absolute bottom-full left-0 mb-2 w-60 bg-white border border-slate-200 rounded-lg shadow-lg py-1 z-10">
-                        {['Extension','Project Hold Request','Project Termination Request','Project Completion Request'].map(t=>(
+                        {['Extension','Project Hold Request','Project Termination Request','Project Completion Request'].filter(t=>t!=='Project Hold Request' || iAmSuperAdmin).map(t=>(
                           <button key={t} onClick={()=>raiseSpecialRequest(t)} className="w-full text-left px-3 py-2 text-xs text-slate-600 hover:bg-slate-50">{t}</button>
                         ))}
                       </div>
