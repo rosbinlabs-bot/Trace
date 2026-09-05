@@ -206,6 +206,11 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   // count of outstanding approvals is visible without opening either screen. Clients never see these
   // two tabs (CLIENT_NAV omits them), so there's nothing to compute for that role.
   const pendingApprovalsBadge = role==='client' ? { total: 0, stuck: 0 } : S.totalPendingApprovals(projects, tree);
+  // Ping unread count (see S.pingUnreadCount): total messages across every channel this account can
+  // see that arrived after that channel was last opened, excluding this account's own messages.
+  // Clients never see the Ping tab (CLIENT_NAV omits it), so there's nothing to compute for that role.
+  const { messages: pingMessages, readMap: pingReadMap } = React.useContext(S.CommDataContext);
+  const pingUnread = role==='client' ? 0 : S.pingUnreadCount(pingMessages, email, pingReadMap);
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -298,12 +303,18 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
                   // grey until something's actually been stuck >= S.STUCK_APPROVAL_DAYS days -- red is
                   // reserved for genuinely stale approvals, not the instant an item is marked
                   // Completed by someone who doesn't personally qualify to finalize it.
-                  const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge : { total: 0, stuck: 0 };
+                  // Ping's badge reuses the same red/grey pill as the approvals badges below, just always
+                  // red when there's anything unread (unlike approvals, "unread" has no neutral phase).
+                  const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge
+                    : item.id==='communication' ? { total: pingUnread, stuck: pingUnread>0 ? 1 : 0 }
+                    : { total: 0, stuck: 0 };
                   return (
                   <NavLink
                     key={item.id}
                     to={`/${item.id}`}
-                    title={badgeCount.total>0 ? `${item.label} — ${badgeCount.total} pending approval${badgeCount.total===1?'':'s'}${badgeCount.stuck>0?` (${badgeCount.stuck} stuck ${S.STUCK_APPROVAL_DAYS}+ days)`:''}` : item.label}
+                    title={badgeCount.total===0 ? item.label
+                      : item.id==='communication' ? `${item.label} — ${badgeCount.total} unread message${badgeCount.total===1?'':'s'}`
+                      : `${item.label} — ${badgeCount.total} pending approval${badgeCount.total===1?'':'s'}${badgeCount.stuck>0?` (${badgeCount.stuck} stuck ${S.STUCK_APPROVAL_DAYS}+ days)`:''}`}
                     // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
                     // click lands, so by the time the route actually changes the code is usually already
                     // there and the loading spinner doesn't show at all. Calling the same import()
@@ -985,6 +996,21 @@ export default function App() {
     db.insertChannelMessage(full).catch((e) => console.error('Supabase sync failed:', e));
   };
 
+  // Ping unread tracking (see S.pingUnreadCount / S.CommDataContext) -- lifted here rather than kept
+  // local to Shell or Communication.tsx so marking a channel read there clears Shell's sidebar badge
+  // immediately, without a reload. session?.user?.email is read directly for the same reason
+  // logActivity does above: it shouldn't care about this code's position relative to `myEmail`.
+  const [pingReadMap, setPingReadMap] = useState<Record<string, string>>({});
+  React.useEffect(() => { setPingReadMap(S.loadPingRead(session?.user?.email || '')); }, [session?.user?.email]);
+  const markPingRead = (projectId: string) => {
+    if (!projectId) return;
+    setPingReadMap((m) => {
+      const next = { ...m, [projectId]: new Date().toISOString() };
+      S.savePingRead(session?.user?.email || '', next);
+      return next;
+    });
+  };
+
   // User Login Log Book (S.ActivityLogContext) -- fire-and-forget write straight to activity_logs,
   // no local state kept (see db.ts's insertActivityLog/fetchActivityLogs). session?.user?.email is
   // read directly rather than the `myEmail` const further down so this doesn't care about its own
@@ -1136,7 +1162,7 @@ export default function App() {
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team: liveTeam, setTeam: () => {} }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
-                <S.CommDataContext.Provider value={{ messages: visibleChannelMessages, postMessage: postChannelMessage }}>
+                <S.CommDataContext.Provider value={{ messages: visibleChannelMessages, postMessage: postChannelMessage, readMap: pingReadMap, markRead: markPingRead }}>
                 <S.GovernanceDataContext.Provider value={{ risks: visibleRisks, setRisks, issues: visibleIssues, setIssues, changes, setChanges }}>
                   <S.CalendarDataContext.Provider value={{ events: visibleCalendarEvents, setEvents: setCalendarEvents }}>
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>

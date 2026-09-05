@@ -236,8 +236,38 @@ export const PhaseDataContext = React.createContext<any>({ tree:{}, setTree:()=>
 // Supabase (channel_messages table), same optimistic-update-then-fire-and-forget pattern as
 // addNotification above. Lifted to App level (not local screen state) so Realtime inserts from a
 // teammate land here even while the account is on a different screen, ready the moment they open
-// Communication -- and so a channel's history survives navigating away and back.
-export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{} });
+// Communication -- and so a channel's history survives navigating away and back. `readMap`/`markRead`
+// (see pingUnreadCount below) are lifted here too, not kept local to either Shell or the screen, so
+// opening a Ping channel clears Shell's sidebar badge immediately instead of waiting for a reload.
+export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{}, readMap: {}, markRead: ()=>{} });
+
+// Ping unread tracking: a per-account map of { [projectId]: lastReadAtISO }, persisted to
+// localStorage keyed by email -- same "per-user via localStorage, not a synced column" choice
+// NotificationBell already makes below, since this is read-state UI convenience rather than data
+// anyone else needs to see. A channel that's never been opened counts as fully unread (like a brand
+// new Slack channel would); own messages never count towards your own badge. ISO timestamp strings
+// sort the same lexicographically as chronologically, so no Date parsing is needed to compare them.
+export const pingReadStorageKey = (email: string) => `rosbinTrace.pingRead.v1.${(email || '').toLowerCase()}`;
+export function loadPingRead(email: string): Record<string, string> {
+  try {
+    const raw = typeof localStorage !== 'undefined' && localStorage.getItem(pingReadStorageKey(email));
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) { return {}; }
+}
+export function savePingRead(email: string, map: Record<string, string>) {
+  try { typeof localStorage !== 'undefined' && localStorage.setItem(pingReadStorageKey(email), JSON.stringify(map)); } catch (e) {}
+}
+export function pingUnreadCount(messages: any[], email: string, readMap: Record<string, string>): number {
+  const myEmail = (email || '').toLowerCase();
+  let n = 0;
+  for (const m of (messages || [])) {
+    if ((m.authorEmail || '').toLowerCase() === myEmail) continue;
+    const key = m.projectId || m.project;
+    const lastRead = key ? readMap[key] : null;
+    if (!lastRead || (m.createdAt && m.createdAt > lastRead)) n++;
+  }
+  return n;
+}
 
 // User Login Log Book (Administration -> last tab, Super Admin only — S.isSuperAdmin below).
 // logActivity() is a fire-and-forget write straight to the activity_logs table (App.tsx's

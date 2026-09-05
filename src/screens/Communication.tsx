@@ -261,7 +261,7 @@ export default function Communication() {
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   const { addNotification } = React.useContext(S.PhaseDataContext);
-  const { messages, postMessage } = React.useContext(S.CommDataContext);
+  const { messages, postMessage, markRead } = React.useContext(S.CommDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
@@ -282,6 +282,11 @@ export default function Communication() {
   const notifyProject = (payload: any) => addNotification({ projectId: activeProj, project: projMeta.name, tags: roster.map((r: any) => r.name), priority: 'high', ...payload });
 
   const channelMessages = useMemo(() => (messages || []).filter((m: any) => m.projectId === activeProj), [messages, activeProj]);
+  // Viewing a channel marks it read (see S.pingUnreadCount/CommDataContext) -- both on first opening
+  // it and again whenever its message count changes while it stays open, so a message that arrives
+  // while you're already looking at the channel doesn't reappear as unread on the sidebar the moment
+  // you leave it.
+  React.useEffect(() => { if (activeProj) markRead(activeProj); }, [activeProj, channelMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const topLevel = useMemo(() => channelMessages.filter((m: any) => !m.parentId).sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1)), [channelMessages]);
   const repliesOf = (id: string) => channelMessages.filter((m: any) => m.parentId === id).sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
 
