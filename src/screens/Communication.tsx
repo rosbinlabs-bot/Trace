@@ -420,6 +420,11 @@ export default function Communication() {
   React.useEffect(() => { if (activeProj) markRead(activeProj); }, [activeProj, channelMessages.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const topLevel = useMemo(() => channelMessages.filter((m: any) => !m.parentId).sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1)), [channelMessages]);
   const repliesOf = (id: string) => channelMessages.filter((m: any) => m.parentId === id).sort((a: any, b: any) => (a.createdAt < b.createdAt ? -1 : 1));
+  // The single most-recent message in the whole channel, top-level or a reply -- "Seen by" only
+  // ever makes sense on this one message (everyone who's opened the channel since it posted has, by
+  // definition, seen everything before it too), so it has to be found across BOTH lists rather than
+  // just assumed to be the last top-level post, which a later reply could easily postdate.
+  const lastOverallId = useMemo(() => channelMessages.reduce((latest: any, m: any) => (!latest || m.createdAt > latest.createdAt) ? m : latest, null)?.id, [channelMessages]);
 
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const threadParent = openThreadId ? channelMessages.find((m: any) => m.id === openThreadId) : null;
@@ -552,12 +557,29 @@ export default function Communication() {
 
           <div className="space-y-4 mb-4 max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
             {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">No updates yet — be the first to post.</div>}
-            {topLevel.map((m: any, i: number) => (
-              <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
-                replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
-                highlighted={highlightId === m.id}
-                seenBy={i === topLevel.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
-            ))}
+            {topLevel.map((m: any) => {
+              const replies = repliesOf(m.id);
+              return (
+                <div key={m.id}>
+                  <MessageRow m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
+                    replyCount={replies.length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
+                    highlighted={highlightId === m.id}
+                    seenBy={m.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
+                  {/* Replies now show right here in the main feed instead of staying hidden until
+                      "Reply" is clicked -- that button (and the side thread panel it opens) is still
+                      how you POST a new reply, but reading one no longer needs an extra click. */}
+                  {replies.length > 0 && (
+                    <div className="ml-10 mt-1.5 pl-3 border-l-2 border-slate-100 space-y-2">
+                      {replies.map((r: any) => (
+                        <MessageRow key={r.id} m={r} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact
+                          highlighted={highlightId === r.id}
+                          seenBy={r.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, r, admin, myEmail) : undefined} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           <Composer key={`composer-${activeProj}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
@@ -574,12 +596,12 @@ export default function Communication() {
               <div className="pb-3 border-b border-slate-100">
                 <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef}
                   highlighted={highlightId === threadParent.id}
-                  seenBy={threadReplies.length === 0 ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin, myEmail) : undefined} />
+                  seenBy={threadParent.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin, myEmail) : undefined} />
               </div>
-              {threadReplies.map((m: any, i: number) => (
+              {threadReplies.map((m: any) => (
                 <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact
                   highlighted={highlightId === m.id}
-                  seenBy={i === threadReplies.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
+                  seenBy={m.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
               ))}
             </div>
             <Composer key={`thread-composer-${activeProj}-${openThreadId}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
