@@ -1207,7 +1207,7 @@ export const notificationTarget = (n: any, role: string) => {
 // header bell dropdown, so the two never drift out of sync. Each row is clickable whenever
 // notificationTarget() finds somewhere to send it, jumping straight to the project/item behind that
 // notification instead of leaving the person to go find it themselves.
-export const NotificationFeedList = ({ notifications, emptyText }: any) => {
+export const NotificationFeedList = ({ notifications, emptyText, onItemClick }: any) => {
   const navigate = useNavigate();
   const { role } = React.useContext(RoleContext);
   if (!notifications || notifications.length===0) {
@@ -1219,8 +1219,12 @@ export const NotificationFeedList = ({ notifications, emptyText }: any) => {
         const nt = NOTIF_TONE[n.type] || NOTIF_TONE.default;
         const target = notificationTarget(n, role);
         const Row = target ? 'button' : 'div';
+        // onItemClick lets a caller that renders this list inside a dropdown/overlay (the header
+        // bell) close itself on click -- otherwise the destination page navigates in behind the
+        // still-open panel and the click looks like it did nothing. Callers that render the list
+        // inline on the page (Portal's project feed) simply don't pass it.
         return (
-        <Row key={n.id} type={target?'button':undefined} onClick={target ? ()=>navigate(target.to, { state:target.state }) : undefined}
+        <Row key={n.id} type={target?'button':undefined} onClick={target ? ()=>{ navigate(target.to, { state:target.state }); onItemClick?.(); } : undefined}
           title={target ? 'Open' : undefined}
           className={`w-full flex items-start justify-between gap-2 text-sm bg-white border border-slate-100 rounded-lg px-3 py-2 text-left ${target ? 'hover:bg-brand-50 hover:border-brand-200 transition-colors cursor-pointer' : ''}`}>
           <div className="flex items-start gap-2.5 min-w-0">
@@ -1298,7 +1302,7 @@ export function NotificationBell(){
             <span className="font-semibold text-slate-800 text-sm">Notifications</span>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            <NotificationFeedList notifications={notifications} emptyText="No notifications yet — approvals, completions and calendar reminders will show up here."/>
+            <NotificationFeedList notifications={notifications} emptyText="No notifications yet — approvals, completions and calendar reminders will show up here." onItemClick={() => setOpen(false)}/>
           </div>
         </div>
       )}
