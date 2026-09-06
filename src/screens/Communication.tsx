@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
 import { supabase } from '../supabaseClient';
@@ -327,9 +327,16 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
 
 // One message row, reused for both the main feed (with a Reply/thread-count affordance) and the
 // thread panel (parent + its replies, no further nesting -- Slack-style threads are one level deep).
-function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact, seenBy }: any) {
+function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact, seenBy, highlighted }: any) {
+  // Scrolls itself into view the moment it becomes the deep-link target (see Communication()'s
+  // highlightId), so clicking a @mention notification lands you looking right at the message
+  // instead of leaving you to scroll the feed/thread for it.
+  const rowRef = useRef<HTMLDivElement>(null);
+  React.useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [highlighted]);
   return (
-    <div className="flex gap-2.5">
+    <div ref={rowRef} className={`flex gap-2.5 -mx-2 px-2 py-1.5 rounded-lg transition-colors duration-500 ${highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
       <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-[11px]'} rounded-full bg-brand-100 text-brand-700 font-semibold flex items-center justify-center shrink-0`}>{initials(m.authorName)}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -362,6 +369,7 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, on
 
 export default function Communication() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
@@ -416,7 +424,42 @@ export default function Communication() {
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const threadParent = openThreadId ? channelMessages.find((m: any) => m.id === openThreadId) : null;
   const threadReplies = threadParent ? repliesOf(threadParent.id) : [];
-  React.useEffect(() => { setOpenThreadId(null); }, [activeProj]);
+  const [highlightId, setHighlightId] = useState<string | null>(null);
+  // Deep link from a notification click (shared.tsx's notificationTarget) -- a @mention notification
+  // carries {projectId, threadId, openId}. When the target channel differs from the one currently
+  // open, stash the thread/highlight to apply once the channel switch below actually lands (see
+  // pendingDeepLink), rather than applying them here where the project-switch effect would still
+  // wipe openThreadId out from under us.
+  const [pendingDeepLink, setPendingDeepLink] = useState<{ threadId: string | null; openId: string | null } | null>(null);
+  React.useEffect(() => {
+    const st: any = location.state;
+    if (!st || !st.projectId) return;
+    if (st.projectId === activeProj) {
+      setOpenThreadId(st.threadId || null);
+      setHighlightId(st.openId || null);
+    } else {
+      setPendingDeepLink({ threadId: st.threadId || null, openId: st.openId || null });
+      setActiveProj(st.projectId);
+    }
+  }, [location.key]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Switching channels normally closes any open thread -- unless this project change is itself the
+  // deep link's own doing, in which case apply the thread/highlight it asked for instead.
+  React.useEffect(() => {
+    if (pendingDeepLink) {
+      setOpenThreadId(pendingDeepLink.threadId);
+      setHighlightId(pendingDeepLink.openId);
+      setPendingDeepLink(null);
+    } else {
+      setOpenThreadId(null);
+    }
+  }, [activeProj]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Fades the highlight on its own after a few seconds rather than leaving it stuck until the next
+  // deep link -- long enough to catch the eye, short enough to not look broken.
+  React.useEffect(() => {
+    if (!highlightId) return;
+    const t = setTimeout(() => setHighlightId(null), 4000);
+    return () => clearTimeout(t);
+  }, [highlightId]);
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const downloadAttachment = async (a: any) => {
@@ -439,7 +482,12 @@ export default function Communication() {
       const u = await db.uploadChatFile(S.uid('CHF'), f);
       attachments.push({ id: u.id, n: u.name, path: u.path, size: u.size, kind: 'audio', duration: payload.audio.duration });
     }
+    // Generated up front (rather than left for postChannelMessage to assign) so the notification
+    // raised below can carry the exact message id as itemId -- notificationTarget (shared.tsx) uses
+    // it to open and highlight this specific message when the tagged person clicks the notification.
+    const msgId = S.uid('MSG');
     postMessage({
+      id: msgId,
       projectId: activeProj, project: projMeta.name, parentId: parentId || null,
       authorEmail: myEmail, authorName: myProfile?.name || myEmail,
       body: payload.text, attachments, mentions: payload.mentions, taskRefs: payload.taskRefs,
@@ -450,7 +498,7 @@ export default function Communication() {
     // bell for every line of chat, only for a direct instruction aimed at someone specific.
     if (payload.mentions && payload.mentions.length) {
       notifyProject({
-        level: 'message', itemName: projMeta.name, type: 'Mentioned', priority: 'high',
+        level: 'message', itemName: projMeta.name, type: 'Mentioned', priority: 'high', itemId: msgId, parentId: parentId || null,
         message: `${myProfile?.name || myEmail} tagged ${payload.mentions.join(', ')} in "${projMeta.name}" Communication${parentId ? ' (thread reply)' : ''}${payload.text ? `: "${payload.text.slice(0, 140)}"` : ''}`,
       });
     }
@@ -507,6 +555,7 @@ export default function Communication() {
             {topLevel.map((m: any, i: number) => (
               <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
                 replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
+                highlighted={highlightId === m.id}
                 seenBy={i === topLevel.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
             ))}
           </div>
@@ -524,10 +573,12 @@ export default function Communication() {
             <div className="space-y-3 mb-3 max-h-[45vh] overflow-auto pr-1">
               <div className="pb-3 border-b border-slate-100">
                 <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef}
+                  highlighted={highlightId === threadParent.id}
                   seenBy={threadReplies.length === 0 ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin, myEmail) : undefined} />
               </div>
               {threadReplies.map((m: any, i: number) => (
                 <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact
+                  highlighted={highlightId === m.id}
                   seenBy={i === threadReplies.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
               ))}
             </div>

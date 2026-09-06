@@ -1196,6 +1196,10 @@ export const notificationTarget = (n: any, role: string) => {
     return { to:'/calendar', state:{ openId:n.eventId, date:n.date } };
   }
   if (n.type==='Billing Due Soon' && n.projectId) return { to:'/projects', state:{ projectId:n.projectId } };
+  // Ping @mentions (Communication.tsx's notifyProject) -- lands on that project's channel, opens the
+  // thread if the mention was a reply (n.parentId), and highlights the specific message (n.itemId)
+  // so the tagged person doesn't have to hunt through the feed for it.
+  if (n.level==='message' && n.projectId) return { to:'/communication', state:{ projectId:n.projectId, threadId:n.parentId || null, openId:n.itemId || null } };
   return null;
 };
 
