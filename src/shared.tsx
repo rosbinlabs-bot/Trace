@@ -85,6 +85,32 @@ export const projAchievedRevenue = (p) => Math.min(projTargetRevenue(p), Math.ro
 // project simply has no confirmed receipts yet, since that's the true billed-to-date figure.
 export const projInvoicedRevenue = (p, invoices) => (invoices||[]).filter(i=>i.project===p.id && i.status==='Received').reduce((sum,i)=>sum+(Number(i.amount)||0), 0);
 
+// First calendar day of the current month, paired with CURRENT_MONTH_END above (both derived from
+// TODAY_ISO's own y/m, not a Date round-trip, for the same local/UTC-shift reason CURRENT_MONTH_END
+// avoids one).
+export const CURRENT_MONTH_START = (() => {
+  const [y, m] = TODAY_ISO.split('-').map(Number);
+  return `${y}-${String(m).padStart(2, '0')}-01`;
+})();
+// Whether a project is actually billing in the current calendar month at all -- its contract window
+// overlaps this month, and it isn't already closed out (mirrors nextBillingDueDate's own "nothing
+// left to bill" gate for Completed/Terminated/Dropped projects).
+export const projActiveThisMonth = (p) =>
+  !['Completed', 'Terminated', 'Dropped'].includes(p.status) &&
+  (p.start || '') <= CURRENT_MONTH_END && (p.end || '') >= CURRENT_MONTH_START;
+// This month's expected billing -- billing is a flat monthly invoice, not prorated across the days
+// of a month (same reasoning projInvoicedRevenue's comment gives for the all-time figure), so it's
+// simply the Monthly Fee for any month the project is actually active in, 0 for a month its contract
+// doesn't cover at all.
+export const projMonthTarget = (p) => projActiveThisMonth(p) ? (Number(p.monthlyFee) || 0) : 0;
+// This month's actual collection -- same "Received" rule as projInvoicedRevenue, narrowed to
+// invoices whose receivedDate falls in the current calendar month.
+export const projMonthCollection = (p, invoices) => {
+  const ym = TODAY_ISO.slice(0, 7);
+  return (invoices || []).filter(i => i.project === p.id && i.status === 'Received' && String(i.receivedDate || '').slice(0, 7) === ym)
+    .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+};
+
 // Category tiers are org-configurable (Project Master's Category field, master list at
 // settings.categories — code + label, e.g. { code:'A', label:'Premium' }), so "is this project
 // Premium" has to look the label up rather than assume code 'A' is always Premium. Falls back to

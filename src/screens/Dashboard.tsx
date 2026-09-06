@@ -366,31 +366,71 @@ export default function Dashboard(){
               }))}
               {openKpi==='Portfolio Health' && trackedProjects.length===0 && <div className="text-sm text-slate-400">No tracked projects.</div>}
 
-              {openKpi==='Revenue Collected' && projects.length>0 && (
-                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 items-center">
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100">Project</div>
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Target</div>
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Achievement</div>
-                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">% Achieved</div>
-                  {projects.map((p:any)=>{
-                    // Target is the project's full contract value (Total Value = months x Monthly
-                    // Fee, S.projTargetRevenue -- same figure Project Master labels "Total Value
-                    // (months x fee)"), not a prorated/elapsed-to-date figure. Achievement is actual
-                    // revenue received to date (S.projInvoicedRevenue, Received payment receipts only).
-                    const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
-                    const pct = target ? Math.round(100*achieved/target) : 0;
-                    const pctTone = pct>=100 ? 'text-emerald-600' : pct>=50 ? 'text-amber-600' : 'text-red-600';
-                    return (
-                      <React.Fragment key={p.id}>
-                        <span className="text-sm text-slate-700 truncate">{p.name}</span>
-                        <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(target)}</span>
-                        <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(achieved)}</span>
-                        <span className={`text-xs font-semibold text-right whitespace-nowrap ${pctTone}`}>{pct}%</span>
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
-              )}
+              {openKpi==='Revenue Collected' && projects.length>0 && (() => {
+                // This Month's totals, summed across every project below -- gives the one number
+                // the per-project rows can't: how this specific month is tracking overall, not just
+                // each project's lifetime-to-date progress.
+                let monthTargetSum = 0, monthCollectedSum = 0;
+                projects.forEach((p:any)=>{ monthTargetSum += S.projMonthTarget(p); monthCollectedSum += S.projMonthCollection(p, invoices); });
+                const monthPctSum = monthTargetSum ? Math.round(100*monthCollectedSum/monthTargetSum) : (monthCollectedSum>0 ? 100 : 0);
+                const toneFor = (pct:number) => pct>=100 ? 'text-emerald-600' : pct>=50 ? 'text-amber-600' : 'text-red-600';
+                return (
+                <>
+                  <div className="text-[11px] font-semibold text-slate-500 mb-1.5">Overall (contract life to date)</div>
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 items-center">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100">Project</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Target</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Achievement</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">% Achieved</div>
+                    {projects.map((p:any)=>{
+                      // Target is the project's full contract value (Total Value = months x Monthly
+                      // Fee, S.projTargetRevenue -- same figure Project Master labels "Total Value
+                      // (months x fee)"), not a prorated/elapsed-to-date figure. Achievement is actual
+                      // revenue received to date (S.projInvoicedRevenue, Received payment receipts only).
+                      const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
+                      const pct = target ? Math.round(100*achieved/target) : 0;
+                      return (
+                        <React.Fragment key={p.id}>
+                          <span className="text-sm text-slate-700 truncate">{p.name}</span>
+                          <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(target)}</span>
+                          <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(achieved)}</span>
+                          <span className={`text-xs font-semibold text-right whitespace-nowrap ${toneFor(pct)}`}>{pct}%</span>
+                        </React.Fragment>
+                      );
+                    })}
+                  </div>
+
+                  <div className="text-[11px] font-semibold text-slate-500 mt-4 mb-1.5">This Month — {S.CURRENT_MONTH_LABEL}</div>
+                  <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 items-center">
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100">Project</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Target</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Collected</div>
+                    <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">% Achieved</div>
+                    {projects.map((p:any)=>{
+                      // This month's expected billing (flat Monthly Fee, 0 if the project isn't
+                      // active this calendar month at all) vs. what's actually been confirmed
+                      // received with a receivedDate in this same calendar month.
+                      const mTarget = S.projMonthTarget(p), mCollected = S.projMonthCollection(p, invoices);
+                      const mPct = mTarget ? Math.round(100*mCollected/mTarget) : (mCollected>0 ? 100 : 0);
+                      return (
+                        <React.Fragment key={p.id}>
+                          <span className="text-sm text-slate-700 truncate">{p.name}</span>
+                          <span className="text-xs text-slate-600 text-right whitespace-nowrap">{mTarget ? S.inLakh(mTarget) : '—'}</span>
+                          <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(mCollected)}</span>
+                          <span className={`text-xs font-semibold text-right whitespace-nowrap ${(mTarget||mCollected) ? toneFor(mPct) : 'text-slate-300'}`}>{(mTarget||mCollected) ? `${mPct}%` : '—'}</span>
+                        </React.Fragment>
+                      );
+                    })}
+                    {/* Total row -- the one number that answers "how is this month actually going",
+                        which no single project's row can show on its own. */}
+                    <span className="text-sm font-semibold text-slate-800 pt-1.5 border-t border-slate-100">Total</span>
+                    <span className="text-xs font-semibold text-slate-800 text-right whitespace-nowrap pt-1.5 border-t border-slate-100">{S.inLakh(monthTargetSum)}</span>
+                    <span className="text-xs font-semibold text-slate-800 text-right whitespace-nowrap pt-1.5 border-t border-slate-100">{S.inLakh(monthCollectedSum)}</span>
+                    <span className={`text-xs font-bold text-right whitespace-nowrap pt-1.5 border-t border-slate-100 ${toneFor(monthPctSum)}`}>{monthPctSum}%</span>
+                  </div>
+                </>
+                );
+              })()}
               {openKpi==='Revenue Collected' && projects.length===0 && <div className="text-sm text-slate-400">No projects yet.</div>}
 
               {openKpi==='On-Time Delivery' && (doneWithDeadline.length ? doneWithDeadline.map((e,i)=>{
