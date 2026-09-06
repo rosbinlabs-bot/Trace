@@ -336,7 +336,7 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, on
     if (highlighted) rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [highlighted]);
   return (
-    <div ref={rowRef} className={`flex gap-2.5 -mx-2 px-2 py-1.5 rounded-lg transition-colors duration-500 ${highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
+    <div ref={rowRef} className={`flex gap-2.5 p-1.5 rounded-lg transition-colors duration-500 ${highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
       <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-[11px]'} rounded-full bg-brand-100 text-brand-700 font-semibold flex items-center justify-center shrink-0`}>{initials(m.authorName)}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -550,7 +550,7 @@ export default function Communication() {
             </div>
           </div>
 
-          <div className="space-y-4 mb-4 max-h-[55vh] overflow-auto pr-1">
+          <div className="space-y-4 mb-4 max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
             {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">No updates yet — be the first to post.</div>}
             {topLevel.map((m: any, i: number) => (
               <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
@@ -570,7 +570,7 @@ export default function Communication() {
               <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Thread</span>
               <button onClick={() => setOpenThreadId(null)} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
-            <div className="space-y-3 mb-3 max-h-[45vh] overflow-auto pr-1">
+            <div className="space-y-3 mb-3 max-h-[45vh] overflow-y-auto overflow-x-hidden pr-1">
               <div className="pb-3 border-b border-slate-100">
                 <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef}
                   highlighted={highlightId === threadParent.id}
