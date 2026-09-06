@@ -179,7 +179,7 @@ export default function Portal(){
     } else {
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, status:'Implemented', review:'', clientApprovedImpl:true, clientAcceptedDate:S.TODAY_ISO})));
     }
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Implemented',
+    notifyProject({ level:(level==='Sub Task'?'subtask':level.toLowerCase()), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Implemented',
       message:`"${item.name}" in phase "${ph.name}" has been marked Implemented after internal approval and Client Owner sign-off.` });
     logActivity({ module: 'Client Portal', action: `Approved "${item.name}" (${ph.name}) as Implemented`, project: projMeta.name });
   };
@@ -193,7 +193,7 @@ export default function Portal(){
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, review:'', headApprovedImpl:false})));
     }
     const text = (remarkDraft[item.id]||'').trim();
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Requested Changes',
+    notifyProject({ level:(level==='Sub Task'?'subtask':level.toLowerCase()), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Requested Changes',
       message:`Client Owner requested changes on "${item.name}" (${ph.name})${text?`: "${text}"`:'.'}` });
     logActivity({ module: 'Client Portal', action: `Requested changes on "${item.name}" (${ph.name})`, project: projMeta.name });
     setRemark(item.id, '');
@@ -214,7 +214,7 @@ export default function Portal(){
     } else {
       setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, remarkAlert:{by:myClientName, at}})));
     }
-    notifyProject({ level:level.toLowerCase(), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
+    notifyProject({ level:(level==='Sub Task'?'subtask':level.toLowerCase()), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
       message:`Client remark on "${item.name}" (${ph.name}): "${text}"` });
     logActivity({ module: 'Client Portal', action: `Posted a remark on "${item.name}" (${ph.name})`, project: projMeta.name });
     setRemark(item.id, '');
