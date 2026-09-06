@@ -92,6 +92,29 @@ export async function insertChannelMessage(m: any) {
   if (error) throw error;
 }
 
+// Ping "seen by" read receipts (channel_seen: one row per project+user, see the create_channel_seen
+// migration). channelSeenFromDb reassembles the flat row list into { [projectId]: { [email]:
+// lastSeenAtISO } }, same nested-map shape monthlyPlan uses above. upsertChannelSeen fires whenever
+// someone opens a project's Ping channel (or a new message lands while they have it open) -- see
+// markPingRead/App.tsx -- upserting on the (project_id, user_email) primary key so each person only
+// ever has exactly one row per project, no growth over time.
+export const channelSeenFromDb = (rows: any[]): Record<string, Record<string, string>> => {
+  const out: Record<string, Record<string, string>> = {};
+  (rows || []).forEach((r: any) => {
+    out[r.project_id] = out[r.project_id] || {};
+    out[r.project_id][r.user_email] = r.last_seen_at;
+  });
+  return out;
+};
+export async function upsertChannelSeen(projectId: string, userEmail: string, at: string) {
+  if (!projectId || !userEmail) return;
+  const { error } = await supabase.from('channel_seen').upsert(
+    { tenant_id: TENANT_ID, project_id: projectId, user_email: userEmail, last_seen_at: at },
+    { onConflict: 'project_id,user_email' }
+  );
+  if (error) throw error;
+}
+
 // User Login Log Book (Administration -> last tab, Super Admin only). Both tables are plain flat
 // columns (not the notifications table's jsonb payload shape) since every row here needs to be
 // filtered/sorted by user and time directly — see the create_login_logs_and_activity_logs migration.
@@ -128,7 +151,7 @@ const docToDb = (d: any) => ({ tenant_id: TENANT_ID, id: d.id, name: d.name, ind
 
 /* ============================ initial load ============================ */
 export async function loadAll() {
-  const [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans, channelMessages] = await Promise.all([
+  const [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans, channelMessages, channelSeenRows] = await Promise.all([
     supabase.from('projects').select('*').order('created_at'),
     supabase.from('phase_trees').select('*'),
     supabase.from('risks').select('*').order('created_at'),
@@ -150,9 +173,11 @@ export async function loadAll() {
     supabase.from('invoices').select('*').order('created_at'),
     supabase.from('monthly_plans').select('*'),
     supabase.from('channel_messages').select('*').order('created_at'),
+    // Tiny table (one row per user per project, not per message) -- see channel_seen migration.
+    supabase.from('channel_seen').select('*'),
   ]);
 
-  for (const r of [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans, channelMessages]) {
+  for (const r of [projects, phaseTrees, risks, issues, changes, events, docs, deliverables, team, admin, settings, notifications, invoices, monthlyPlans, channelMessages, channelSeenRows]) {
     if (r.error) throw r.error;
   }
 
@@ -190,6 +215,7 @@ export async function loadAll() {
     invoices: (invoices.data || []).map(invoiceFromDb),
     monthlyPlan,
     channelMessages: (channelMessages.data || []).map(channelMessageFromDb),
+    channelSeen: channelSeenFromDb(channelSeenRows.data || []),
   };
 }
 
@@ -438,7 +464,7 @@ async function callManageUser(payload: any) {
 export type RealtimeTable =
   | 'projects' | 'phase_trees' | 'risks' | 'issues' | 'change_requests' | 'calendar_events'
   | 'library_docs' | 'deliverables' | 'team' | 'admin_data' | 'app_settings' | 'notifications' | 'invoices'
-  | 'monthly_plans' | 'channel_messages';
+  | 'monthly_plans' | 'channel_messages' | 'channel_seen';
 
 export function subscribeRealtime(tenantId: string, handlers: Partial<Record<RealtimeTable, (payload: any) => void>>) {
   const channel = supabase.channel(`tenant-live-${tenantId}`);

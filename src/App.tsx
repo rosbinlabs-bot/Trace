@@ -733,6 +733,10 @@ export default function App() {
   const [invoices, setInvoicesState] = useState<any[]>([]);
   const [monthlyPlan, setMonthlyPlanState] = useState<any>({});
   const [channelMessages, setChannelMessagesState] = useState<any[]>([]);
+  // Ping "seen by" read receipts (channel_seen table) -- { [projectId]: { [userEmail]: lastSeenAtISO } }.
+  // Shared across every signed-in account (unlike pingReadMap below, which is per-browser
+  // localStorage and only ever drives THIS account's own unread badge) -- see db.channelSeenFromDb.
+  const [channelSeen, setChannelSeenState] = useState<Record<string, Record<string, string>>>({});
 
   // Timestamps of our own most recent local edit, one bucket per synced data type (keyed by
   // whatever identifies a "row" for that type: project id for the phase tree, project+month for
@@ -784,6 +788,7 @@ export default function App() {
         setLibraryDocsState(data.docs);
         setDeliverablesState(data.deliverables);
         setChannelMessagesState(data.channelMessages);
+        setChannelSeenState(data.channelSeen);
         setInvoicesState(data.invoices);
         setMonthlyPlanState(data.monthlyPlan);
         setLoading(false);
@@ -853,6 +858,19 @@ export default function App() {
       team: mergeById(setTeamState, db.teamFromDb, 'name', echo.team),
       notifications: mergeById(setNotifications, db.notificationFromDb),
       channel_messages: mergeById(setChannelMessagesState, db.channelMessageFromDb),
+      // channel_seen isn't a flat array of records (it's a per-project-per-user map), so it gets
+      // its own handler rather than reusing mergeById above -- an incoming row just overwrites that
+      // one [projectId][email] slot, no id-array reconciliation needed. No DELETE path: rows are
+      // upserted for the lifetime of the account, never removed.
+      channel_seen: (payload: any) => {
+        if (payload.eventType === 'DELETE') return;
+        const row = payload.new;
+        if (!row?.project_id || !row?.user_email) return;
+        setChannelSeenState((prev) => ({
+          ...prev,
+          [row.project_id]: { ...(prev[row.project_id] || {}), [row.user_email]: row.last_seen_at },
+        }));
+      },
       phase_trees: (payload: any) => {
         setPhaseTreeState((prev: any) => {
           if (payload.eventType === 'DELETE') {
@@ -1004,11 +1022,24 @@ export default function App() {
   React.useEffect(() => { setPingReadMap(S.loadPingRead(session?.user?.email || '')); }, [session?.user?.email]);
   const markPingRead = (projectId: string) => {
     if (!projectId) return;
+    const email = session?.user?.email || '';
+    const now = new Date().toISOString();
     setPingReadMap((m) => {
-      const next = { ...m, [projectId]: new Date().toISOString() };
-      S.savePingRead(session?.user?.email || '', next);
+      const next = { ...m, [projectId]: now };
+      S.savePingRead(email, next);
       return next;
     });
+    // "Seen by" read receipts (channel_seen table) -- shared server-side, unlike pingReadMap above.
+    // Same trigger (opening the channel, or a new message landing while it's open -- see
+    // Communication.tsx's effect on [activeProj, channelMessages.length]) drives both, so this
+    // account's own unread badge and what everyone else sees as "seen by you at ..." never disagree.
+    // Optimistic local update first (so the sender sees their own name appear under the message
+    // instantly) then write-through; Realtime (channel_seen handler above) is what lands it for
+    // everyone else, live.
+    if (email) {
+      setChannelSeenState((prev) => ({ ...prev, [projectId]: { ...(prev[projectId] || {}), [email]: now } }));
+      db.upsertChannelSeen(projectId, email, now).catch((e) => console.error('Supabase sync failed:', e));
+    }
   };
 
   // User Login Log Book (S.ActivityLogContext) -- fire-and-forget write straight to activity_logs,
@@ -1162,7 +1193,7 @@ export default function App() {
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team: liveTeam, setTeam: () => {} }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
-                <S.CommDataContext.Provider value={{ messages: visibleChannelMessages, postMessage: postChannelMessage, readMap: pingReadMap, markRead: markPingRead }}>
+                <S.CommDataContext.Provider value={{ messages: visibleChannelMessages, postMessage: postChannelMessage, readMap: pingReadMap, markRead: markPingRead, seenMap: channelSeen }}>
                 <S.GovernanceDataContext.Provider value={{ risks: visibleRisks, setRisks, issues: visibleIssues, setIssues, changes, setChanges }}>
                   <S.CalendarDataContext.Provider value={{ events: visibleCalendarEvents, setEvents: setCalendarEvents }}>
                     <S.LibraryDataContext.Provider value={{ docs: libraryDocs, setDocs: setLibraryDocs }}>

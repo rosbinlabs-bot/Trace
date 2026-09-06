@@ -268,7 +268,31 @@ export const PhaseDataContext = React.createContext<any>({ tree:{}, setTree:()=>
 // Communication -- and so a channel's history survives navigating away and back. `readMap`/`markRead`
 // (see pingUnreadCount below) are lifted here too, not kept local to either Shell or the screen, so
 // opening a Ping channel clears Shell's sidebar badge immediately instead of waiting for a reload.
-export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{}, readMap: {}, markRead: ()=>{} });
+export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{}, readMap: {}, markRead: ()=>{}, seenMap: {} });
+// "Seen by" read receipts for the latest message in a Ping channel (WhatsApp/Slack-style: seeing
+// the newest message implies every earlier one was seen too, so this is only ever computed for the
+// last message in the main feed / last reply in a thread, not every message -- see Communication.tsx).
+// seenMapForProject is channelSeen[projectId] from CommDataContext ({ email: lastSeenAtISO }); roster
+// is S.buildRoster(project, admin) (team members by NAME, this feature's roster has no email); admin
+// is the full admin_data object so admin.users can join name -> email (channel_seen, like every
+// other identity-bearing table in this app, is keyed by email, not name). Excludes the message's own
+// author (you don't need to be told you've "seen" your own message) and anyone who hasn't opened the
+// channel since the message was posted. Returns oldest-seen-first.
+export const seenByFor = (seenMapForProject: Record<string,string> | undefined, roster: {name:string}[], message: any, admin: any): {name:string; at:string}[] => {
+  if (!seenMapForProject || !message?.createdAt) return [];
+  const users = admin?.users || [];
+  const authorEmail = (message.authorEmail || '').toLowerCase();
+  const out: {name:string; at:string}[] = [];
+  (roster || []).forEach((r) => {
+    const u = users.find((x:any) => (x.name || '') === r.name);
+    const email = (u?.email || '').toLowerCase();
+    if (!email || email === authorEmail) return;
+    const at = Object.keys(seenMapForProject).find((e) => e.toLowerCase() === email);
+    const seenAt = at ? seenMapForProject[at] : undefined;
+    if (seenAt && seenAt >= message.createdAt) out.push({ name: r.name, at: seenAt });
+  });
+  return out.sort((a, b) => (a.at < b.at ? -1 : 1));
+};
 
 // Ping unread tracking: a per-account map of { [projectId]: lastReadAtISO }, persisted to
 // localStorage keyed by email -- same "per-user via localStorage, not a synced column" choice

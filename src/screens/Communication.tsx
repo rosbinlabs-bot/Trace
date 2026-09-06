@@ -327,7 +327,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
 
 // One message row, reused for both the main feed (with a Reply/thread-count affordance) and the
 // thread panel (parent + its replies, no further nesting -- Slack-style threads are one level deep).
-function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact }: any) {
+function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact, seenBy }: any) {
   return (
     <div className="flex gap-2.5">
       <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-[11px]'} rounded-full bg-brand-100 text-brand-700 font-semibold flex items-center justify-center shrink-0`}>{initials(m.authorName)}</div>
@@ -347,6 +347,14 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, on
             {replyCount > 0 ? `${replyCount} repl${replyCount === 1 ? 'y' : 'ies'}` : 'Reply'}
           </button>
         )}
+        {/* "Seen by" -- only ever passed in for the LATEST message in the feed/thread (WhatsApp/
+            Slack-style: seeing the newest message implies every earlier one was seen too), so this
+            never renders on any other row. */}
+        {seenBy && seenBy.length > 0 && (
+          <div className="text-[10px] text-slate-400 mt-1" title={seenBy.map((s: any) => `${s.name} — ${fmtTime(s.at)}`).join('\n')}>
+            Seen by {seenBy.map((s: any) => `${s.name} (${fmtTime(s.at)})`).join(', ')}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -359,7 +367,7 @@ export default function Communication() {
   const { admin } = React.useContext(S.AdminDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   const { addNotification, tree } = React.useContext(S.PhaseDataContext);
-  const { messages, postMessage, markRead, readMap } = React.useContext(S.CommDataContext);
+  const { messages, postMessage, markRead, readMap, seenMap } = React.useContext(S.CommDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
@@ -407,6 +415,7 @@ export default function Communication() {
 
   const [openThreadId, setOpenThreadId] = useState<string | null>(null);
   const threadParent = openThreadId ? channelMessages.find((m: any) => m.id === openThreadId) : null;
+  const threadReplies = threadParent ? repliesOf(threadParent.id) : [];
   React.useEffect(() => { setOpenThreadId(null); }, [activeProj]);
 
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -495,9 +504,10 @@ export default function Communication() {
 
           <div className="space-y-4 mb-4 max-h-[55vh] overflow-auto pr-1">
             {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">No updates yet — be the first to post.</div>}
-            {topLevel.map((m: any) => (
+            {topLevel.map((m: any, i: number) => (
               <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
-                replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef} />
+                replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
+                seenBy={i === topLevel.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin) : undefined} />
             ))}
           </div>
 
@@ -513,10 +523,12 @@ export default function Communication() {
             </div>
             <div className="space-y-3 mb-3 max-h-[45vh] overflow-auto pr-1">
               <div className="pb-3 border-b border-slate-100">
-                <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} />
+                <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef}
+                  seenBy={threadReplies.length === 0 ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin) : undefined} />
               </div>
-              {repliesOf(threadParent.id).map((m: any) => (
-                <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact />
+              {threadReplies.map((m: any, i: number) => (
+                <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact
+                  seenBy={i === threadReplies.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin) : undefined} />
               ))}
             </div>
             <Composer key={`thread-composer-${activeProj}-${openThreadId}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />
