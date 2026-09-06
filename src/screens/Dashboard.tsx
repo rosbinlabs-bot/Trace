@@ -366,16 +366,31 @@ export default function Dashboard(){
               }))}
               {openKpi==='Portfolio Health' && trackedProjects.length===0 && <div className="text-sm text-slate-400">No tracked projects.</div>}
 
-              {openKpi==='Revenue Collected' && projects.map((p:any)=>{
-                const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
-                const pct = target ? Math.round(100*achieved/target) : 0;
-                return (
-                  <div key={p.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
-                    <span className="text-slate-700 truncate">{p.name}</span>
-                    <span className="text-xs text-slate-500 whitespace-nowrap">{S.inLakh(achieved)} / {S.inLakh(target)} · {pct}%</span>
-                  </div>
-                );
-              })}
+              {openKpi==='Revenue Collected' && projects.length>0 && (
+                <div className="grid grid-cols-[1fr_auto_auto_auto] gap-x-4 gap-y-1.5 items-center">
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100">Project</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Target</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">Achievement</div>
+                  <div className="text-[10px] font-semibold text-slate-400 uppercase tracking-wide pb-1.5 border-b border-slate-100 text-right">% Achieved</div>
+                  {projects.map((p:any)=>{
+                    // Target is the project's full contract value (Total Value = months x Monthly
+                    // Fee, S.projTargetRevenue -- same figure Project Master labels "Total Value
+                    // (months x fee)"), not a prorated/elapsed-to-date figure. Achievement is actual
+                    // revenue received to date (S.projInvoicedRevenue, Received payment receipts only).
+                    const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
+                    const pct = target ? Math.round(100*achieved/target) : 0;
+                    const pctTone = pct>=100 ? 'text-emerald-600' : pct>=50 ? 'text-amber-600' : 'text-red-600';
+                    return (
+                      <React.Fragment key={p.id}>
+                        <span className="text-sm text-slate-700 truncate">{p.name}</span>
+                        <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(target)}</span>
+                        <span className="text-xs text-slate-600 text-right whitespace-nowrap">{S.inLakh(achieved)}</span>
+                        <span className={`text-xs font-semibold text-right whitespace-nowrap ${pctTone}`}>{pct}%</span>
+                      </React.Fragment>
+                    );
+                  })}
+                </div>
+              )}
               {openKpi==='Revenue Collected' && projects.length===0 && <div className="text-sm text-slate-400">No projects yet.</div>}
 
               {openKpi==='On-Time Delivery' && (doneWithDeadline.length ? doneWithDeadline.map((e,i)=>{
