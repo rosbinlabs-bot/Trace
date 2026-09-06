@@ -507,7 +507,7 @@ export default function Communication() {
             {topLevel.map((m: any, i: number) => (
               <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
                 replyCount={repliesOf(m.id).length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
-                seenBy={i === topLevel.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin) : undefined} />
+                seenBy={i === topLevel.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
             ))}
           </div>
 
@@ -524,11 +524,11 @@ export default function Communication() {
             <div className="space-y-3 mb-3 max-h-[45vh] overflow-auto pr-1">
               <div className="pb-3 border-b border-slate-100">
                 <MessageRow m={threadParent} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef}
-                  seenBy={threadReplies.length === 0 ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin) : undefined} />
+                  seenBy={threadReplies.length === 0 ? S.seenByFor(seenMap[activeProj], roster, threadParent, admin, myEmail) : undefined} />
               </div>
               {threadReplies.map((m: any, i: number) => (
                 <MessageRow key={m.id} m={m} onDownload={downloadAttachment} downloadingId={downloadingId} onOpenTask={openTaskRef} compact
-                  seenBy={i === threadReplies.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin) : undefined} />
+                  seenBy={i === threadReplies.length - 1 ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
               ))}
             </div>
             <Composer key={`thread-composer-${activeProj}-${openThreadId}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, threadParent.id)} placeholder="Reply in thread…" focusKey={openThreadId} />

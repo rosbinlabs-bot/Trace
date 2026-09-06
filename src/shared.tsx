@@ -275,18 +275,21 @@ export const CommDataContext = React.createContext<any>({ messages: [], postMess
 // seenMapForProject is channelSeen[projectId] from CommDataContext ({ email: lastSeenAtISO }); roster
 // is S.buildRoster(project, admin) (team members by NAME, this feature's roster has no email); admin
 // is the full admin_data object so admin.users can join name -> email (channel_seen, like every
-// other identity-bearing table in this app, is keyed by email, not name). Excludes the message's own
-// author (you don't need to be told you've "seen" your own message) and anyone who hasn't opened the
-// channel since the message was posted. Returns oldest-seen-first.
-export const seenByFor = (seenMapForProject: Record<string,string> | undefined, roster: {name:string}[], message: any, admin: any): {name:string; at:string}[] => {
+// other identity-bearing table in this app, is keyed by email, not name). myEmail is the person
+// currently looking at the screen -- this is a "who ELSE has seen this" list, not a personal receipt,
+// so the viewer never sees their own name in it even when they aren't the message's author. Also
+// excludes the message's own author (you don't need to be told you've "seen" your own message) and
+// anyone who hasn't opened the channel since the message was posted. Returns oldest-seen-first.
+export const seenByFor = (seenMapForProject: Record<string,string> | undefined, roster: {name:string}[], message: any, admin: any, myEmail?: string): {name:string; at:string}[] => {
   if (!seenMapForProject || !message?.createdAt) return [];
   const users = admin?.users || [];
   const authorEmail = (message.authorEmail || '').toLowerCase();
+  const viewerEmail = (myEmail || '').toLowerCase();
   const out: {name:string; at:string}[] = [];
   (roster || []).forEach((r) => {
     const u = users.find((x:any) => (x.name || '') === r.name);
     const email = (u?.email || '').toLowerCase();
-    if (!email || email === authorEmail) return;
+    if (!email || email === authorEmail || email === viewerEmail) return;
     const at = Object.keys(seenMapForProject).find((e) => e.toLowerCase() === email);
     const seenAt = at ? seenMapForProject[at] : undefined;
     if (seenAt && seenAt >= message.createdAt) out.push({ name: r.name, at: seenAt });
