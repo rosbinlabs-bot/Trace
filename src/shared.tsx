@@ -1650,6 +1650,85 @@ export const phaseDurationDays = (ph) => {
   return Math.max(0, Math.round((+new Date(end)-+new Date(ph.start))/864e5));
 };
 
+// ---- Gantt Chart: dependency-aware scheduling, team, and critical path --------------------------
+// A phase's accountable-for-sign-off person (ph.owner) is set once at creation and never reassigned
+// per phase (see Phases.tsx) -- it's almost always just the project's L1 lead on every single row, so
+// it doesn't tell a Gantt viewer much about who's actually doing the work. The people who genuinely
+// vary phase to phase are whoever's tagged on that phase's milestones/sub tasks -- this pulls that list.
+export const phaseTeam = (ph) => {
+  const set = new Set();
+  (ph.milestones||[]).forEach(ms => {
+    (ms.assignees||[]).forEach(a => set.add(a));
+    (ms.subtasks||[]).forEach(s => (s.assignees||[]).forEach(a => set.add(a)));
+  });
+  return Array.from(set);
+};
+
+// For every phase, resolves the dates a Gantt should actually draw plus how sure it can be of them:
+// 'actual' (both start and end set explicitly in Phase Management), 'estimated' (no explicit dates,
+// but at least one milestone deadline to project an end from), or 'unscheduled' (neither -- nothing to
+// draw from at all, so it's shown as genuinely unscheduled rather than guessed at). A phase's
+// dependency is ph.dependsOn if explicitly set (the "Depends on" picker in Phase Management only ever
+// offers EARLIER phases, so a dependency can never point forward -- see there), otherwise it falls back
+// to the previous phase in the list, matching what the Gantt already visually implied before this
+// existed. Because a dependency is always an earlier phase, processing the list in order guarantees
+// each phase's own dependency has already been resolved by the time it's needed.
+export const ganttEstimates = (phases) => {
+  const out = {};
+  phases.forEach((ph, i) => {
+    const depId = ph.dependsOn || (i>0 ? phases[i-1].id : null);
+    if (ph.start && ph.end) { out[ph.id] = { start: ph.start, end: ph.end, dateSource: 'actual', depId }; return; }
+    const depEnd = depId ? ((out[depId] && out[depId].end) || null) : null;
+    const deadlines = (ph.milestones||[]).map(m => m.deadline).filter(Boolean);
+    if (deadlines.length && depEnd) {
+      const latest = deadlines.slice().sort().slice(-1)[0];
+      out[ph.id] = { start: depEnd, end: latest > depEnd ? latest : depEnd, dateSource: 'estimated', depId };
+    } else {
+      out[ph.id] = { start: null, end: null, dateSource: 'unscheduled', depId };
+    }
+  });
+  return out;
+};
+
+// The chain of phases that actually determines the project's finish date -- from whichever root phase
+// (no dependency) reaches furthest, walking down through whichever child at each branch reaches
+// furthest in turn. A phase with no determinable end (dateSource 'unscheduled') simply can't extend a
+// path past itself, so it's naturally excluded rather than guessed into the chain. `blockingId` is the
+// earliest phase actually ON that path that isn't done yet and whose end has already arrived -- the one
+// specific phase worth chasing today, not just "somewhere on the critical path".
+export const ganttCriticalPath = (phases, estimates) => {
+  const children = {};
+  phases.forEach(p => { const dep = estimates[p.id] && estimates[p.id].depId; if (dep) (children[dep] = children[dep]||[]).push(p.id); });
+  const cache = {};
+  const finishOf = (id) => {
+    if (id in cache) return cache[id];
+    const est = estimates[id];
+    let best = (est && est.end) || null;
+    (children[id]||[]).forEach(cid => { const f = finishOf(cid); if (f && (!best || f>best)) best = f; });
+    cache[id] = best;
+    return best;
+  };
+  const roots = phases.filter(p => !(estimates[p.id] && estimates[p.id].depId));
+  let bestRoot = null, bestFinish = null;
+  roots.forEach(r => { const f = finishOf(r.id); if (f && (!bestFinish || f>bestFinish)) { bestFinish = f; bestRoot = r; } });
+  const path = new Set<string>();
+  let cur = bestRoot;
+  while (cur) {
+    path.add(cur.id);
+    const kids = children[cur.id] || [];
+    let next = null, nextF = null;
+    kids.forEach(kid => { const f = finishOf(kid); if (f && (!nextF || f>nextF)) { nextF = f; next = phases.find(p=>p.id===kid); } });
+    cur = next;
+  }
+  let blockingId = null;
+  for (const id of path) {
+    const p = phases.find(pp => pp.id===id);
+    const est = estimates[id];
+    if (p && !p.headConfirmedComplete && est && est.end && est.end <= TODAY_ISO) { blockingId = id; break; }
+  }
+  return { path, blockingId };
+};
+
 // ---- shared, pure tree-mutation helpers (module scope so Phase Management AND the Client Portal
 // mutate the exact same shape of data — approving something in one place is what the other reads) ----
 export const mutatePhase = (tree, projId, phId, fn) => ({

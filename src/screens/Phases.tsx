@@ -77,7 +77,7 @@ export default function Phases(){
 
   // Owner isn't something a user needs to fill in — it defaults to this project's most senior (L1) team member.
   const l1Name = (projMeta.team||[]).find((t:any)=>t.level==='L1')?.name || '';
-  const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', onHold:false, headConfirmedComplete:false, milestones:[] }]); logPhase('Added a new phase'); };
+  const addPhase = () => { if(readOnly) return; setPhases(ps => [...ps, { id:S.uid('PH'), name:'New Phase', owner:l1Name, start:'', end:'', dependsOn:null, onHold:false, headConfirmedComplete:false, milestones:[] }]); logPhase('Added a new phase'); };
   // Removing any of these three is permanent (no trash/undo) and, for a phase or milestone, takes
   // everything nested under it -- milestones/sub tasks, their assignees, remarks and attachments --
   // down with it. A single misclick used to do that with no warning at all; now each asks first,
@@ -736,6 +736,27 @@ export default function Phases(){
                       <label className="text-[10px] text-slate-400">Owner</label>
                       <span className="text-xs text-slate-600 py-1.5 inline-block" title="Defaults to this project's most senior (L1) team member">{ph.owner || l1Name || '—'}</span>
                     </div>
+                    {(() => {
+                      // Only earlier phases are offered here, on purpose: it keeps a dependency from
+                      // ever pointing forward, which is what lets Gantt.tsx (S.ganttEstimates/
+                      // ganttCriticalPath) resolve every phase's schedule in one left-to-right pass
+                      // with no cycle checking needed. Left unset (the default for every existing
+                      // phase), it implicitly falls back to "the previous phase in this list" -- the
+                      // same plain sequential order the Gantt already assumed before this existed.
+                      const myIdx = phases.findIndex(p=>p.id===ph.id);
+                      if (myIdx<=0) return null;
+                      return (
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] text-slate-400">Depends on</label>
+                          <select className={inpFor('phase')} disabled={readOnly}
+                            value={ph.dependsOn || ''}
+                            onChange={e=>mutPhase(ph.id, x=>({...x, dependsOn: e.target.value || null}))}>
+                            <option value="">Previous phase ({phases[myIdx-1].name})</option>
+                            {phases.slice(0, myIdx).map(p=><option key={p.id} value={p.id}>{p.name}</option>)}
+                          </select>
+                        </div>
+                      );
+                    })()}
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] text-slate-400">Start date {startLocked && <span title="Locked — only L2-or-more-senior can change a start date once set" className="inline-flex align-text-bottom"><S.Icon name="lock" className="w-2.5 h-2.5"/></span>}</label>
                       <input type="date" min={minSelectableDate} className={inpFor('phase')} value={ph.start} disabled={readOnly || startLocked} onChange={e=>mutPhase(ph.id, x=>({...x,start:e.target.value}))}/>
