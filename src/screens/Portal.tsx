@@ -24,6 +24,9 @@ export default function Portal(){
   const [openMs, setOpenMs] = useState({});
   const [remarkDraft, setRemarkDraft] = useState({});
   const [expandedApproval, setExpandedApproval] = useState(null);
+  // Upcoming Events & Activities is its own collapsible card (not per-row like Pending Approval
+  // above) -- defaults open since it's meant to be seen at a glance, same as every other Portal card.
+  const [upcomingOpen, setUpcomingOpen] = useState(true);
   // Attachment downloads on a pending item -- same private/tenant-scoped Supabase Storage bucket
   // (db.getPhaseDocDownloadUrl) Phase Management uses, so a client sees and can pull the exact same
   // files the project team attached to the milestone/sub task they're being asked to sign off on.
@@ -407,28 +410,33 @@ export default function Portal(){
           month (phase end dates, milestone & sub task deadlines), so a client can see what's
           coming up without reading the full Project Timeline below. */}
       <S.Card className="p-4 mb-5">
-        <div className="flex items-center justify-between gap-2 mb-3">
+        <button onClick={()=>setUpcomingOpen(o=>!o)} className="w-full flex items-center justify-between gap-2 mb-0 text-left" aria-expanded={upcomingOpen}>
           <div className="flex items-center gap-2">
+            <span className="text-slate-400 text-xs w-4">{upcomingOpen?'▼':'▶'}</span>
             <span className="font-semibold text-slate-800">Upcoming Events &amp; Activities</span>
             {upcomingThisMonth.length>0 && <S.Badge cls="bg-brand-100 text-brand-700">{upcomingThisMonth.length}</S.Badge>}
           </div>
           <span className="text-xs text-slate-400 whitespace-nowrap">{S.CURRENT_MONTH_LABEL}</span>
-        </div>
-        {upcomingThisMonth.length===0 ? (
-          <div className="text-sm text-slate-400">Nothing due for the rest of this month.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {upcomingThisMonth.map((u,i)=>(
-              <div key={i} className="flex items-center gap-3 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
-                <S.Badge cls="bg-sky-100 text-sky-700 shrink-0">{u.type}</S.Badge>
-                <div className="min-w-0 flex-1">
-                  <div className="text-slate-700 truncate">{u.name}</div>
-                  {u.type!=='Phase' && <div className="text-[10px] text-slate-400 truncate">{u.phaseName}</div>}
-                </div>
-                <span className="text-xs text-slate-400 whitespace-nowrap">{u.deadline} · in {S.daysLeft(u.deadline)}d</span>
-                <S.Badge cls={S.statusColor(u.status)}>{u.status}</S.Badge>
+        </button>
+        {upcomingOpen && (
+          <div className="mt-3">
+            {upcomingThisMonth.length===0 ? (
+              <div className="text-sm text-slate-400">Nothing due for the rest of this month.</div>
+            ) : (
+              <div className="space-y-1.5">
+                {upcomingThisMonth.map((u,i)=>(
+                  <div key={i} className="flex items-center gap-3 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                    <S.Badge cls="bg-sky-100 text-sky-700 shrink-0">{u.type}</S.Badge>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-slate-700 truncate">{u.name}</div>
+                      {u.type!=='Phase' && <div className="text-[10px] text-slate-400 truncate">{u.phaseName}</div>}
+                    </div>
+                    <span className="text-xs text-slate-400 whitespace-nowrap">{u.deadline} · in {S.daysLeft(u.deadline)}d</span>
+                    <S.Badge cls={S.statusColor(u.status)}>{u.status}</S.Badge>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
         )}
       </S.Card>
