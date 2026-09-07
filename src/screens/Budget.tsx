@@ -9,6 +9,16 @@ import * as S from '../shared';
 // path Company Settings etc. already use, so it debounces and syncs to Supabase the same way. Route
 // is hard-gated to Admin/Super Admin only (NAV_MODULE.budget='Budget', matrix Officer/Manager=None)
 // -- see App.tsx's <Gate>.
+//
+// View style: diverging "variance" chart -- each month's bar shows the GAP between Collection and
+// Target (Actual - Target), not the two raw magnitudes side by side. A bar right of the zero-line
+// means the month collected more than its target (surplus, green); left of it means it fell short
+// (shortfall, red). Months with no Target entered yet, or not yet reached, get a plain neutral dot
+// on the line instead of a fabricated bar -- there's no gap to show without a Target to compare
+// against. Chosen after mocking up three magnitude-based alternatives (a bar chart, a bullet-row
+// track, a tile grid) and shown to the user, because a Budget page's real question is "are we ahead
+// or behind, and by how much" -- this is the one view that answers that directly instead of making
+// the reader do the subtraction themselves.
 export default function Budget() {
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
@@ -60,6 +70,13 @@ export default function Budget() {
   const targetSum = elapsed.reduce((s, r) => s + (r.target || 0), 0);
   const fyPct = targetSum ? Math.round(100 * actualSum / targetSum) : null;
   const monthsSet = fy.months.filter(ym => targets[ym] != null).length;
+  const fySumVariance = elapsed.some(r => r.target != null) ? (actualSum - targetSum) : null;
+
+  // Shared scale for every row's variance bar -- the biggest |Actual - Target| across the fiscal
+  // year sets how far a bar can travel from the zero-line, with headroom and a floor so a single
+  // small variance doesn't visually fill the whole track.
+  const gapMagnitudes = rows.filter(r => r.variance != null).map(r => Math.abs(r.variance));
+  const scaleMax = Math.max(500000, ...gapMagnitudes, 1) * 1.3;
 
   // Route-level Gate (App.tsx) already keeps Officer/Manager/Client out entirely; this only decides
   // whether the signed-in Admin/Super Admin gets the editable Target input or a plain read-only
@@ -98,77 +115,93 @@ export default function Budget() {
       </div>
 
       <S.Card className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 border-b border-slate-200">
-              <tr>
-                <S.Th>Month</S.Th>
-                <S.Th>Target</S.Th>
-                <S.Th>Collection (Actual)</S.Th>
-                <S.Th>Variance</S.Th>
-                <S.Th>% Achieved</S.Th>
-                <S.Th>Status</S.Th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {rows.map((r) => {
-                const st = statusFor(r);
-                const suggested = r.target == null ? S.suggestedMonthTarget(projects, r.ym) : null;
-                return (
-                  <tr key={r.ym} className={r.ym === currentYm ? 'bg-brand-50/40' : ''}>
-                    <S.Td className="font-medium whitespace-nowrap">
-                      {monthLabel(r.ym)}
-                      {r.ym === currentYm && <span className="ml-1.5 text-[10px] text-brand-600 font-semibold">CURRENT</span>}
-                    </S.Td>
-                    <S.Td>
-                      {canEdit ? (
-                        <div>
-                          <input
-                            type="number" min={0} inputMode="numeric"
-                            value={r.target ?? ''}
-                            onChange={(e) => setTarget(r.ym, e.target.value)}
-                            placeholder={suggested ? String(suggested) : 'Target'}
-                            className="w-32 text-sm border border-slate-200 rounded-md px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-300"
-                          />
-                          {suggested != null && suggested > 0 && (
-                            <div className="text-[10px] text-slate-400 mt-0.5">suggested {S.inLakh(suggested)}</div>
-                          )}
+        <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
+          <div className="w-14 shrink-0">Month</div>
+          <div className="flex-1 flex justify-between min-w-[140px]">
+            <span>‹ Behind target</span>
+            <span>On target</span>
+            <span>Ahead of target ›</span>
+          </div>
+          <div className="w-24 shrink-0 text-right">Status</div>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {rows.map((r) => {
+            const st = statusFor(r);
+            const suggested = r.target == null ? S.suggestedMonthTarget(projects, r.ym) : null;
+            const hasGap = r.variance != null;
+            const halfPct = hasGap ? Math.min(50, (Math.abs(r.variance) / scaleMax) * 50) : 0;
+            const barCls = !hasGap ? '' : (r.variance >= 0 ? 'bg-emerald-500' : 'bg-red-500');
+            const labelCls = !hasGap ? 'text-slate-400' : (r.variance >= 0 ? 'text-emerald-600' : 'text-red-600');
+            return (
+              <div key={r.ym} className={`px-4 py-3 ${r.ym === currentYm ? 'bg-brand-50/40' : ''}`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-14 shrink-0">
+                    <div className="text-sm font-medium text-slate-700">{monthLabel(r.ym)}</div>
+                    {r.ym === currentYm && <div className="text-[9px] text-brand-600 font-semibold">NOW</div>}
+                  </div>
+
+                  <div className="flex-1 relative h-8 min-w-[140px]">
+                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200" />
+                    {hasGap ? (
+                      <>
+                        <div
+                          className={`absolute top-2 h-4 rounded ${barCls}`}
+                          style={r.variance >= 0 ? { left: '50%', width: `${halfPct}%` } : { right: '50%', width: `${halfPct}%` }}
+                        />
+                        <div
+                          className={`absolute top-2 text-xs font-bold whitespace-nowrap ${labelCls}`}
+                          style={r.variance >= 0 ? { left: `calc(50% + ${halfPct}% + 6px)` } : { right: `calc(50% + ${halfPct}% + 6px)` }}
+                        >
+                          {r.variance >= 0 ? '+' : ''}{S.inLakh(r.variance)}
                         </div>
-                      ) : (
-                        r.target != null ? S.inLakh(r.target) : <span className="text-slate-300">—</span>
-                      )}
-                    </S.Td>
-                    <S.Td className="whitespace-nowrap">{r.isFuture ? <span className="text-slate-300">—</span> : S.inLakh(r.actual || 0)}</S.Td>
-                    <S.Td className="whitespace-nowrap">
-                      {r.variance == null ? <span className="text-slate-300">—</span> : (
-                        <span className={r.variance >= 0 ? 'text-emerald-600' : 'text-red-600'}>{r.variance >= 0 ? '+' : ''}{S.inLakh(r.variance)}</span>
-                      )}
-                    </S.Td>
-                    <S.Td className="whitespace-nowrap">
-                      {r.pct == null ? <span className="text-slate-300">—</span> : <span className={`font-semibold ${toneFor(r.pct)}`}>{r.pct}%</span>}
-                    </S.Td>
-                    <S.Td><S.Badge cls={st.cls}>{st.label}</S.Badge></S.Td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-slate-200 bg-slate-50">
-                <S.Td className="font-semibold text-slate-700">Total ({fy.label} to date)</S.Td>
-                <S.Td className="font-semibold text-slate-800">{targetSum ? S.inLakh(targetSum) : '—'}</S.Td>
-                <S.Td className="font-semibold text-slate-800">{actualSum ? S.inLakh(actualSum) : '—'}</S.Td>
-                <S.Td className="font-semibold">
-                  {(targetSum || actualSum) ? (
-                    <span className={(actualSum - targetSum) >= 0 ? 'text-emerald-600' : 'text-red-600'}>
-                      {(actualSum - targetSum) >= 0 ? '+' : ''}{S.inLakh(actualSum - targetSum)}
-                    </span>
-                  ) : <span className="text-slate-300">—</span>}
-                </S.Td>
-                <S.Td className={`font-bold ${fyPct == null ? 'text-slate-300' : toneFor(fyPct)}`}>{fyPct == null ? '—' : `${fyPct}%`}</S.Td>
-                <S.Td></S.Td>
-              </tr>
-            </tfoot>
-          </table>
+                      </>
+                    ) : (
+                      <>
+                        <div className="absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-slate-300 -translate-x-1/2 -translate-y-1/2" />
+                        <div className="absolute left-1/2 top-full mt-0.5 -translate-x-1/2 text-[10px] font-medium text-slate-400 whitespace-nowrap">{st.label}</div>
+                      </>
+                    )}
+                  </div>
+
+                  <div className="w-24 shrink-0 text-right">
+                    <S.Badge cls={st.cls}>{st.label}</S.Badge>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-2.5 pl-[68px] text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1">
+                    Target:
+                    {canEdit ? (
+                      <input
+                        type="number" min={0} inputMode="numeric"
+                        value={r.target ?? ''}
+                        onChange={(e) => setTarget(r.ym, e.target.value)}
+                        placeholder={suggested ? String(suggested) : '—'}
+                        className="w-20 text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
+                      />
+                    ) : (
+                      <span className="text-slate-600 font-medium">{r.target != null ? S.inLakh(r.target) : '—'}</span>
+                    )}
+                  </span>
+                  <span>Collected: <span className="text-slate-600 font-medium">{r.isFuture ? '—' : S.inLakh(r.actual || 0)}</span></span>
+                  {suggested != null && suggested > 0 && <span className="text-slate-300">suggested {S.inLakh(suggested)}</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50">
+          <div className="w-14 shrink-0 text-sm font-semibold text-slate-700">Total</div>
+          <div className="flex-1 min-w-[140px] text-[11px] text-slate-400">
+            {fy.label} to date · Target {targetSum ? S.inLakh(targetSum) : '—'} · Collected {actualSum ? S.inLakh(actualSum) : '—'}
+          </div>
+          <div className="w-24 shrink-0 text-right">
+            {fySumVariance == null ? <span className="text-slate-300 text-sm">—</span> : (
+              <span className={`text-sm font-bold ${fySumVariance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+                {fySumVariance >= 0 ? '+' : ''}{S.inLakh(fySumVariance)}
+              </span>
+            )}
+          </div>
         </div>
       </S.Card>
     </div>
