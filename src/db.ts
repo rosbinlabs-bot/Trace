@@ -391,6 +391,15 @@ export async function insertLoginLog(row: { id: string; userEmail: string; userN
   const { error } = await supabase.from('login_logs').insert({ tenant_id: TENANT_ID, id: row.id, user_email: row.userEmail, user_name: row.userName || null });
   if (error) throw error;
 }
+// Most recent login_logs timestamp for this user BEFORE the row insertLoginLog is about to write --
+// null if they have no prior row at all (first-ever session). Used for the one-time "welcome back"
+// notice (see App.tsx's session-start effect): callers must await this BEFORE calling insertLoginLog
+// for the same sign-in, or the comparison would just find the row this very session is about to write.
+export async function fetchPreviousLoginAt(email: string): Promise<string | null> {
+  const { data, error } = await supabase.from('login_logs').select('at').eq('user_email', email).order('at', { ascending: false }).limit(1);
+  if (error) throw error;
+  return data && data[0] ? data[0].at : null;
+}
 export async function fetchLoginLogs(limit = 1000) {
   const { data, error } = await supabase.from('login_logs').select('*').order('at', { ascending: false }).limit(limit);
   if (error) throw error;

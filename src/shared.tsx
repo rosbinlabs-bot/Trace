@@ -1600,6 +1600,11 @@ export const daysPending = (item: any): number | null => item.reviewSince ? Math
 // in a neutral color — the point isn't hiding fresh approvals, just not flagging something as urgent
 // the instant it's marked Completed by someone who doesn't personally qualify to finalize it.
 export const STUCK_APPROVAL_DAYS = 3;
+// Threshold for the one-time "welcome back" flash shown when someone (teammate or client) signs in
+// after being away for a while -- see App.tsx's login effect (fetchPreviousLoginAt) and Shell's
+// InactivityFlash. Compares raw elapsed time against login_logs' most recent PRIOR session (not
+// calendar-day buckets), so this is "more than N days" in the literal elapsed-time sense.
+export const INACTIVITY_NOTICE_DAYS = 2;
 // Total items anywhere in the approval pipeline (Sub Task/Milestone review, the Implemented
 // escalation chain, or Client sign-off — anything with a non-empty `review`) across the given
 // projects' phase trees, split into `total` (every pending item, shown right away) and `stuck` (been

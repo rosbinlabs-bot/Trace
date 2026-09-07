@@ -195,7 +195,32 @@ function PendingApprovalsFlash({ role, items }: { role: string; items: any[] }) 
   );
 }
 
-function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any; onSignOut: () => void }) {
+// One-time "you've been away" welcome-back notice -- shown when App.tsx's session-start effect finds
+// the account's last login was more than S.INACTIVITY_NOTICE_DAYS days ago. Same shape/precedence slot
+// as FlashMessageGate/PendingApprovalsFlash above (Shell renders exactly one of the three at a time),
+// and the same local-dismissed pattern as PendingApprovalsFlash -- closing it just hides it for the
+// rest of this session, which is fine since the login-gap check itself won't fire again until the next
+// genuine multi-day-gap session start.
+function InactivityFlash({ days }: { days: number }) {
+  const [dismissed, setDismissed] = useState(false);
+  if (dismissed) return null;
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[100] p-4">
+      <S.Card className="max-w-md w-full p-5 shadow-2xl">
+        <div className="flex items-center gap-2.5 mb-3">
+          <span className="w-9 h-9 rounded-full bg-brand-100 text-brand-600 flex items-center justify-center shrink-0">
+            <S.Icon name="logo" className="w-4 h-4" />
+          </span>
+          <div className="font-semibold text-slate-800">Welcome back</div>
+        </div>
+        <div className="text-sm text-slate-700 mb-5">It's been {days} days since you last signed in.</div>
+        <button onClick={() => setDismissed(true)} className="w-full bg-brand-600 hover:bg-brand-700 text-white rounded-lg px-4 py-2.5 text-sm font-medium transition-colors">Got it</button>
+      </S.Card>
+    </div>
+  );
+}
+
+function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string; myProfile: any; onSignOut: () => void; inactivityDays: number | null }) {
   const [collapsed, setCollapsed] = useState(false);
   const { role } = React.useContext(S.RoleContext);
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
@@ -256,7 +281,13 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
   React.useEffect(() => {
     const ric = (typeof (window as any).requestIdleCallback === 'function') ? (window as any).requestIdleCallback : (cb: any) => setTimeout(cb, 1500);
     const ids = navGroups.flatMap((g: any) => g.items).map((i: any) => i.id);
-    const handle = ric(() => { ids.forEach((id: string) => importScreen[id]?.()); });
+    // { timeout: 4000 } forces the callback to fire within 4s even if the tab never reports a truly
+    // idle moment -- this app keeps several Supabase Realtime subscriptions live (Ping, notifications,
+    // approvals) that can re-render often enough on a busy channel to keep pushing requestIdleCallback
+    // back indefinitely without one. Without this, "prefetch everything once idle" could silently never
+    // run on an active session, which would show up as exactly what it looks like: chunks for
+    // not-yet-visited screens still not warmed even well into a browsing session.
+    const handle = ric(() => { ids.forEach((id: string) => importScreen[id]?.()); }, { timeout: 4000 });
     return () => { if (typeof (window as any).cancelIdleCallback === 'function') (window as any).cancelIdleCallback(handle); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -273,7 +304,11 @@ function Shell({ email, myProfile, onSignOut }: { email: string; myProfile: any;
     <div className={theme === 'dark' ? 'dark' : ''}>
       {announcementQueue.length > 0
         ? <FlashMessageGate admin={admin} myProfile={myProfile} patchAdmin={patchAdmin} role={role} />
-        : <PendingApprovalsFlash role={role} items={myPendingItems} />}
+        : myPendingItems.length > 0
+        ? <PendingApprovalsFlash role={role} items={myPendingItems} />
+        : inactivityDays
+        ? <InactivityFlash days={inactivityDays} />
+        : null}
       <div className="flex h-screen overflow-hidden bg-slate-100">
         {/* Sidebar */}
         <aside className={`bg-white border-r border-slate-200 flex flex-col transition-all ${collapsed ? 'w-16' : 'w-60'}`}>
@@ -717,6 +752,10 @@ export default function App() {
 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  // "Welcome back" notice -- set at most once by the session-start effect below (null = not checked yet
+  // / nothing to show). Not re-checked or cleared from here again this session; InactivityFlash (in
+  // Shell) keeps its own local dismissed state once shown, same pattern as PendingApprovalsFlash.
+  const [inactivityDays, setInactivityDays] = useState<number | null>(null);
 
   const [settings, setSettingsState] = useState<any>(S.DEFAULT_PROJECT_SETTINGS);
   const [admin, setAdminState] = useState<any>(S.DEFAULT_ADMIN_DATA);
@@ -773,7 +812,7 @@ export default function App() {
     setLoading(true);
     setLoadError(null);
     db.loadAll()
-      .then((data) => {
+      .then(async (data) => {
         if (cancelled) return;
         setSettingsState(data.settings);
         setAdminState(data.admin);
@@ -801,6 +840,18 @@ export default function App() {
         const email = session?.user?.email || '';
         if (email) {
           const me = (data.admin?.users || []).find((u: any) => (u.email || '').toLowerCase() === email.toLowerCase());
+          // "Welcome back" notice: check the PRIOR login (if any) BEFORE writing today's own row below.
+          // This naturally fires at most once per calendar day with no extra dismissed-flag/date field --
+          // the first session-start of a new day still sees yesterday-or-earlier as the prior row, but any
+          // later reload that same day sees the row this effect itself already wrote, so the gap collapses
+          // under S.INACTIVITY_NOTICE_DAYS. Same check for both teammate and client logins.
+          try {
+            const prevAt = await db.fetchPreviousLoginAt(email);
+            if (prevAt) {
+              const gapDays = (Date.now() - new Date(prevAt).getTime()) / 86400000;
+              if (gapDays > S.INACTIVITY_NOTICE_DAYS) setInactivityDays(Math.floor(gapDays));
+            }
+          } catch (e) { console.error('Inactivity check failed:', e); }
           db.insertLoginLog({ id: S.uid('LOGIN'), userEmail: email, userName: me?.name || '' }).catch((e) => console.error('Login log failed:', e));
         }
       })
@@ -1203,7 +1254,7 @@ export default function App() {
                             <S.RoleContext.Provider value={{ role, setRole:()=>{} }}>
                               <S.CurrentUserContext.Provider value={{ email: myEmail, profile: myProfile }}>
                                 <S.ActivityLogContext.Provider value={{ logActivity }}>
-                                  <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} />
+                                  <Shell email={myEmail} myProfile={myProfile} onSignOut={signOut} inactivityDays={inactivityDays} />
                                 </S.ActivityLogContext.Provider>
                               </S.CurrentUserContext.Provider>
                             </S.RoleContext.Provider>
