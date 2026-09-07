@@ -111,6 +111,52 @@ export const projMonthCollection = (p, invoices) => {
     .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
 };
 
+// ---- Org-wide, arbitrary-month versions of the above -- used by the Budget vs Actual page
+// (Governance), which needs every month across a fiscal year, not just the current one. Same
+// active-window / Received-invoice rules as projMonthTarget/projMonthCollection, just generalized
+// to any 'YYYY-MM' instead of hardcoding TODAY_ISO's own month.
+export const monthBounds = (ym: string) => {
+  const [y, m] = ym.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  return { start: `${ym}-01`, end: `${ym}-${String(lastDay).padStart(2, '0')}` };
+};
+export const projActiveInMonth = (p: any, ym: string) => {
+  if (['Completed', 'Terminated', 'Dropped'].includes(p.status)) return false;
+  const { start, end } = monthBounds(ym);
+  return (p.start || '') <= end && (p.end || '') >= start;
+};
+// A hint only, never auto-saved as the Target itself -- the org's monthly billing run-rate (sum of
+// Monthly Fee across every project actually active that month) for whoever's entering a Target to
+// weigh against, same "flat monthly invoice, not prorated" model projMonthTarget already uses.
+export const suggestedMonthTarget = (projects: any[], ym: string) =>
+  (projects || []).reduce((sum, p) => sum + (projActiveInMonth(p, ym) ? (Number(p.monthlyFee) || 0) : 0), 0);
+// Actual cash collected org-wide in a given month -- every Received invoice/payment receipt whose
+// receivedDate falls in that month, across every project, the same "Received" rule
+// projInvoicedRevenue/projMonthCollection use elsewhere, just not scoped to one project.
+export const monthCollectionAllProjects = (invoices: any[], ym: string) =>
+  (invoices || []).filter(i => i.status === 'Received' && String(i.receivedDate || '').slice(0, 7) === ym)
+    .reduce((sum, i) => sum + (Number(i.amount) || 0), 0);
+
+// Fiscal-year month list, honoring the org's own Fiscal Year Start (Administration -> Company
+// Settings, admin.company.fiscalYearStart) instead of assuming April or a calendar year. Given the
+// start month's NAME and a reference ISO date, returns the 12 'YYYY-MM' months (fiscal order) of
+// whichever fiscal year currently contains that reference date; yearOffset shifts by whole fiscal
+// years (-1 = previous FY, +1 = next FY) for a simple prev/next switcher.
+const FY_MONTH_NAMES = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+export const fiscalYearMonths = (startMonthName: string, refISO: string, yearOffset: number = 0) => {
+  const startIdx = Math.max(0, FY_MONTH_NAMES.indexOf(startMonthName || 'January'));
+  const [ry, rm] = refISO.split('-').map(Number);
+  let fyStartYear = ((rm - 1) >= startIdx ? ry : ry - 1) + yearOffset;
+  const months: string[] = [];
+  for (let i = 0; i < 12; i++) {
+    const y = fyStartYear + Math.floor((startIdx + i) / 12);
+    const m = ((startIdx + i) % 12) + 1;
+    months.push(`${y}-${String(m).padStart(2, '0')}`);
+  }
+  const label = startIdx === 0 ? `FY${fyStartYear}` : `FY${fyStartYear}-${String(fyStartYear + 1).slice(-2)}`;
+  return { label, months, startYear: fyStartYear };
+};
+
 // Category tiers are org-configurable (Project Master's Category field, master list at
 // settings.categories — code + label, e.g. { code:'A', label:'Premium' }), so "is this project
 // Premium" has to look the label up rather than assume code 'A' is always Premium. Falls back to
@@ -672,7 +718,7 @@ export const implementChainFor = (project: any, actorLevel: string): string[] =>
   const actorNum = levelNum(actorLevel);
   return projectLevelNumsPresent(project).filter(n => n < actorNum).sort((a, b) => b - a).map(n => `L${n}`);
 };
-export const PERMISSION_MODULES = ['Project Master','Phase Management','Monthly Plan','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Communication','Reports','Documents','Client Portal','Administration'];
+export const PERMISSION_MODULES = ['Project Master','Phase Management','Monthly Plan','Deliverables','Financials & Billing','Risk / Issue / Change','Team Management','Communication','Reports','Documents','Client Portal','Administration','Budget'];
 export const CAPABILITY_LEVELS = ['None','View','Edit','Approve','Full'];
 export const CAPABILITY_COLOR: any = { 'None':'bg-slate-100 text-slate-400','View':'bg-blue-100 text-blue-700','Edit':'bg-amber-100 text-amber-700','Approve':'bg-violet-100 text-violet-700','Full':'bg-emerald-100 text-emerald-700' };
 // Client is NOT one of the four staff PERMISSION_LEVELS (it isn't reachable via any DESIGNATIONS ->
@@ -696,6 +742,7 @@ export const DEFAULT_PERMISSION_MATRIX: any = {
   'Documents':               { Officer:'Edit', Manager:'Edit', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
   'Client Portal':           { Officer:'None', Manager:'View', Admin:'Edit', 'Super Admin':'Full', Client:'Edit' },
   'Administration':          { Officer:'None', Manager:'None', Admin:'View', 'Super Admin':'Full', Client:'None' },
+  'Budget':                   { Officer:'None', Manager:'None', Admin:'Edit', 'Super Admin':'Full', Client:'None' },
 };
 // Every module a per-account capability lookup needs, resolved from the SAME records Administration
 // -> Users / -> Roles & Permissions edit: a Client-type login (see deriveRole) is looked up by the
@@ -815,6 +862,10 @@ export const DEFAULT_ADMIN_DATA: any = {
   // Administration -> Flash Messages (Super Admin only) -- {id, text, createdBy, createdAt, active}.
   // See pendingFlashMessages/isSuperAdmin below.
   flashMessages: [],
+  // Governance -> Budget: admin/super-admin-entered monthly Target, keyed 'YYYY-MM' -> number.
+  // Collection (Actual) is never stored here -- it's always computed live from invoices, same as
+  // every other revenue figure in the app (see monthCollectionAllProjects above).
+  budgetTargets: {},
 };
 // Single context for the whole Administration area — the live object is loaded from Supabase
 // (db.loadAll -> App.tsx), with DEFAULT_ADMIN_DATA used only to fill in any key that has no row yet.
@@ -966,6 +1017,7 @@ export const NAV = [
     { id:'risks', label:'Risk Management' },
     { id:'issues', label:'Issue Management' },
     { id:'changes', label:'Change Requests' },
+    { id:'budget', label:'Budget' },
   ]},
   { group:'People & Client', items:[
     { id:'team', label:'Team Management' },
@@ -1019,6 +1071,7 @@ export const NAV_MODULE: any = {
   risks: 'Risk / Issue / Change',
   issues: 'Risk / Issue / Change',
   changes: 'Risk / Issue / Change',
+  budget: 'Budget',
   team: 'Team Management',
   portal: 'Client Portal',
   reports: 'Reports',

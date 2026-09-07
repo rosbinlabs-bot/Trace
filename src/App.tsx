@@ -40,6 +40,7 @@ const importScreen = {
   reports: () => import('./screens/Reports'),
   admin: () => import('./screens/Administration'),
   communication: () => import('./screens/Communication'),
+  budget: () => import('./screens/Budget'),
 };
 const SuperAdminPanel = lazy(() => import('./screens/SuperAdminPanel'));
 const Dashboard = lazy(importScreen.dashboard);
@@ -62,6 +63,7 @@ const Portal = lazy(importScreen.portal);
 const Reports = lazy(importScreen.reports);
 const Administration = lazy(importScreen.admin);
 const Communication = lazy(importScreen.communication);
+const Budget = lazy(importScreen.budget);
 
 const THEME_STORAGE_KEY = 'rosbinTrace.theme.v1';
 const loadTheme = (): 'light' | 'dark' => {
@@ -471,6 +473,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                   <Route path="/risks" element={<Gate module={S.NAV_MODULE.risks} admin={admin} email={email}><Risks /></Gate>} />
                   <Route path="/issues" element={<Gate module={S.NAV_MODULE.issues} admin={admin} email={email}><Issues /></Gate>} />
                   <Route path="/changes" element={<Gate module={S.NAV_MODULE.changes} admin={admin} email={email}><Changes /></Gate>} />
+                  <Route path="/budget" element={<Gate module={S.NAV_MODULE.budget} admin={admin} email={email}><Budget /></Gate>} />
                   <Route path="/team" element={<Gate module={S.NAV_MODULE.team} admin={admin} email={email}><Team /></Gate>} />
                   <Route path="/communication" element={<Gate module={S.NAV_MODULE.communication} admin={admin} email={email}><Communication /></Gate>} />
                   <Route path="/portal" element={<Gate module={S.NAV_MODULE.portal} admin={admin} email={email}><Portal /></Gate>} />
