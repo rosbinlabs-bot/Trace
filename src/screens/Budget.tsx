@@ -86,7 +86,7 @@ export default function Budget() {
 
   return (
     <div>
-      <div className="flex flex-wrap justify-between items-center gap-3 mb-4">
+      <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
         <S.SectionTitle sub="Target vs Actual collection by month, Admin/Super Admin only. Target is entered here; Collection is always pulled live from Received invoices -- never typed in.">Budget</S.SectionTitle>
         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1 py-1">
           <button onClick={() => setYearOffset(o => o - 1)} className="w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100 text-sm" aria-label="Previous financial year">‹</button>
@@ -95,34 +95,40 @@ export default function Budget() {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        <S.Card className="p-3">
-          <div className="text-[11px] text-slate-500 mb-1">Target ({fy.label}, to date)</div>
-          <div className="text-lg font-bold text-slate-800">{targetSum ? S.inLakh(targetSum) : '—'}</div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+        <S.Card className="p-2.5">
+          <div className="text-[10px] text-slate-500 mb-0.5">Target ({fy.label}, to date)</div>
+          <div className="text-base font-bold text-slate-800">{targetSum ? S.inLakh(targetSum) : '—'}</div>
         </S.Card>
-        <S.Card className="p-3">
-          <div className="text-[11px] text-slate-500 mb-1">Collected ({fy.label}, to date)</div>
-          <div className="text-lg font-bold text-slate-800">{actualSum ? S.inLakh(actualSum) : '—'}</div>
+        <S.Card className="p-2.5">
+          <div className="text-[10px] text-slate-500 mb-0.5">Collected ({fy.label}, to date)</div>
+          <div className="text-base font-bold text-slate-800">{actualSum ? S.inLakh(actualSum) : '—'}</div>
         </S.Card>
-        <S.Card className="p-3">
-          <div className="text-[11px] text-slate-500 mb-1">% Achieved</div>
-          <div className={`text-lg font-bold ${fyPct == null ? 'text-slate-300' : toneFor(fyPct)}`}>{fyPct == null ? '—' : `${fyPct}%`}</div>
+        <S.Card className="p-2.5">
+          <div className="text-[10px] text-slate-500 mb-0.5">% Achieved</div>
+          <div className={`text-base font-bold ${fyPct == null ? 'text-slate-300' : toneFor(fyPct)}`}>{fyPct == null ? '—' : `${fyPct}%`}</div>
         </S.Card>
-        <S.Card className="p-3">
-          <div className="text-[11px] text-slate-500 mb-1">Months with a Target set</div>
-          <div className="text-lg font-bold text-slate-800">{monthsSet} / 12</div>
+        <S.Card className="p-2.5">
+          <div className="text-[10px] text-slate-500 mb-0.5">Months with a Target set</div>
+          <div className="text-base font-bold text-slate-800">{monthsSet} / 12</div>
         </S.Card>
       </div>
 
+      {/* Every month in one compact, single-line-per-row list -- the whole fiscal year fits in one
+          screen with no scrolling, which is the point of a "glance at the whole year" chart. Target
+          entry and the exact Collected figure ride along in their own narrow columns instead of a
+          second line under each bar. */}
       <S.Card className="overflow-hidden">
-        <div className="flex items-center gap-3 px-4 py-2 border-b border-slate-200 bg-slate-50 text-[10px] uppercase tracking-wide text-slate-400 font-semibold">
-          <div className="w-14 shrink-0">Month</div>
-          <div className="flex-1 flex justify-between min-w-[140px]">
-            <span>‹ Behind target</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 border-b border-slate-200 bg-slate-50 text-[9px] uppercase tracking-wide text-slate-400 font-semibold">
+          <div className="w-12 shrink-0">Month</div>
+          <div className="flex-1 flex justify-between min-w-[80px]">
+            <span>‹ Behind</span>
             <span>On target</span>
-            <span>Ahead of target ›</span>
+            <span>Ahead ›</span>
           </div>
-          <div className="w-24 shrink-0 text-right">Status</div>
+          <div className="w-20 shrink-0 text-right">Target</div>
+          <div className="w-16 shrink-0 text-right">Collected</div>
+          <div className="w-[84px] shrink-0 text-right">Status</div>
         </div>
         <div className="divide-y divide-slate-100">
           {rows.map((r) => {
@@ -133,71 +139,66 @@ export default function Budget() {
             const barCls = !hasGap ? '' : (r.variance >= 0 ? 'bg-emerald-500' : 'bg-red-500');
             const labelCls = !hasGap ? 'text-slate-400' : (r.variance >= 0 ? 'text-emerald-600' : 'text-red-600');
             return (
-              <div key={r.ym} className={`px-4 py-3 ${r.ym === currentYm ? 'bg-brand-50/40' : ''}`}>
-                <div className="flex items-center gap-3">
-                  <div className="w-14 shrink-0">
-                    <div className="text-sm font-medium text-slate-700">{monthLabel(r.ym)}</div>
-                    {r.ym === currentYm && <div className="text-[9px] text-brand-600 font-semibold">NOW</div>}
-                  </div>
-
-                  <div className="flex-1 relative h-8 min-w-[140px]">
-                    <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200" />
-                    {hasGap ? (
-                      <>
-                        <div
-                          className={`absolute top-2 h-4 rounded ${barCls}`}
-                          style={r.variance >= 0 ? { left: '50%', width: `${halfPct}%` } : { right: '50%', width: `${halfPct}%` }}
-                        />
-                        <div
-                          className={`absolute top-2 text-xs font-bold whitespace-nowrap ${labelCls}`}
-                          style={r.variance >= 0 ? { left: `calc(50% + ${halfPct}% + 6px)` } : { right: `calc(50% + ${halfPct}% + 6px)` }}
-                        >
-                          {r.variance >= 0 ? '+' : ''}{S.inLakh(r.variance)}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-slate-300 -translate-x-1/2 -translate-y-1/2" />
-                        <div className="absolute left-1/2 top-full mt-0.5 -translate-x-1/2 text-[10px] font-medium text-slate-400 whitespace-nowrap">{st.label}</div>
-                      </>
-                    )}
-                  </div>
-
-                  <div className="w-24 shrink-0 text-right">
-                    <S.Badge cls={st.cls}>{st.label}</S.Badge>
-                  </div>
+              <div key={r.ym} className={`flex items-center gap-2 px-3 py-1.5 ${r.ym === currentYm ? 'bg-brand-50/40' : ''}`}>
+                <div className="w-12 shrink-0">
+                  <div className="text-xs font-medium text-slate-700 leading-tight">{monthLabel(r.ym)}</div>
+                  {r.ym === currentYm && <div className="text-[8px] text-brand-600 font-semibold leading-tight">NOW</div>}
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-0.5 mt-2.5 pl-[68px] text-[11px] text-slate-400">
-                  <span className="flex items-center gap-1">
-                    Target:
-                    {canEdit ? (
-                      <input
-                        type="number" min={0} inputMode="numeric"
-                        value={r.target ?? ''}
-                        onChange={(e) => setTarget(r.ym, e.target.value)}
-                        placeholder={suggested ? String(suggested) : '—'}
-                        className="w-20 text-[11px] border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
+                <div className="flex-1 relative h-5 min-w-[80px]">
+                  <div className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-200" />
+                  {hasGap ? (
+                    <>
+                      <div
+                        className={`absolute top-0.5 h-4 rounded ${barCls}`}
+                        style={r.variance >= 0 ? { left: '50%', width: `${halfPct}%` } : { right: '50%', width: `${halfPct}%` }}
                       />
-                    ) : (
-                      <span className="text-slate-600 font-medium">{r.target != null ? S.inLakh(r.target) : '—'}</span>
-                    )}
-                  </span>
-                  <span>Collected: <span className="text-slate-600 font-medium">{r.isFuture ? '—' : S.inLakh(r.actual || 0)}</span></span>
-                  {suggested != null && suggested > 0 && <span className="text-slate-300">suggested {S.inLakh(suggested)}</span>}
+                      <div
+                        className={`absolute top-0.5 text-[10px] font-bold whitespace-nowrap leading-4 ${labelCls}`}
+                        style={r.variance >= 0 ? { left: `calc(50% + ${halfPct}% + 5px)` } : { right: `calc(50% + ${halfPct}% + 5px)` }}
+                      >
+                        {r.variance >= 0 ? '+' : ''}{S.inLakh(r.variance)}
+                      </div>
+                    </>
+                  ) : (
+                    <div className="absolute left-1/2 top-1/2 w-1.5 h-1.5 rounded-full bg-slate-300 -translate-x-1/2 -translate-y-1/2" title={st.label} />
+                  )}
+                </div>
+
+                <div className="w-20 shrink-0 text-right">
+                  {canEdit ? (
+                    <input
+                      type="number" min={0} inputMode="numeric"
+                      value={r.target ?? ''}
+                      onChange={(e) => setTarget(r.ym, e.target.value)}
+                      placeholder={suggested ? String(suggested) : '—'}
+                      title={suggested != null && suggested > 0 ? `Suggested: ${S.inLakh(suggested)}` : undefined}
+                      className="w-20 text-[11px] text-right border border-slate-200 rounded px-1.5 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
+                    />
+                  ) : (
+                    <span className="text-xs text-slate-600 font-medium">{r.target != null ? S.inLakh(r.target) : <span className="text-slate-300">—</span>}</span>
+                  )}
+                </div>
+
+                <div className="w-16 shrink-0 text-right text-xs text-slate-600 font-medium">
+                  {r.isFuture ? <span className="text-slate-300 font-normal">—</span> : S.inLakh(r.actual || 0)}
+                </div>
+
+                <div className="w-[84px] shrink-0 text-right">
+                  <S.Badge cls={st.cls}>{st.label}</S.Badge>
                 </div>
               </div>
             );
           })}
         </div>
-        <div className="flex flex-wrap items-center gap-3 px-4 py-3 border-t border-slate-200 bg-slate-50">
-          <div className="w-14 shrink-0 text-sm font-semibold text-slate-700">Total</div>
-          <div className="flex-1 min-w-[140px] text-[11px] text-slate-400">
-            {fy.label} to date · Target {targetSum ? S.inLakh(targetSum) : '—'} · Collected {actualSum ? S.inLakh(actualSum) : '—'}
-          </div>
-          <div className="w-24 shrink-0 text-right">
-            {fySumVariance == null ? <span className="text-slate-300 text-sm">—</span> : (
-              <span className={`text-sm font-bold ${fySumVariance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
+        <div className="flex items-center gap-2 px-3 py-2 border-t border-slate-200 bg-slate-50">
+          <div className="w-12 shrink-0 text-xs font-semibold text-slate-700">Total</div>
+          <div className="flex-1 min-w-[80px] text-[10px] text-slate-400 truncate">{fy.label} to date</div>
+          <div className="w-20 shrink-0 text-right text-xs font-semibold text-slate-800">{targetSum ? S.inLakh(targetSum) : '—'}</div>
+          <div className="w-16 shrink-0 text-right text-xs font-semibold text-slate-800">{actualSum ? S.inLakh(actualSum) : '—'}</div>
+          <div className="w-[84px] shrink-0 text-right">
+            {fySumVariance == null ? <span className="text-slate-300 text-xs">—</span> : (
+              <span className={`text-xs font-bold ${fySumVariance >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
                 {fySumVariance >= 0 ? '+' : ''}{S.inLakh(fySumVariance)}
               </span>
             )}
