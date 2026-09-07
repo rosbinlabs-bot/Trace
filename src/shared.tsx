@@ -927,6 +927,7 @@ export const ICON_PATHS = {
   risks: '<path d="M12 4 2 20h20L12 4Z"/><path d="M12 10v4M12 17v.4"/>',
   issues: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M12 8v4M12 15v.4"/>',
   changes: '<path d="M20 11a8 8 0 0 0-14-4M4 6v4h4"/><path d="M4 13a8 8 0 0 0 14 4M20 18v-4h-4"/>',
+  budget: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.6"/>',
   financials: '<circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-3-1.4c-1.6 0-3 .9-3 2.1 0 2.7 6 1.3 6 4 0 1.2-1.3 2.1-3 2.1a3 3 0 0 1-3-1.4M12 6.4v11"/>',
   team: '<circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0 1 12 0"/><path d="M16 5.5a3 3 0 0 1 0 6M21 20a6 6 0 0 0-4.5-5.8"/>',
   portal: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3a14 14 0 0 1 0 18a14 14 0 0 1 0-18Z"/>',

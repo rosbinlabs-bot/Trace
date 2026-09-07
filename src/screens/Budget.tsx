@@ -49,11 +49,15 @@ export default function Budget() {
 
   const monthLabel = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleString('en-US', { month: 'short', year: 'numeric' });
 
-  // FY-to-date totals -- only months with BOTH a target and an elapsed actual count toward the
-  // headline %, same "can't score a month with no target" rule each row's own status uses.
-  const scored = rows.filter(r => !r.isFuture && r.target != null);
-  const targetSum = scored.reduce((s, r) => s + (r.target || 0), 0);
-  const actualSum = scored.reduce((s, r) => s + (r.actual || 0), 0);
+  // FY-to-date totals. Collected is real cash already in hand -- it sums every ELAPSED month's
+  // actual regardless of whether that month has a Target yet, so it never hides money behind an
+  // unset Target (the earlier cut tied both sums to "has a Target", which made Collected read as
+  // 0/'--' for an entire year with no Targets entered even though invoices had real receipts).
+  // Target sums only the months a figure has actually been entered. % Achieved compares the two,
+  // so it stays blank until at least one Target exists to compare against.
+  const elapsed = rows.filter(r => !r.isFuture);
+  const actualSum = elapsed.reduce((s, r) => s + (r.actual || 0), 0);
+  const targetSum = elapsed.reduce((s, r) => s + (r.target || 0), 0);
   const fyPct = targetSum ? Math.round(100 * actualSum / targetSum) : null;
   const monthsSet = fy.months.filter(ym => targets[ym] != null).length;
 
