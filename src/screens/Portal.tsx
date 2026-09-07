@@ -223,6 +223,30 @@ export default function Portal(){
   const togglePhase = (id) => setOpenPhase(o => ({...o, [id]: !o[id]}));
   const toggleMs = (id) => setOpenMs(o => ({...o, [id]: !o[id]}));
 
+  // Upcoming Events & Activities -- phase end dates, milestone deadlines and sub task deadlines
+  // still due THIS calendar month, pulled straight from the same phase tree the timeline below
+  // reads. Deliberately excludes anything already overdue (that already surfaces in the Project
+  // Health "what's causing the delay" callout above, no need to duplicate it here) and anything
+  // already Approved/Completed -- this is a look-ahead, not a status report.
+  const CUR_YM = S.TODAY_ISO.slice(0, 7);
+  const upcomingThisMonth: any[] = [];
+  phases.forEach((ph:any)=>{
+    if (ph.end && ph.end.slice(0,7)===CUR_YM && ph.end>=S.TODAY_ISO && S.derivedPhaseStatus(ph)!=='Completed' && !ph.onHold) {
+      upcomingThisMonth.push({ type:'Phase', name:ph.name, phaseName:ph.name, deadline:ph.end, status:S.derivedPhaseStatus(ph) });
+    }
+    (ph.milestones||[]).forEach((ms:any)=>{
+      if (ms.deadline && ms.deadline.slice(0,7)===CUR_YM && ms.deadline>=S.TODAY_ISO && !S.isApproved(ms)) {
+        upcomingThisMonth.push({ type:'Milestone', name:ms.name, phaseName:ph.name, deadline:ms.deadline, status:ms.status });
+      }
+      (ms.subtasks||[]).forEach((s:any)=>{
+        if (s.deadline && s.deadline.slice(0,7)===CUR_YM && s.deadline>=S.TODAY_ISO && !S.isApproved(s)) {
+          upcomingThisMonth.push({ type:'Sub Task', name:s.name, phaseName:ph.name, deadline:s.deadline, status:s.status });
+        }
+      });
+    });
+  });
+  upcomingThisMonth.sort((a,b)=> a.deadline<b.deadline ? -1 : 1);
+
   return (
     <div>
       <S.SectionTitle sub="Client-facing view — project health, approvals pending your sign-off, and a phase / milestone / sub task timeline">Client Portal{projMeta.name?` — ${projMeta.name}`:''}</S.SectionTitle>
@@ -379,6 +403,36 @@ export default function Portal(){
         )}
       </S.Card>
 
+      {/* Upcoming Events & Activities -- everything from the phase tree still due this calendar
+          month (phase end dates, milestone & sub task deadlines), so a client can see what's
+          coming up without reading the full Project Timeline below. */}
+      <S.Card className="p-4 mb-5">
+        <div className="flex items-center justify-between gap-2 mb-3">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-800">Upcoming Events &amp; Activities</span>
+            {upcomingThisMonth.length>0 && <S.Badge cls="bg-brand-100 text-brand-700">{upcomingThisMonth.length}</S.Badge>}
+          </div>
+          <span className="text-xs text-slate-400 whitespace-nowrap">{S.CURRENT_MONTH_LABEL}</span>
+        </div>
+        {upcomingThisMonth.length===0 ? (
+          <div className="text-sm text-slate-400">Nothing due for the rest of this month.</div>
+        ) : (
+          <div className="space-y-1.5">
+            {upcomingThisMonth.map((u,i)=>(
+              <div key={i} className="flex items-center gap-3 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                <S.Badge cls="bg-sky-100 text-sky-700 shrink-0">{u.type}</S.Badge>
+                <div className="min-w-0 flex-1">
+                  <div className="text-slate-700 truncate">{u.name}</div>
+                  {u.type!=='Phase' && <div className="text-[10px] text-slate-400 truncate">{u.phaseName}</div>}
+                </div>
+                <span className="text-xs text-slate-400 whitespace-nowrap">{u.deadline} · in {S.daysLeft(u.deadline)}d</span>
+                <S.Badge cls={S.statusColor(u.status)}>{u.status}</S.Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </S.Card>
+
       {/* Issues -- raise one, and see only the ones you raised or were tagged on (same visibility
           rule Issue Management enforces for staff, see screens/Issues.tsx) */}
       <S.Card className="p-4 mb-5">
@@ -420,21 +474,8 @@ export default function Portal(){
         )}
       </S.Card>
 
-      {/* Recent Activity -- reuses the same clickable notification-row component the header bell
-          uses, so an entry here jumps straight to what it's about too. Scoped to this project only
-          (see projectNotifications above), so it never leaks another client's activity. */}
-      <S.Card className="p-4 mb-5">
-        <div className="flex items-center gap-2 mb-3">
-          <span className="font-semibold text-slate-800">Recent Activity</span>
-          {projectNotifications.length>0 && <S.Badge cls="bg-slate-100 text-slate-600">{projectNotifications.length}</S.Badge>}
-        </div>
-        <div className="max-h-80 overflow-y-auto">
-          <S.NotificationFeedList notifications={projectNotifications.slice(0,20)} emptyText="No updates on this project yet."/>
-        </div>
-      </S.Card>
-
       {/* Simple timeline: Phase -> Milestone -> Sub Task, deadline & status only */}
-      <S.Card className="p-4">
+      <S.Card className="p-4 mb-5">
         <div className="font-semibold text-slate-800 mb-3">Project Timeline</div>
         {docErr && <div className="text-xs text-red-500 mb-2">{docErr}</div>}
         <div className="space-y-2">
@@ -515,6 +556,20 @@ export default function Portal(){
           {phases.length===0 && <div className="text-sm text-slate-400">No phases for this project yet.</div>}
         </div>
       </S.Card>
+
+      {/* Recent Activity -- reuses the same clickable notification-row component the header bell
+          uses, so an entry here jumps straight to what it's about too. Scoped to this project only
+          (see projectNotifications above), so it never leaks another client's activity. */}
+      <S.Card className="p-4">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="font-semibold text-slate-800">Recent Activity</span>
+          {projectNotifications.length>0 && <S.Badge cls="bg-slate-100 text-slate-600">{projectNotifications.length}</S.Badge>}
+        </div>
+        <div className="max-h-80 overflow-y-auto">
+          <S.NotificationFeedList notifications={projectNotifications.slice(0,20)} emptyText="No updates on this project yet."/>
+        </div>
+      </S.Card>
+
     </div>
   );
 }
