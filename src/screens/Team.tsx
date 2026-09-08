@@ -66,30 +66,46 @@ export default function Team(){
   const [drawerId, setDrawerId] = useState<string|null>(null);
   const [dirId, setDirId] = useState<string|null>(null);
 
+  // This page only tracks people in actual project-delivery roles -- a removed/deactivated account
+  // (status no longer 'Active') isn't shown or counted at all, and back-office/support functions
+  // (HR, BD, Accounts, Management, etc. -- checked against both Department and Designation, since
+  // e.g. a BD person's dept here is "Marketing" while a HR person's designation is "HRM") don't have
+  // billable utilization worth measuring here. Scoped to this page only -- the underlying roster in
+  // S.TeamDataContext (`team`) stays complete for Project Master's team picker, Calendar's assignee
+  // list, and everything else that reads it, same precedent as Dashboard.tsx already excluding
+  // dept==='Management' from its own utilization widget "per direct request".
+  const NON_DELIVERY_KEYWORDS = ['hr', 'bd', 'account', 'management'];
+  const isTrackedRole = (m:any) => {
+    if (m.status && m.status !== 'Active') return false;
+    const hay = `${m.dept||''} ${m.role||''}`.toLowerCase();
+    return !NON_DELIVERY_KEYWORDS.some(k => hay.includes(k));
+  };
+  const trackedTeam = useMemo(() => team.filter(isTrackedRole), [team]);
+
   // Search & filters -- shared across all three views, since the roster is no longer a short
-  // hand-picked list; it's everyone.
+  // hand-picked list; it's everyone (tracked).
   const [q, setQ] = useState('');
   const [fDept, setFDept] = useState('');
   const [fRole, setFRole] = useState('');
   const [fLevel, setFLevel] = useState('');
   const [fBand, setFBand] = useState('');
-  const roleOpts = useMemo(() => Array.from(new Set(team.map((m:any)=>m.role).filter(Boolean))).sort(), [team]);
-  const deptOptsPresent = useMemo(() => Array.from(new Set(team.map((m:any)=>m.dept).filter(Boolean))).sort(), [team]);
-  const levelOpts = useMemo(() => S.HIERARCHY_LEVELS.filter(l=>team.some((m:any)=>m.level===l)), [team]);
-  const filteredTeam = useMemo(() => team.filter((m:any) => {
+  const roleOpts = useMemo(() => Array.from(new Set(trackedTeam.map((m:any)=>m.role).filter(Boolean))).sort(), [trackedTeam]);
+  const deptOptsPresent = useMemo(() => Array.from(new Set(trackedTeam.map((m:any)=>m.dept).filter(Boolean))).sort(), [trackedTeam]);
+  const levelOpts = useMemo(() => S.HIERARCHY_LEVELS.filter(l=>trackedTeam.some((m:any)=>m.level===l)), [trackedTeam]);
+  const filteredTeam = useMemo(() => trackedTeam.filter((m:any) => {
     if(q && !m.name.toLowerCase().includes(q.toLowerCase())) return false;
     if(fDept && m.dept!==fDept) return false;
     if(fRole && m.role!==fRole) return false;
     if(fLevel && m.level!==fLevel) return false;
     if(fBand && UTIL_BAND(m.util)!==fBand) return false;
     return true;
-  }), [team, q, fDept, fRole, fLevel, fBand]);
+  }), [trackedTeam, q, fDept, fRole, fLevel, fBand]);
   const filtersActive = !!(q || fDept || fRole || fLevel || fBand);
   const clearFilters = () => { setQ(''); setFDept(''); setFRole(''); setFLevel(''); setFBand(''); };
 
-  const avgUtil = team.length ? Math.round(team.reduce((a:number,m:any)=>a+m.util,0)/team.length) : 0;
-  const avgAvail = team.length ? Math.round(team.reduce((a:number,m:any)=>a+(Number(String(m.avail).replace('%',''))||0),0)/team.length) : 0;
-  const overloaded = team.filter((m:any)=>m.util>90);
+  const avgUtil = trackedTeam.length ? Math.round(trackedTeam.reduce((a:number,m:any)=>a+m.util,0)/trackedTeam.length) : 0;
+  const avgAvail = trackedTeam.length ? Math.round(trackedTeam.reduce((a:number,m:any)=>a+(Number(String(m.avail).replace('%',''))||0),0)/trackedTeam.length) : 0;
+  const overloaded = trackedTeam.filter((m:any)=>m.util>90);
 
   const setDept = (id:string, dept:string) => { if(!canEdit) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,dept}:u)); const m=team.find((x:any)=>x.id===id); logActivity({ module:'Team Management', action:`Updated ${m?.name||id}'s department to "${dept}"` }); };
   const setCapacity = (id:string, capacity:string) => { if(!canEdit) return; patchAdmin('users', (us:any[]) => us.map(u=>u.id===id?{...u,capacity}:u)); const m=team.find((x:any)=>x.id===id); logActivity({ module:'Team Management', action:`Updated ${m?.name||id}'s weekly capacity to "${capacity}"` }); };
@@ -193,7 +209,7 @@ export default function Team(){
     );
   };
 
-  const drawerPerson = drawerId ? team.find((m:any)=>m.id===drawerId) : null;
+  const drawerPerson = drawerId ? trackedTeam.find((m:any)=>m.id===drawerId) : null;
   const dirPerson = (dirId && filteredTeam.some((m:any)=>m.id===dirId)) ? filteredTeam.find((m:any)=>m.id===dirId) : filteredTeam[0];
 
   return (
@@ -215,7 +231,7 @@ export default function Team(){
       <div className="text-xs text-slate-400 mb-3">Everyone here is a teammate in <Link to="/admin" className="text-brand-600 hover:text-brand-700">Administration → Users</Link> — add, remove or deactivate someone there and it's reflected here automatically.</div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Team Size</div><div className="text-2xl font-bold text-slate-800 mt-1">{team.length}</div></S.Card>
+        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Team Size</div><div className="text-2xl font-bold text-slate-800 mt-1">{trackedTeam.length}</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Avg Utilization</div><div className="text-2xl font-bold text-blue-600 mt-1">{avgUtil}%</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Avg Availability</div><div className="text-2xl font-bold text-emerald-600 mt-1">{avgAvail}%</div></S.Card>
         <S.Card className="p-4 text-center"><div className="text-xs text-slate-500">Overloaded (&gt;90%)</div><div className="text-2xl font-bold text-red-600 mt-1">{overloaded.length}</div></S.Card>
@@ -242,7 +258,7 @@ export default function Team(){
               <option value="">All</option><option value="healthy">Healthy</option><option value="busy">Busy</option><option value="overloaded">Overloaded</option>
             </select></div>
           {filtersActive && <button onClick={clearFilters} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1.5">Clear filters</button>}
-          <div className="text-xs text-slate-400 ml-auto self-center">{filteredTeam.length} of {team.length}</div>
+          <div className="text-xs text-slate-400 ml-auto self-center">{filteredTeam.length} of {trackedTeam.length}</div>
         </div>
       </S.Card>
 
@@ -307,7 +323,7 @@ export default function Team(){
                 );
               })}
               {filteredTeam.length===0 && (
-                <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">{team.length===0 ? <>No team members yet — add one in <Link to="/admin" className="text-brand-600 hover:text-brand-700">Administration → Users</Link>.</> : 'No one matches these filters.'}</td></tr>
+                <tr><td colSpan={9} className="text-center text-sm text-slate-400 py-8">{trackedTeam.length===0 ? <>No team members yet — add one in <Link to="/admin" className="text-brand-600 hover:text-brand-700">Administration → Users</Link>.</> : 'No one matches these filters.'}</td></tr>
               )}
             </tbody>
           </table>

@@ -857,6 +857,11 @@ export const computeTeamRoster = (admin: any, projects: any[], tree: any, catego
       util,
       avail: avail + '%',
       activeProjectCount: activeProjects.length,
+      // Carried through so consumers (Team Management) can tell a Suspended/Pending account apart
+      // from an Active one -- this roster itself stays complete (every non-Client user, any status)
+      // since Project Master's team picker, Calendar's assignee list etc. all read it too and
+      // shouldn't lose someone just because Team.tsx wants to hide them from its own view.
+      status: u.status || 'Active',
     };
   });
 };
