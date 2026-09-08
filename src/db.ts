@@ -48,7 +48,7 @@ const synthesizeTeamFromLegacy = (r: any) => ([
 export const projectFromDb = (r: any) => ({
   id: r.id, name: r.name, client: r.client, category: r.category, industry: r.industry,
   noOfSbu: r.no_of_sbu, consultingCategory: r.consulting_category, engagement: r.engagement,
-  start: r.start_date, end: r.end_date, monthlyFee: r.monthly_fee,
+  start: r.start_date, end: r.end_date, monthlyFee: r.monthly_fee, directCost: r.direct_cost,
   strategicLead: r.strategic_lead, projectHead: r.project_head, pm: r.pm, associate: r.associate,
   // Dynamic hierarchy-level team list (Project Master -> Project Team) -- see synthesizeTeamFromLegacy
   // above for pre-existing projects that predate this column.
@@ -134,7 +134,7 @@ const projectToDb = (p: any) => ({
   tenant_id: TENANT_ID,
   id: p.id, name: p.name, client: p.client, category: p.category, industry: p.industry,
   no_of_sbu: p.noOfSbu || null, consulting_category: p.consultingCategory, engagement: p.engagement,
-  start_date: p.start || null, end_date: p.end || null, monthly_fee: p.monthlyFee || 0,
+  start_date: p.start || null, end_date: p.end || null, monthly_fee: p.monthlyFee || 0, direct_cost: p.directCost || 0,
   ...legacyRolesFromTeam(p.team || []), team: p.team || [], guests: p.guests || [],
   clients: p.clients || [], client_location: p.clientLocation, client_website: p.clientWebsite,
   client_software: p.clientSoftware || [], status: p.status, priority: p.priority, billing: p.billing,

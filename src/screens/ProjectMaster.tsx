@@ -30,7 +30,7 @@ export default function ProjectMaster(){
 
   const openExisting = (p) => { setForm({ ...p }); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
   const openNew = () => {
-    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, team:[], guests:[], clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
+    setForm({ _key:S.uid('KEY'), id:'', name:'', client:'', category:'', industry:'', noOfSbu:'', consultingCategory:'', engagement:(settings.engagementTypes&&settings.engagementTypes[0])||'Fixed Scope', start:S.TODAY_ISO, end:S.TODAY_ISO, monthlyFee:0, directCost:0, team:[], guests:[], clients:[], clientLocation:'', clientWebsite:'', clientSoftware:[], status:'Yet to Start', priority:'Medium', billing:'Monthly', billingDueDate:'', completion:0, risk:'Low', margin:0, paymentStatus:'Pending', visitsMonth:0, visitsTotal:0, confirmed:false, extension:null, specialRequest:null, paymentReceipts:[] });
     setIsNew(true); setExtChooser(false); setReqMenuOpen(false);
   };
   const close = () => { setForm(null); setIsNew(false); setExtChooser(false); setReqMenuOpen(false); };
@@ -437,6 +437,15 @@ export default function ProjectMaster(){
               ) : (
                 <div><label className="text-xs text-slate-400 block mb-1">Monthly Fee (₹)</label><div className="text-sm text-slate-300 py-1.5">Restricted</div></div>
               )}
+              {/* One-time, whole-project cost -- entered here at project creation, deducted from
+                  Total Value (months x Monthly Fee) to compute Margin % in the Margin Analysis
+                  report (Reports.tsx) and the summary card below. Same Financials & Billing gating
+                  as Monthly Fee, since it's at least as sensitive a figure. */}
+              {canViewFinancials ? (
+                <S.NumF label="Project Direct Cost (₹)" value={form.directCost} canEdit={canEditFinancials} onChange={v=>setF('directCost',v)} />
+              ) : (
+                <div><label className="text-xs text-slate-400 block mb-1">Project Direct Cost (₹)</label><div className="text-sm text-slate-300 py-1.5">Restricted</div></div>
+              )}
               <S.ReadF label="Completion %">{form.completion}%</S.ReadF>
               <S.NumF label="Onsite Visits (per Month)" value={form.visitsMonth} canEdit={canEdit} onChange={v=>setF('visitsMonth',v)} />
               <S.ReadF label="Total Visits (till date)">{form.visitsTotal}</S.ReadF>
@@ -585,8 +594,10 @@ export default function ProjectMaster(){
               {canViewFinancials ? (
                 <>
                   <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Monthly Fee</div><div className="text-lg font-bold text-slate-800">{S.fmt(form.monthlyFee)}</div></S.Card>
+                  <S.Card className="p-3 bg-slate-50"><div className="text-xs text-slate-400">Project Direct Cost</div><div className="text-lg font-bold text-slate-800">₹{S.fmt(form.directCost)}</div></S.Card>
                   <S.Card className="p-3 bg-emerald-50"><div className="text-xs text-emerald-600">Total Collection (actual)</div><div className="text-lg font-bold text-emerald-700">₹{S.fmt(S.projInvoicedRevenue(form, invoices))}</div></S.Card>
                   <S.Card className="p-3 bg-brand-50"><div className="text-xs text-brand-600">Total Value (months × fee)</div><div className="text-lg font-bold text-brand-700">₹{S.fmt(revenue)}</div></S.Card>
+                  <S.Card className="p-3 bg-amber-50"><div className="text-xs text-amber-600">Est. Margin (Total Value − Direct Cost)</div><div className="text-lg font-bold text-amber-700">{S.projMarginPct(form)}%</div></S.Card>
                 </>
               ) : (
                 <S.Card className="p-3 bg-slate-50 col-span-3 flex items-center justify-center text-xs text-slate-400">You don't have access to view financial figures for this project.</S.Card>

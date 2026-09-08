@@ -99,7 +99,7 @@ export default function Reports(){
     tier: [...new Set(projs.map(p=>p.category))].join(', '),
   }));
 
-  const marginRanked = [...projects].sort((a,b)=>(a.margin||0)-(b.margin||0));
+  const marginRanked = [...projects].sort((a,b)=>S.projMarginPct(a)-S.projMarginPct(b));
   const billingRanked = [...projects].sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)||a.end)-S.daysLeft(S.nextBillingDueDate(b)||b.end));
   const timelineRanked = [...projects].sort((a,b)=>S.daysLeft(a.end)-S.daysLeft(b.end));
 
@@ -191,7 +191,7 @@ export default function Reports(){
   // Margin health mix (Thin / Watch / Healthy, same thresholds the table's badge already uses).
   const marginHealthData = (() => {
     const c = { Thin:0, Watch:0, Healthy:0 };
-    projects.forEach((p:any)=>{ const m=p.margin||0; if(m<25) c.Thin++; else if(m<35) c.Watch++; else c.Healthy++; });
+    projects.forEach((p:any)=>{ const m=S.projMarginPct(p); if(m<25) c.Thin++; else if(m<35) c.Watch++; else c.Healthy++; });
     return [
       { name:'Thin (<25%)', value:c.Thin, color:'#ef4444' },
       { name:'Watch (25–35%)', value:c.Watch, color:'#f59e0b' },
@@ -367,19 +367,20 @@ export default function Reports(){
           <div>
             <Charts.ChartBlock title="Margin Health Mix"><Charts.DonutChartMini data={marginHealthData} height={190}/></Charts.ChartBlock>
             {miniTable(
-              marginRanked.map(p=>(
+              marginRanked.map(p=>{ const m = S.projMarginPct(p); return (
                 <tr key={p.id}>
                   <S.Td className="font-medium">{p.name}</S.Td>
                   <S.Td>{S.inLakh(p.monthlyFee)}/mo</S.Td>
+                  <S.Td>₹{S.fmt(p.directCost)}</S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2">
-                      <div className="w-24 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full ${p.margin<25?'bg-red-500':p.margin<35?'bg-amber-500':'bg-emerald-500'}`} style={{width:Math.min(100,p.margin)+'%'}}></div></div>
-                      <span className={`text-xs font-medium ${p.margin<25?'text-red-600':p.margin<35?'text-amber-600':'text-emerald-600'}`}>{p.margin}%</span>
+                      <div className="w-24 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full ${m<25?'bg-red-500':m<35?'bg-amber-500':'bg-emerald-500'}`} style={{width:Math.max(0,Math.min(100,m))+'%'}}></div></div>
+                      <span className={`text-xs font-medium ${m<25?'text-red-600':m<35?'text-amber-600':'text-emerald-600'}`}>{m}%</span>
                     </div>
                   </S.Td>
-                  <S.Td><S.Badge cls={p.margin<25?'bg-red-100 text-red-700':p.margin<35?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}>{p.margin<25?'Thin':p.margin<35?'Watch':'Healthy'}</S.Badge></S.Td>
+                  <S.Td><S.Badge cls={m<25?'bg-red-100 text-red-700':m<35?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}>{m<25?'Thin':m<35?'Watch':'Healthy'}</S.Badge></S.Td>
                 </tr>
-              )), ['Project','Monthly Fee','Margin','Health']
+              );}), ['Project','Monthly Fee','Direct Cost','Margin','Health']
             )}
           </div>
         );
