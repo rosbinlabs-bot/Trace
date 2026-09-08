@@ -653,6 +653,7 @@ function UsersPanel(){
             <S.Badge cls="bg-brand-50 text-brand-700">{teamUsers.length}</S.Badge>
           </div>
           <S.Card className="overflow-hidden mb-6">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Department</S.Th><S.Th>Weekly Capacity</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
@@ -715,6 +716,7 @@ function UsersPanel(){
                 )}
               </tbody>
             </table>
+            </div>
           </S.Card>
 
           {/* Clients — external logins hard-restricted to one project's Client Portal + Structure */}
@@ -724,6 +726,7 @@ function UsersPanel(){
             <S.Badge cls="bg-violet-50 text-violet-700">{clientUsers.length}</S.Badge>
           </div>
           <S.Card className="overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
@@ -757,6 +760,7 @@ function UsersPanel(){
                 )}
               </tbody>
             </table>
+            </div>
           </S.Card>
         </>);
       })()}
