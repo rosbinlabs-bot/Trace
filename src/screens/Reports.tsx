@@ -371,7 +371,7 @@ export default function Reports(){
                 <tr key={p.id}>
                   <S.Td className="font-medium">{p.name}</S.Td>
                   <S.Td>{S.inLakh(p.monthlyFee)}/mo</S.Td>
-                  <S.Td>₹{S.fmt(p.directCost)}</S.Td>
+                  <S.Td>₹{S.fmt(p.directCost)}/mo</S.Td>
                   <S.Td>
                     <div className="flex items-center gap-2">
                       <div className="w-24 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full ${m<25?'bg-red-500':m<35?'bg-amber-500':'bg-emerald-500'}`} style={{width:Math.max(0,Math.min(100,m))+'%'}}></div></div>
@@ -380,7 +380,7 @@ export default function Reports(){
                   </S.Td>
                   <S.Td><S.Badge cls={m<25?'bg-red-100 text-red-700':m<35?'bg-amber-100 text-amber-700':'bg-emerald-100 text-emerald-700'}>{m<25?'Thin':m<35?'Watch':'Healthy'}</S.Badge></S.Td>
                 </tr>
-              );}), ['Project','Monthly Fee','Direct Cost','Margin','Health']
+              );}), ['Project','Monthly Fee','Direct Cost (Monthly)','Margin','Health']
             )}
           </div>
         );

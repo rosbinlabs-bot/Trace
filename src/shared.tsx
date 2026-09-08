@@ -76,16 +76,16 @@ export const projTotalMonths = (p) => monthsBetween(p.start, p.end);
 const roundToDisplayedMonths = (months) => Math.round(months * 10) / 10;
 export const projTargetRevenue = (p) => Math.round(roundToDisplayedMonths(projTotalMonths(p)) * (Number(p.monthlyFee)||0));
 // Margin % for the Margin Analysis report (Reports.tsx) and Project Master's own summary card.
-// Project Direct Cost is entered ONCE at project creation (a whole-project cost, not a recurring
-// monthly figure like Monthly Fee), so it's deducted from the project's Total Value (months x
-// Monthly Fee -- the same total already shown in the "Total Value" card) rather than from a single
-// month's fee. Replaces the old `margin` DB column, which was never exposed in any edit UI and
-// always read 0/empty for real projects (see Dashboard.tsx's on-time-delivery comment for the same
-// history) -- this is computed live instead, the same fix Dashboard.tsx already applied elsewhere.
+// Project Direct Cost is a recurring MONTHLY figure, same basis as Monthly Fee (entered once on
+// Project Master, but applies every month like the fee does) -- so margin is Monthly Fee minus
+// Direct Cost, both monthly, not Direct Cost against the whole-project Total Value. Replaces the
+// old `margin` DB column, which was never exposed in any edit UI and always read 0/empty for real
+// projects (see Dashboard.tsx's on-time-delivery comment for the same history) -- this is computed
+// live instead, the same fix Dashboard.tsx already applied elsewhere.
 export const projMarginPct = (p) => {
-  const revenue = projTargetRevenue(p);
-  if (!revenue) return 0;
-  return Math.round(((revenue - (Number(p.directCost)||0)) / revenue) * 100);
+  const fee = Number(p.monthlyFee)||0;
+  if (!fee) return 0;
+  return Math.round(((fee - (Number(p.directCost)||0)) / fee) * 100);
 };
 export const projElapsedMonths = (p) => monthsBetween(p.start, (new Date(TODAY_ISO) < new Date(p.end) ? TODAY_ISO : p.end));
 export const projAchievedRevenue = (p) => Math.min(projTargetRevenue(p), Math.round(roundToDisplayedMonths(projElapsedMonths(p)) * (Number(p.monthlyFee)||0)));
