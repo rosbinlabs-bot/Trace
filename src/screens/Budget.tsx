@@ -2,22 +2,27 @@ import React from 'react';
 import * as S from '../shared';
 
 // Governance -> Budget: Budget vs Actual for the current financial year. Actual (Collection) is
-// never entered by anyone -- it's computed live from Received invoices/payment receipts, the exact
-// same rule Dashboard's Revenue Collected widget and Project Master's Billing Tracker already use
-// (S.monthCollectionAllProjects). Target is the one thing a person enters here: a single org-wide
-// figure per month, saved through the same Administration-style admin_data.budgetTargets key/patch
-// path Company Settings etc. already use, so it debounces and syncs to Supabase the same way. Route
-// is hard-gated to Admin/Super Admin only (NAV_MODULE.budget='Budget', matrix Officer/Manager=None)
-// -- see App.tsx's <Gate>.
+// computed live from Received invoices/payment receipts wherever that data exists -- the exact same
+// rule Dashboard's Revenue Collected widget and Project Master's Billing Tracker already use
+// (S.monthCollectionAllProjects) -- so nobody types in a figure for a month that's already tracked.
+// For months with no automatically-fetched collection (typically history from before this system was
+// in use, or a month with genuinely no Received invoices recorded), Admin/Super Admin can enter that
+// month's Collection manually instead, saved as its own admin_data key (budgetManualCollections) --
+// same debounced key/patch path budgetTargets already uses. A manual figure only ever fills a gap: the
+// moment real invoice data exists for that month, the automatic total takes over again and the manual
+// entry is simply ignored (never overwritten, never double-counted). Target is the one thing a person
+// always enters here: a single org-wide figure per month, saved the same way. Route is hard-gated to
+// Admin/Super Admin only (NAV_MODULE.budget='Budget', matrix Officer/Manager=None) -- see App.tsx's
+// <Gate>.
 //
 // View style: vertical bar chart -- each month is a column whose height is Collection, coloured by
 // status (Ahead/On Track/Behind/No target), with a short dark tick marking that month's Target so the
 // gap between "bar top" and "tick" is the story at a glance; gridlines/₹ labels give the y-axis scale
-// and a hover tooltip carries the exact figures instead of printing them on every bar. This is the
-// most literal of the four styles mocked up for the user (table / bullet rows / bar chart / tile
-// grid) and was requested by name after seeing all four. Target entry doesn't fit inside a bar, so it
-// moves to a compact per-month grid below the chart -- kept to one line per month so the whole page,
-// chart plus every month's target field, still fits one screen with no scrolling.
+// and a hover tooltip carries the exact figures instead of printing them on every bar. A small "M"
+// mark above a column flags a manually-entered month so it's never mistaken for an automatic figure.
+// Target (and, where needed, manual Collection) entry doesn't fit inside a bar, so both live in a
+// compact per-month grid below the chart -- kept to one line or two per month so the whole page still
+// fits one screen with no scrolling.
 export default function Budget() {
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { invoices } = React.useContext(S.InvoicesDataContext);
@@ -27,6 +32,7 @@ export default function Budget() {
   const [yearOffset, setYearOffset] = React.useState(0);
   const fy = S.fiscalYearMonths(fyStart, S.TODAY_ISO, yearOffset);
   const targets = admin?.budgetTargets || {};
+  const manualCollections = admin?.budgetManualCollections || {};
   const currentYm = S.TODAY_ISO.slice(0, 7);
 
   const setTarget = (ym: string, raw: string) => {
@@ -38,13 +44,29 @@ export default function Budget() {
     });
   };
 
+  const setManualCollection = (ym: string, raw: string) => {
+    const n = raw === '' ? undefined : Math.max(0, Number(raw) || 0);
+    patchAdmin('budgetManualCollections', (prev: any) => {
+      const next = { ...(prev || {}) };
+      if (n === undefined) delete next[ym]; else next[ym] = n;
+      return next;
+    });
+  };
+
   const rows = fy.months.map((ym) => {
     const isFuture = ym > currentYm;
     const target = targets[ym];
-    const actual = isFuture ? null : S.monthCollectionAllProjects(invoices, ym);
+    const autoActual = isFuture ? null : S.monthCollectionAllProjects(invoices, ym);
+    // A manual figure only ever fills a gap -- it's read only when there's nothing automatic to show
+    // for that month. As soon as real invoice data exists, the automatic total wins again on its own,
+    // with no need to clear the manual entry (it just stops being used).
+    const hasAuto = autoActual != null && autoActual > 0;
+    const manual = manualCollections[ym];
+    const isManual = !isFuture && !hasAuto && manual != null;
+    const actual = isFuture ? null : (hasAuto ? autoActual : (manual ?? autoActual));
     const variance = (target != null && actual != null) ? actual - target : null;
     const pct = (target && actual != null) ? Math.round(100 * actual / target) : null;
-    return { ym, isFuture, target, actual, variance, pct };
+    return { ym, isFuture, target, autoActual, isManual, actual, variance, pct };
   });
 
   const toneFor = (pct: number) => pct >= 100 ? 'text-emerald-600' : pct >= 75 ? 'text-amber-600' : 'text-red-600';
@@ -63,9 +85,10 @@ export default function Budget() {
   const monthShort = (ym: string) => new Date(`${ym}-01T00:00:00`).toLocaleString('en-US', { month: 'short' });
 
   // FY-to-date totals. Collected is real cash already in hand -- it sums every ELAPSED month's
-  // actual regardless of whether that month has a Target yet, so it never hides money behind an
-  // unset Target. Target sums only the months a figure has actually been entered. % Achieved
-  // compares the two, so it stays blank until at least one Target exists to compare against.
+  // actual (automatic where it exists, manual where it was entered to fill a gap) regardless of
+  // whether that month has a Target yet, so it never hides money behind an unset Target. Target sums
+  // only the months a figure has actually been entered. % Achieved compares the two, so it stays
+  // blank until at least one Target exists to compare against.
   const elapsed = rows.filter(r => !r.isFuture);
   const actualSum = elapsed.reduce((s, r) => s + (r.actual || 0), 0);
   const targetSum = elapsed.reduce((s, r) => s + (r.target || 0), 0);
@@ -78,8 +101,9 @@ export default function Budget() {
   const maxVal = Math.max(1, ...rows.flatMap(r => [r.target || 0, r.actual || 0])) * 1.15;
 
   // Route-level Gate (App.tsx) already keeps Officer/Manager/Client out entirely; this only decides
-  // whether the signed-in Admin/Super Admin gets the editable Target input or a plain read-only
-  // figure -- same capAtLeast('Edit') check every other gated screen makes for its own controls.
+  // whether the signed-in Admin/Super Admin gets the editable Target/manual-Collection inputs or
+  // plain read-only figures -- same capAtLeast('Edit') check every other gated screen makes for its
+  // own controls.
   const { email: myEmail } = React.useContext(S.CurrentUserContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Budget', myEmail, admin), 'Edit');
 
@@ -90,7 +114,7 @@ export default function Budget() {
   return (
     <div>
       <div className="flex flex-wrap justify-between items-center gap-3 mb-3">
-        <S.SectionTitle sub="Target vs Actual collection by month, Admin/Super Admin only. Target is entered here; Collection is always pulled live from Received invoices -- never typed in.">Budget</S.SectionTitle>
+        <S.SectionTitle sub="Target vs Actual collection by month, Admin/Super Admin only. Target is entered here; Collection is pulled live from Received invoices wherever that data exists, with a manual entry available only for months nothing was fetched for.">Budget</S.SectionTitle>
         <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-1 py-1">
           <button onClick={() => setYearOffset(o => o - 1)} className="w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100 text-sm" aria-label="Previous financial year">‹</button>
           <span className="text-sm font-medium text-slate-700 px-2 whitespace-nowrap">{fy.label}</span>
@@ -126,6 +150,7 @@ export default function Budget() {
             <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500 inline-block" />Behind</span>
             <span className="inline-flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-slate-300 inline-block" />No target</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-0.5 bg-slate-700 inline-block" />Target</span>
+            <span className="inline-flex items-center gap-1"><span className="text-[8px] font-bold text-slate-400">M</span>Manual entry</span>
           </div>
         </div>
 
@@ -152,6 +177,9 @@ export default function Budget() {
                     onMouseMove={(e) => { setHoverYm(r.ym); setHoverPos({ x: e.clientX, y: e.clientY }); }}
                     onMouseLeave={() => setHoverYm((cur) => (cur === r.ym ? null : cur))}
                   >
+                    {r.isManual && (
+                      <div className="absolute top-0 left-1/2 -translate-x-1/2 text-[7px] leading-none font-bold text-slate-400">M</div>
+                    )}
                     <div
                       className={`w-full max-w-[22px] rounded-t transition-opacity ${barToneCls(st.tone)} ${r.ym === currentYm ? 'ring-2 ring-brand-300' : ''}`}
                       style={{ height: `${heightPct}%` }}
@@ -181,7 +209,7 @@ export default function Budget() {
               style={{ left: hoverPos.x + 14, top: hoverPos.y - 12 }}
             >
               <div className="font-semibold mb-0.5">{monthLabel(hoverRow.ym)}</div>
-              <div>Collected: {hoverRow.isFuture ? '—' : S.inLakh(hoverRow.actual || 0)}</div>
+              <div>Collected: {hoverRow.isFuture ? '—' : `${S.inLakh(hoverRow.actual || 0)}${hoverRow.isManual ? ' (manual)' : ''}`}</div>
               <div>Target: {hoverRow.target != null ? S.inLakh(hoverRow.target) : 'not set'}</div>
               <div>{st.label}</div>
             </div>
@@ -190,24 +218,50 @@ export default function Budget() {
       </S.Card>
 
       <S.Card className="p-3">
-        <div className="text-[11px] font-semibold text-slate-600 mb-2">Monthly targets</div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-[11px] font-semibold text-slate-600">Monthly targets & collection</div>
+          <div className="text-[9px] text-slate-400">Collection is only editable for a month with nothing fetched automatically</div>
+        </div>
         <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
           {rows.map((r) => {
             const suggested = r.target == null ? S.suggestedMonthTarget(projects, r.ym) : null;
+            const needsManual = !r.isFuture && !(r.autoActual != null && r.autoActual > 0);
             return (
-              <div key={r.ym} className={`rounded-md border px-2 py-1 ${r.ym === currentYm ? 'border-brand-200 bg-brand-50/40' : 'border-slate-200'}`}>
-                <div className="text-[9px] text-slate-400 mb-0.5 truncate">{monthLabel(r.ym)}</div>
-                {canEdit ? (
-                  <input
-                    type="number" min={0} inputMode="numeric"
-                    value={r.target ?? ''}
-                    onChange={(e) => setTarget(r.ym, e.target.value)}
-                    placeholder={suggested ? String(suggested) : '—'}
-                    title={suggested != null && suggested > 0 ? `Suggested: ${S.inLakh(suggested)}` : undefined}
-                    className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
-                  />
-                ) : (
-                  <div className="text-xs font-medium text-slate-700">{r.target != null ? S.inLakh(r.target) : <span className="text-slate-300">—</span>}</div>
+              <div key={r.ym} className={`rounded-md border px-2 py-1 space-y-1 ${r.ym === currentYm ? 'border-brand-200 bg-brand-50/40' : 'border-slate-200'}`}>
+                <div className="text-[9px] text-slate-400 truncate">{monthLabel(r.ym)}</div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[8px] text-slate-400 w-9 shrink-0">Target</span>
+                  {canEdit ? (
+                    <input
+                      type="number" min={0} inputMode="numeric"
+                      value={r.target ?? ''}
+                      onChange={(e) => setTarget(r.ym, e.target.value)}
+                      placeholder={suggested ? String(suggested) : '—'}
+                      title={suggested != null && suggested > 0 ? `Suggested: ${S.inLakh(suggested)}` : undefined}
+                      className="w-full text-[11px] border border-slate-200 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
+                    />
+                  ) : (
+                    <span className="text-xs font-medium text-slate-700">{r.target != null ? S.inLakh(r.target) : <span className="text-slate-300">—</span>}</span>
+                  )}
+                </div>
+                {!r.isFuture && (
+                  <div className="flex items-center gap-1">
+                    <span className="text-[8px] text-slate-400 w-9 shrink-0">Coll.</span>
+                    {!needsManual ? (
+                      <span className="text-xs font-medium text-slate-700" title="Fetched automatically from Received invoices">{S.inLakh(r.autoActual || 0)}</span>
+                    ) : canEdit ? (
+                      <input
+                        type="number" min={0} inputMode="numeric"
+                        value={manualCollections[r.ym] ?? ''}
+                        onChange={(e) => setManualCollection(r.ym, e.target.value)}
+                        placeholder="Manual"
+                        title="No Received invoices found for this month -- enter the actual collection manually"
+                        className="w-full text-[11px] border border-dashed border-slate-300 rounded px-1 py-0.5 focus:outline-none focus:ring-2 focus:ring-brand-300 text-slate-700"
+                      />
+                    ) : (
+                      <span className="text-xs font-medium text-slate-700">{r.actual != null ? S.inLakh(r.actual) : <span className="text-slate-300">—</span>}</span>
+                    )}
+                  </div>
                 )}
               </div>
             );
