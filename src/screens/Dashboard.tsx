@@ -38,9 +38,16 @@ export default function Dashboard(){
   // across renders that don't touch tree/projects, so this rebuild only happens when it needs to.
   // Everything downstream still reads allEntries/msOnly/stOnly exactly as before -- only the
   // construction of these three arrays moved into useMemo, nothing about what they contain changed.
+  // A project On Hold contributes nothing to any of this dashboard's work-item views (overdue, due
+  // today, upcoming, pending review/approvals, portfolio health below) until it's resumed -- billing
+  // widgets (Revenue Collected, Billing Due Soon, receivables) deliberately keep reading the raw
+  // `projects` list further down, since billing stays live through a hold.
+  // Renamed to avoid colliding with the `activeProjects` KPI count declared further below
+  // (count of status==='In Progress' projects, a pre-existing and unrelated variable).
+  const unfrozenProjects = React.useMemo(() => projects.filter((p:any) => !S.isProjectFrozen(p)), [projects]);
   const allEntries: any[] = React.useMemo(() => {
     const out: any[] = [];
-    projects.forEach((p:any)=>{
+    unfrozenProjects.forEach((p:any)=>{
       (tree[p.id]||[]).forEach((ph:any)=>{
         ph.milestones.forEach((ms:any)=>{
           out.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });
@@ -49,12 +56,12 @@ export default function Dashboard(){
       });
     });
     return out;
-  }, [projects, tree]);
+  }, [unfrozenProjects, tree]);
   const msOnly: any[] = React.useMemo(() => {
     const out: any[] = [];
-    projects.forEach((p:any)=>(tree[p.id]||[]).forEach((ph:any)=>ph.milestones.forEach((ms:any)=>out.push(ms))));
+    unfrozenProjects.forEach((p:any)=>(tree[p.id]||[]).forEach((ph:any)=>ph.milestones.forEach((ms:any)=>out.push(ms))));
     return out;
-  }, [projects, tree]);
+  }, [unfrozenProjects, tree]);
   const stOnly = React.useMemo(() => msOnly.flatMap((ms:any)=>ms.subtasks||[]), [msOnly]);
 
   const monthKey = S.CURRENT_MONTH_END.slice(0,7);
@@ -109,7 +116,7 @@ export default function Dashboard(){
     if (dueSoon || projectOpenRisks(p).length>0) return 'amber';
     return 'green';
   };
-  const trackedProjects = projects.filter((p:any)=>p.status!=='Completed' && p.status!=='Dropped');
+  const trackedProjects = projects.filter((p:any)=>p.status!=='Completed' && p.status!=='Dropped' && !S.isProjectFrozen(p));
   const healthCounts = { red:0, amber:0, green:0 };
   trackedProjects.forEach((p:any)=>{ (healthCounts as any)[projectHealth(p)]++; });
   const projCompletionPct = (p:any) => {

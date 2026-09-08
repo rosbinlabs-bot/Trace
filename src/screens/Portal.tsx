@@ -18,7 +18,6 @@ export default function Portal(){
   // the portal (both reach this screen only once App.tsx's route Gate confirms capability >= View) --
   // Edit or above unlocks the sign-off actions below; exactly View means read-only: the timeline is
   // visible but Approve/Request Changes/Remark are hidden, since the account can only look, not act.
-  const canAct = S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'Edit');
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
   const [openPhase, setOpenPhase] = useState({});
   const [openMs, setOpenMs] = useState({});
@@ -75,6 +74,11 @@ export default function Portal(){
   const roster = S.buildRoster(projMeta, admin);
   const clientOwner = (projMeta.clients||[]).find(c=>c.owner);
   const notifyProject = (payload) => addNotification({ projectId:activeProj, project:projMeta.name, tags: roster.map(r=>r.name), priority:'high', ...payload });
+  // On Hold projects are frozen everywhere in the app (dashboard, notifications, approvals) --
+  // the Client Portal freezes the same way: sign-off actions turn off and a paused notice shows,
+  // same as a View-only account, until the project is resumed.
+  const frozen = S.isProjectFrozen(projMeta);
+  const canAct = S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'Edit') && !frozen;
 
   // Recent Activity — the same shared notification feed the header bell reads (PhaseDataContext),
   // scoped down to just this active project. The header bell itself stays org-wide/role-scoped as
@@ -269,7 +273,11 @@ export default function Portal(){
       )}
 
       {!canAct && (
-        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">You have view-only access to this portal — sign-off and remarks are turned off for this account.</div>
+        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+          {frozen
+            ? 'This project is currently On Hold — sign-off and remarks are paused until it resumes. Billing details remain up to date.'
+            : 'You have view-only access to this portal — sign-off and remarks are turned off for this account.'}
+        </div>
       )}
 
       {/* Project Health — on track / delayed at a glance, plus exactly what's late if anything is,

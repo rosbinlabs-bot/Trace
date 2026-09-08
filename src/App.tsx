@@ -1052,7 +1052,18 @@ export default function App() {
     });
   };
 
+  // A project On Hold stops generating new notifications altogether -- milestone/sub task activity,
+  // remarks, mentions, client sign-off nudges, everything -- until it's resumed. Billing keeps
+  // notifying regardless (the one call site that raises 'Billing Due Soon' below), since billing is
+  // explicitly meant to stay live through a hold. Resolves by projectId when the caller sent one
+  // (almost everyone does), falling back to matching on the project name for the few call sites that
+  // only ever recorded that (e.g. Calendar reminders). Historical notifications already in the feed
+  // from before the hold are left alone -- this only stops NEW ones from being raised.
   const addNotification = (n: any) => {
+    if (n.type !== 'Billing Due Soon') {
+      const proj = n.projectId ? projects.find((p: any) => p.id === n.projectId) : projects.find((p: any) => p.name === n.project);
+      if (proj && S.isProjectFrozen(proj)) return;
+    }
     const full = { id: S.uid('NOTIF'), when: S.TODAY_ISO, priority: 'normal', ...n };
     setNotifications((ns) => [full, ...ns]);
     db.insertNotification(full).catch((e) => console.error('Supabase sync failed:', e));

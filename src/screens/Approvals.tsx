@@ -12,7 +12,8 @@ export default function Approvals(){
   // Phase Management (same deep-link shape the Dashboard's Approval Bottlenecks widget and the
   // notification bell already use — see shared.tsx's notificationTarget).
   const allEntries: any[] = [];
-  projects.forEach((p:any)=>{
+  // On Hold projects are frozen: no approvals surface here until the project is resumed.
+  projects.filter((p:any)=>!S.isProjectFrozen(p)).forEach((p:any)=>{
     (tree[p.id]||[]).forEach((ph:any)=>{
       ph.milestones.forEach((ms:any)=>{
         allEntries.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });

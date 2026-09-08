@@ -1197,7 +1197,11 @@ export const billingDueSoon = (p: any) => { const d = nextBillingDueDate(p); ret
 export const computeInsights = ({ tree, risks, issues, changes, projects, team }: any) => {
   const insights = [];
   const allEntries = [];
-  (projects||[]).forEach(p=>{
+  // Work-item insights (overdue, client-pending, extension-needed) exclude a project On Hold --
+  // billing (dueSoon below) deliberately stays on the raw, unfiltered `projects` list, since billing
+  // keeps running regardless of hold status.
+  const workProjects = (projects||[]).filter(p=>!isProjectFrozen(p));
+  workProjects.forEach(p=>{
     (tree[p.id]||[]).forEach(ph=>{
       ph.milestones.forEach(ms=>{
         allEntries.push({ item:ms, project:p.name });
@@ -1233,7 +1237,7 @@ export const computeInsights = ({ tree, risks, issues, changes, projects, team }
   if (pendingChanges.length) {
     insights.push({ icon:'note', tone:'blue', text:`${pendingChanges.length} change request(s) awaiting a decision. Unresolved change requests tend to stall billing and scope conversations.` });
   }
-  const extNeeded = (projects||[]).filter(needsExtension);
+  const extNeeded = workProjects.filter(needsExtension);
   if (extNeeded.length) {
     insights.push({ icon:'calendar', tone:'orange', text:`${extNeeded.length} project(s) have passed their end date, still marked In Progress, with no extension on file: ${extNeeded.map(p=>p.name).join(', ')}.` });
   }
@@ -1619,7 +1623,10 @@ export const phaseMilestonesReady = (ph) => ph.milestones.length>0 && ph.milesto
 export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, admin: any) => {
   if (!myProfile) return [];
   const out: any[] = [];
-  projects.forEach((p: any) => {
+  // A project On Hold contributes nothing to anyone's "awaiting my approval" list until it resumes --
+  // whatever it was mid-review on stays frozen in place (Phases.tsx blocks further action on it too),
+  // so it would otherwise sit here forever nagging when nobody can actually act on it.
+  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
     const myEntry = (p.team||[]).find((t: any) => t.name===myProfile.name);
     const myLevel = myEntry?.level || myProfile.level || designationHierarchyLevel(myProfile.designation, admin) || 'L9';
     const msApprover = approverLevelFor('milestone', p);
@@ -1647,7 +1654,10 @@ export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, a
 // does not re-scope by project itself. Used by App.tsx's login pop-up (PendingApprovalsFlash).
 export const clientPendingApprovals = (projects: any[], tree: any): any[] => {
   const out: any[] = [];
-  projects.forEach((p: any) => {
+  // Same On Hold exclusion as myPendingApprovals above -- Portal.tsx's own sign-off actions are
+  // frozen for a held project too (see its `canAct` gate), so nothing here should ask a client to
+  // sign off on one anyway.
+  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
         if (ms.review==='Implemented Review' && ms.headApprovedImpl && !ms.clientApprovedImpl) out.push({ project:p.name, label:`Sign off milestone — ${ms.name}`, days:daysPending(ms), projectId:p.id, phaseId:ph.id, msId:ms.id });
@@ -1685,7 +1695,9 @@ export const INACTIVITY_NOTICE_DAYS = 2;
 export const totalPendingApprovals = (projects: any[], tree: any): { total: number; stuck: number } => {
   let total = 0, stuck = 0;
   const tally = (item: any) => { if (item.review) { total++; if ((daysPending(item) ?? 0) >= STUCK_APPROVAL_DAYS) stuck++; } };
-  projects.forEach((p: any) => {
+  // Same On Hold exclusion -- the sidebar's Phase Management/Client Approval badge shouldn't keep
+  // counting a held project's frozen-in-place pending items.
+  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
         tally(ms);
