@@ -778,7 +778,9 @@ function ProductivityPanel(){
   const { email } = React.useContext(S.CurrentUserContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
-  const teammates = (admin.users||[]).filter((u:any)=>u.type!=='Client');
+  // Suspended/deactivated accounts aren't shown or counted here either -- same rule Team
+  // Management applies to itself.
+  const teammates = (admin.users||[]).filter((u:any)=>u.type!=='Client' && (!u.status || u.status==='Active'));
   const benchFor = (userId:string) => ({ ...S.DEFAULT_PRODUCTIVITY_BENCHMARK, ...((admin.productivity||{})[userId]||{}) });
   const setBench = (userId:string, key:string, val:string) => {
     if(!canEdit) return;

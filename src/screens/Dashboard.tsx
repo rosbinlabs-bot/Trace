@@ -7,7 +7,12 @@ export default function Dashboard(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { risks, issues, changes } = React.useContext(S.GovernanceDataContext);
   const { projects } = React.useContext(S.ProjectsDataContext);
-  const { team } = React.useContext(S.TeamDataContext);
+  // A Suspended/deactivated account is never shown or counted on this dashboard -- same rule Team
+  // Management (Team.tsx) already applies to itself. Shadows `team` so every existing usage below
+  // (avgUtil/avgAvail/overloaded, dept averages, the Utilization KPI drill-down, computeInsights'
+  // overloadedMembers) picks this up automatically.
+  const { team: rawTeam } = React.useContext(S.TeamDataContext);
+  const team = rawTeam.filter((m:any) => !m.status || m.status === 'Active');
   const { invoices } = React.useContext(S.InvoicesDataContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
