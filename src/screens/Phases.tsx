@@ -422,7 +422,7 @@ export default function Phases(){
   // untouched/awaiting-review item regardless of deadline, which buried the handful that actually
   // needed attention today under everything due next month too.
   const daysUntil = (d) => d ? Math.floor((new Date(d).getTime() - new Date(S.TODAY_ISO).getTime())/86400000) : null;
-  const isUrgent = (d) => { const n = daysUntil(d); return n!==null && n<=2; }; // overdue (negative) or due within 2 days
+  const isUrgent = (d) => { const n = daysUntil(d); return n!==null && n<=3; }; // overdue (negative) or due within 3 days
   const msApproverLevel = S.approverLevelFor('milestone', projMeta);
   const stApproverLevel = S.approverLevelFor('subtask', projMeta);
   // Previously this whole block was skipped for actor==='L1', which meant L1 (the usual required
