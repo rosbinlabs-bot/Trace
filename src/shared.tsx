@@ -1136,11 +1136,19 @@ export const receiptOutstanding = (r: any): number => {
 // on where an entry came from.
 export const outstandingCollections = (projects: any[], invoices: any[]): any[] => {
   const out: any[] = [];
+  // A project On Hold is frozen (isProjectFrozen) everywhere else in the app -- Collections Aging
+  // and the Reports receivables list should stop counting its fee as due too, so it doesn't keep
+  // showing up as outstanding/overdue while work on it is paused. Billing display fields elsewhere
+  // (Revenue Collected KPI, Project Master's own Payment Receipts editing) are untouched -- this only
+  // affects what counts as an OPEN/outstanding receivable.
+  const frozenProjectIds = new Set((projects||[]).filter(isProjectFrozen).map((p:any)=>p.id));
   (invoices||[]).forEach((i:any) => {
     if (i.status==='Received' || !i.dueDate) return;
+    if (frozenProjectIds.has(i.project)) return;
     out.push({ id:i.id, project:i.project, dueDate:i.dueDate, amount:Number(i.amount)||0 });
   });
   (projects||[]).forEach((p:any) => {
+    if (isProjectFrozen(p)) return;
     (p.paymentReceipts||[]).forEach((r:any) => {
       if (r.status==='Received' || !r.due) return;
       const amount = receiptOutstanding(r);
