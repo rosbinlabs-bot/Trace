@@ -262,17 +262,41 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   }, [theme]);
 
   const location = useLocation();
+  const navigate = useNavigate();
   const active = location.pathname.split('/')[1] || 'dashboard';
+  // Phone-width screens can't usably show the desktop-oriented screens (Gantt, big data tables,
+  // Reports, Administration, etc.), and the person only needs a handful of things on the go -- so a
+  // STAFF account (not a client, which already has its own short CLIENT_NAV) viewing on a phone gets
+  // swapped to S.MOBILE_NAV instead. Tracks actual viewport width live (resize/orientation change),
+  // not a one-time check, so rotating a tablet or resizing a window updates it immediately.
+  const [isMobile, setIsMobile] = React.useState(() => typeof window !== 'undefined' && window.innerWidth < S.MOBILE_BREAKPOINT_PX);
+  React.useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < S.MOBILE_BREAKPOINT_PX);
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+  const isMobileStaff = isMobile && role !== 'client';
   // Clients get a hard-restricted sidebar (just Client Portal + Project Structure) and, below, a
   // matching restricted route table -- the nav swap alone wouldn't stop someone from typing another
   // URL directly, so both have to agree. Everyone else's sidebar is the full S.NAV list filtered down
   // to whatever S.NAV_MODULE says their capabilityFor() that module allows -- an item whose module
   // resolves to 'None' (e.g. Administration for an Officer-level Associate) simply isn't shown, and
   // the matching <Gate> below blocks the route itself so it can't be reached by typing the URL either.
-  const navGroups = role === 'client' ? S.CLIENT_NAV : S.NAV
-    .map((g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) }))
-    .filter((g: any) => g.items.length > 0);
+  // On mobile (isMobileStaff), swap to S.MOBILE_NAV instead -- the redirect effect just below is what
+  // actually stops a typed/bookmarked URL from reaching a desktop-only screen, same role the <Gate>
+  // route guards play for capability restrictions.
+  const navCapFilter = (g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) });
+  const navGroups = role === 'client' ? S.CLIENT_NAV
+    : (isMobileStaff ? S.MOBILE_NAV : S.NAV).map(navCapFilter).filter((g: any) => g.items.length > 0);
   const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
+  // Direct/typed/bookmarked URLs bypass the sidebar swap above, so this is the actual enforcement:
+  // any staff account on a phone-width screen sitting on a route outside S.MOBILE_ALLOWED_ROUTE_IDS
+  // gets bounced to the mobile Dashboard. Re-checked on every navigation and every resize/rotation
+  // (isMobileStaff/active in the dependency array), so rotating into portrait mid-session or clicking
+  // a stale link both catch it immediately, not just on next full page load.
+  React.useEffect(() => {
+    if (isMobileStaff && !S.MOBILE_ALLOWED_ROUTE_IDS.has(active)) navigate('/dashboard', { replace: true });
+  }, [isMobileStaff, active, navigate]);
 
   // Once the shell has actually rendered and the browser is idle (i.e. after the current screen's
   // own chunk + data are done, not competing with them), quietly fetch every other sidebar screen's
@@ -312,7 +336,11 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
         ? <InactivityFlash days={inactivityDays} />
         : null}
       <div className="flex h-screen overflow-hidden bg-slate-100">
-        {/* Sidebar */}
+        {/* Sidebar -- hidden on a phone-width staff session (isMobileStaff): a fixed-width side rail
+            has nowhere to go on a narrow screen, so mobile gets the bottom tab bar (below <main>)
+            instead. Desktop and client accounts are unaffected -- this only swaps out for
+            isMobileStaff specifically. */}
+        {!isMobileStaff && (
         <aside className={`bg-white border-r border-slate-200 flex flex-col transition-all ${collapsed ? 'w-16' : 'w-60'}`}>
           <div className="h-14 flex items-center px-4 border-b border-slate-100 gap-2">
             <div className="w-8 h-8 rounded-lg bg-brand-600 text-white flex items-center justify-center">
@@ -384,13 +412,16 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
             ))}
           </nav>
         </aside>
+        )}
         {/* Main */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <header className="h-14 bg-white border-b border-slate-200 flex items-center justify-between px-5">
             <div className="flex items-center gap-3">
+              {!isMobileStaff && (
               <button onClick={() => setCollapsed(!collapsed)} className="text-slate-400 hover:text-slate-600">
                 <S.Icon name="menu" className="w-5 h-5" />
               </button>
+              )}
               <div className="text-sm text-slate-400">
                 Trace PMT <span className="mx-1">/</span> <span className="text-slate-700 font-medium">{activeLabel}</span>
               </div>
@@ -425,7 +456,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
               </div>
             </div>
           </header>
-          <main className="flex-1 overflow-y-auto p-5 bg-slate-100">
+          <main className={`flex-1 overflow-y-auto p-5 bg-slate-100 ${isMobileStaff ? 'pb-24' : ''}`}>
             <Suspense fallback={<div className="flex items-center justify-center py-24"><S.Icon name="logo" className="w-8 h-8 text-brand-300 animate-pulse"/></div>}>
             <Routes>
               {role === 'client' ? (
@@ -485,6 +516,40 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
             </Routes>
             </Suspense>
           </main>
+          {/* Bottom tab bar -- the mobile-staff equivalent of the sidebar, same S.MOBILE_NAV list so
+              it can never drift out of sync with what's actually reachable (the redirect effect
+              above enforces the same list for direct URLs). Fixed to the viewport, not the scrolling
+              <main>, so it stays put while a long page scrolls underneath it. */}
+          {isMobileStaff && (
+            <nav className="fixed bottom-0 inset-x-0 z-40 bg-white border-t border-slate-200 flex items-stretch h-16 pb-[env(safe-area-inset-bottom)]">
+              {navGroups.flatMap((g: any) => g.items).map((item: any) => {
+                const badgeCount = item.id === 'approvals' ? pendingApprovalsBadge
+                  : item.id === 'communication' ? { total: pingUnread, stuck: pingUnread > 0 ? 1 : 0 }
+                  : { total: 0, stuck: 0 };
+                return (
+                  <NavLink
+                    key={item.id}
+                    to={`/${item.id}`}
+                    className={({ isActive }) =>
+                      `flex-1 flex flex-col items-center justify-center gap-0.5 text-[11px] ${
+                        isActive ? 'text-brand-700 font-medium' : 'text-slate-500'
+                      }`
+                    }
+                  >
+                    <span className="relative inline-flex">
+                      <S.Icon name={item.id} className="w-5 h-5" />
+                      {badgeCount.total > 0 && (
+                        <span className={`absolute -top-1 -right-1.5 min-w-[14px] h-[14px] px-[3px] rounded-full text-white text-[8px] font-semibold flex items-center justify-center leading-none ring-2 ring-white ${badgeCount.stuck > 0 ? 'bg-red-500' : 'bg-slate-400'}`}>
+                          {badgeCount.total > 9 ? '9+' : badgeCount.total}
+                        </span>
+                      )}
+                    </span>
+                    {item.label}
+                  </NavLink>
+                );
+              })}
+            </nav>
+          )}
         </div>
       </div>
     </div>

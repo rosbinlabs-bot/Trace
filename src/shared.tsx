@@ -1075,6 +1075,24 @@ export const CLIENT_NAV = [
   ]},
 ];
 
+// Mobile sidebar/route restriction for STAFF accounts (Admin/Super Admin/Manager/Officer) -- the
+// desktop-oriented screens (Gantt, big data tables, Reports, Administration, etc.) aren't usable on
+// a phone-width screen, so a signed-in staff account viewing on mobile (App.tsx's isMobile check,
+// window width < MOBILE_BREAKPOINT_PX) gets swapped to just this short list instead of the full NAV,
+// same pattern as CLIENT_NAV above. The matching route guard in App.tsx (Shell's mobile redirect
+// effect) enforces this for direct/typed URLs too, not just the sidebar. Client accounts are
+// unaffected -- CLIENT_NAV above is already a short, mobile-reasonable list on its own.
+export const MOBILE_BREAKPOINT_PX = 768;
+export const MOBILE_NAV = [
+  { group:'Mobile', items:[
+    { id:'dashboard', label:'Dashboard' },
+    { id:'approvals', label:'Client Approval' },
+    { id:'communication', label:'Ping' },
+    { id:'calendar', label:'Calendar' },
+  ]},
+];
+export const MOBILE_ALLOWED_ROUTE_IDS = new Set(MOBILE_NAV.flatMap(g => g.items.map(i => i.id)));
+
 
 // Which capability-matrix MODULE governs each staff nav item/route — App.tsx (Shell) uses this to
 // hide sidebar items and hard-gate the matching route when the signed-in account's capabilityFor()
