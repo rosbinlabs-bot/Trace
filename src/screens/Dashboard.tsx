@@ -22,7 +22,7 @@ export default function Dashboard(){
   // every project they can see. Distinct from the "Approvals Pending"/"Approval Bottlenecks" widgets
   // below, which are the COO's org-wide view of who's sitting on what.
   const myApprovals = S.myPendingApprovals(projects, tree, myProfile, admin);
-  const dueBillings = projects.filter(S.billingDueSoon).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
+  const dueBillings = projects.filter((p:any) => S.billingDueSoon(p) && !S.isProjectFrozen(p)).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
   // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
   // of records behind its number, so a number is never a dead end.
