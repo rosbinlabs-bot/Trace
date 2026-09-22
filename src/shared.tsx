@@ -192,6 +192,15 @@ export const projectWeight = (p, categories) => isPremiumProject(p, categories) 
 // seed array directly.
 export const ProjectsDataContext = React.createContext<any>({ projects: PROJECTS, setProjects: ()=>{} });
 
+// Full, unscoped project list -- ProjectsDataContext above is deliberately narrowed per-account
+// (S.staffVisibleProjects in App.tsx: a non-Admin/Super-Admin only sees projects they're personally
+// tagged to). Document Management (Documents.tsx) needs every project's attachments visible/
+// downloadable to every active teammate regardless of tagging -- only editing (attaching files, done
+// from Phase Management's "+ Attach" control) stays gated to a project's own team, which the existing
+// per-project readOnly/team checks in Phases.tsx already enforce. So Documents.tsx reads project
+// metadata (name/industry, for its tabs and table) from this context instead of the scoped one.
+export const AllProjectsDataContext = React.createContext<any>({ projects: PROJECTS });
+
 // Team roster, loaded from and synced to Supabase the same way as every other data type — added
 // from Team Management, and consumed elsewhere (Project Master's Strategic Lead/Project Head/PM/
 // Associate pickers, Dashboard/Reports utilization insights) via this same live context.

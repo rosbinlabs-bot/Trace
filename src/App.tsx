@@ -1255,6 +1255,7 @@ export default function App() {
     <BrowserRouter>
       <S.AdminDataContext.Provider value={{ admin, patchAdmin }}>
         <S.SettingsContext.Provider value={{ settings, setSettings }}>
+          <S.AllProjectsDataContext.Provider value={{ projects }}>
           <S.ProjectsDataContext.Provider value={{ projects: visibleProjects, setProjects }}>
             <S.TeamDataContext.Provider value={{ team: liveTeam, setTeam: () => {} }}>
               <S.PhaseDataContext.Provider value={{ tree: phaseTree, setTree: setPhaseTree, notifications: visibleNotifications, addNotification }}>
@@ -1282,6 +1283,7 @@ export default function App() {
               </S.PhaseDataContext.Provider>
             </S.TeamDataContext.Provider>
           </S.ProjectsDataContext.Provider>
+          </S.AllProjectsDataContext.Provider>
         </S.SettingsContext.Provider>
       </S.AdminDataContext.Provider>
     </BrowserRouter>

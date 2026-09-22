@@ -4,7 +4,11 @@ import * as db from '../db';
 
 export default function Documents(){
   const { tree } = React.useContext(S.PhaseDataContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  // Every project's docs, not just the ones this account is personally tagged to (see
+  // AllProjectsDataContext in shared.tsx) -- Document Management is a cross-project archive every
+  // active teammate can view/download regardless of project team membership; attaching a file is
+  // still gated per-project by Phase Management's own team-based edit checks.
+  const { projects } = React.useContext(S.AllProjectsDataContext);
   const [activeProj, setActiveProj] = useState('ALL');
   const scopedProjects = activeProj==='ALL' ? projects : projects.filter(p=>p.id===activeProj);
 
