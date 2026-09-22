@@ -150,7 +150,7 @@ export default function Calendar(){
     <div>
       <div className="flex flex-wrap justify-between items-center gap-2 mb-4">
         <S.SectionTitle sub="Deadlines from Phase Management, plus your own meetings, tasks & visits">Calendar</S.SectionTitle>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
           <select value={projFilter} onChange={e=>setProjFilter(e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1.5 text-xs focus:outline-none">
             <option value="All">All Projects</option>
             {myTaggedProjects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
@@ -169,8 +169,8 @@ export default function Calendar(){
         <span className="flex items-center gap-1 text-slate-400">{canEditCalendar ? '· click a date to add an event, or click an event to edit it' : '· view only'}</span>
       </div>
 
-      <div className="flex gap-4 items-start">
-      <S.Card className="p-5 flex-1 min-w-0">
+      <div className="flex flex-col lg:flex-row gap-4 items-start">
+      <S.Card className="p-3 sm:p-5 flex-1 min-w-0 w-full">
         <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=><div key={d}>{d}</div>)}</div>
         <div className="grid grid-cols-7 gap-1">
           {Array.from({length: totalCells}).map((_,i)=>{
@@ -183,7 +183,7 @@ export default function Calendar(){
             const isSelected = dateStr && dateStr===selectedDate;
             return (
               <div key={i} onClick={()=>inMonth && canEditCalendar && openAdd(dateStr)}
-                className={`min-h-[80px] rounded-lg border p-1 text-xs align-top ${inMonth?`bg-white border-slate-200 ${canEditCalendar?'cursor-pointer hover:border-brand-300':''}`:'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
+                className={`min-h-[56px] sm:min-h-[80px] rounded-lg border p-0.5 sm:p-1 text-xs align-top ${inMonth?`bg-white border-slate-200 ${canEditCalendar?'cursor-pointer hover:border-brand-300':''}`:'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
                 {inMonth && <>
                   <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}</div>
                   <div className="space-y-0.5 mt-1">
@@ -223,12 +223,12 @@ export default function Calendar(){
 
       {/* Project legend — every project I'm tagged to, each with its own distinct color (colorForProject
           above), matching its events/deadlines on the calendar to the left. */}
-      <S.Card className="p-4 w-44 shrink-0">
+      <S.Card className="p-4 w-full lg:w-44 shrink-0">
         <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Project</div>
         {distinctProjectNames.length===0 ? (
           <div className="text-xs text-slate-400">You're not tagged to any projects yet.</div>
         ) : (
-          <div className="space-y-1.5">
+          <div className="flex flex-wrap gap-x-3 gap-y-1.5 lg:flex-col lg:space-y-1.5 lg:gap-0">
             {distinctProjectNames.map(n=>{ const pc = colorForProject(n); return (
               <div key={n} className="flex items-center gap-1.5 text-xs">
                 <span className={`w-2 h-2 rounded-full shrink-0 ${pc.dot}`}></span>
@@ -241,8 +241,8 @@ export default function Calendar(){
       </div>
 
       {editingEvent && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={closeModal}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6" onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={closeModal}>
+          <div className="bg-white rounded-xl max-w-md w-full p-6 my-8 sm:my-0 max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-lg font-semibold">{editingEvent.id ? 'Edit Event' : 'New Event'}</h3>
               <button className="text-slate-400 hover:text-slate-600" onClick={closeModal}>✕</button>
