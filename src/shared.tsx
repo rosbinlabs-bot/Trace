@@ -1094,7 +1094,16 @@ export const MOBILE_NAV = [
     { id:'calendar', label:'Calendar' },
   ]},
 ];
+// Super Admin gets a 5th tab, Budget, appended (2026-09-23 request) -- Budget is a Super-Admin-only
+// concern day to day, so it's not worth a slot in every staff account's bar, just theirs. App.tsx
+// picks between this and the plain MOBILE_NAV above via S.isSuperAdmin(email, admin).
+export const MOBILE_NAV_SUPER_ADMIN = [
+  { group:'Mobile', items:[...MOBILE_NAV[0].items, { id:'budget', label:'Budget' }] },
+];
+export const mobileNavFor = (isSuper: boolean) => isSuper ? MOBILE_NAV_SUPER_ADMIN : MOBILE_NAV;
 export const MOBILE_ALLOWED_ROUTE_IDS = new Set(MOBILE_NAV.flatMap(g => g.items.map(i => i.id)));
+export const MOBILE_ALLOWED_ROUTE_IDS_SUPER_ADMIN = new Set(MOBILE_NAV_SUPER_ADMIN.flatMap(g => g.items.map(i => i.id)));
+export const mobileAllowedRouteIdsFor = (isSuper: boolean) => isSuper ? MOBILE_ALLOWED_ROUTE_IDS_SUPER_ADMIN : MOBILE_ALLOWED_ROUTE_IDS;
 
 
 // Which capability-matrix MODULE governs each staff nav item/route — App.tsx (Shell) uses this to

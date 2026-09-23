@@ -286,8 +286,11 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // actually stops a typed/bookmarked URL from reaching a desktop-only screen, same role the <Gate>
   // route guards play for capability restrictions.
   const navCapFilter = (g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) });
+  // Super Admin gets a 5th mobile tab (Budget) the rest of staff don't -- S.mobileNavFor picks the
+  // right base list before the usual capability filter runs on top of it.
+  const isSuperAdminAcct = role !== 'client' && S.isSuperAdmin(email, admin);
   const navGroups = role === 'client' ? S.CLIENT_NAV
-    : (isMobileStaff ? S.MOBILE_NAV : S.NAV).map(navCapFilter).filter((g: any) => g.items.length > 0);
+    : (isMobileStaff ? S.mobileNavFor(isSuperAdminAcct) : S.NAV).map(navCapFilter).filter((g: any) => g.items.length > 0);
   const activeLabel = navGroups.flatMap((g: any) => g.items).find((i: any) => i.id === active)?.label;
   // Direct/typed/bookmarked URLs bypass the sidebar swap above, so this is the actual enforcement:
   // any staff account on a phone-width screen sitting on a route outside S.MOBILE_ALLOWED_ROUTE_IDS
@@ -295,8 +298,8 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // (isMobileStaff/active in the dependency array), so rotating into portrait mid-session or clicking
   // a stale link both catch it immediately, not just on next full page load.
   React.useEffect(() => {
-    if (isMobileStaff && !S.MOBILE_ALLOWED_ROUTE_IDS.has(active)) navigate('/dashboard', { replace: true });
-  }, [isMobileStaff, active, navigate]);
+    if (isMobileStaff && !S.mobileAllowedRouteIdsFor(isSuperAdminAcct).has(active)) navigate('/dashboard', { replace: true });
+  }, [isMobileStaff, isSuperAdminAcct, active, navigate]);
 
   // Once the shell has actually rendered and the browser is idle (i.e. after the current screen's
   // own chunk + data are done, not competing with them), quietly fetch every other sidebar screen's
