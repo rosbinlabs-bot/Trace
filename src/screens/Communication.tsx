@@ -379,6 +379,9 @@ export default function Communication() {
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
   const [activeProj, setActiveProj] = useState(projects[0]?.id);
+  // Mobile-only (below md): which single pane is showing. Starts on the channel list unless
+  // there's only one channel, in which case skip straight to it. md: and up never reads this.
+  const [mobileView, setMobileView] = useState<'channels' | 'feed' | 'thread'>(() => projects.length === 1 ? 'feed' : 'channels');
   // If the account's visible-project list changes (e.g. removed from a project's team) and the
   // currently selected channel disappears from it, fall back to the first one still available.
   React.useEffect(() => {
@@ -442,6 +445,7 @@ export default function Communication() {
     if (st.projectId === activeProj) {
       setOpenThreadId(st.threadId || null);
       setHighlightId(st.openId || null);
+      setMobileView(st.threadId ? 'thread' : 'feed');
     } else {
       setPendingDeepLink({ threadId: st.threadId || null, openId: st.openId || null });
       setActiveProj(st.projectId);
@@ -453,6 +457,7 @@ export default function Communication() {
     if (pendingDeepLink) {
       setOpenThreadId(pendingDeepLink.threadId);
       setHighlightId(pendingDeepLink.openId);
+      setMobileView(pendingDeepLink.threadId ? 'thread' : 'feed');
       setPendingDeepLink(null);
     } else {
       setOpenThreadId(null);
@@ -521,13 +526,18 @@ export default function Communication() {
   return (
     <div>
       <S.SectionTitle sub="One channel per project, auto-populated with that project's team — updates, direction, files, and voice notes in one running feed">Ping</S.SectionTitle>
-      <div className="flex gap-3 overflow-x-auto pb-1" style={{ alignItems: 'flex-start' }}>
+      {/* Below md (768px, same cutoff the mobile tab bar itself uses): one full-width pane at a
+          time -- channel list, then feed, then thread -- driven by mobileView. md: and up shows all
+          panes side by side as before, and ignores mobileView entirely. A 240px channel rail plus a
+          320px-minimum feed (plus a 320px thread panel, when open) never fit a ~360-400px phone
+          screen, so below md this was an awkward sideways-scrolling row instead of something usable. */}
+      <div className="flex flex-col md:flex-row gap-3 md:overflow-x-auto pb-1" style={{ alignItems: 'flex-start' }}>
         {/* Channel rail — one entry per project, same name, mirrors Phase Management's project list */}
-        <S.Card className="p-2.5 w-60 shrink-0 space-y-1">
+        <S.Card className={`p-2.5 w-full md:w-60 md:shrink-0 space-y-1 ${mobileView === 'channels' ? 'block' : 'hidden'} md:block`}>
           {projects.map((p: any) => {
             const unread = S.pingUnreadCount(messages, myEmail, readMap, p.id);
             return (
-              <button key={p.id} onClick={() => setActiveProj(p.id)}
+              <button key={p.id} onClick={() => { setActiveProj(p.id); setMobileView('feed'); }}
                 className={`w-full text-left px-3 py-2.5 rounded-xl border ${activeProj === p.id ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
                 <div className={`flex items-center gap-1.5 text-sm truncate ${activeProj === p.id ? 'font-medium text-brand-700' : 'text-slate-700'}`}>
                   <S.Icon name="communication" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
@@ -540,8 +550,11 @@ export default function Communication() {
         </S.Card>
 
         {/* Channel feed */}
-        <S.Card className="p-4 flex-1 min-w-[320px]">
+        <S.Card className={`p-4 w-full md:flex-1 md:min-w-[320px] ${mobileView === 'feed' ? 'block' : 'hidden'} md:block`}>
           <div className="mb-3 pb-3 border-b border-slate-100">
+            <button onClick={() => setMobileView('channels')} className="md:hidden flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600 mb-2">
+              <span className="text-sm leading-none">‹</span> Channels
+            </button>
             <div className="text-sm font-semibold text-slate-800">{projMeta.name}</div>
             <div className="text-[11px] text-slate-400 mb-2">{roster.length} team member{roster.length === 1 ? '' : 's'} · visible to everyone tagged to this project</div>
             <div className="flex flex-wrap gap-1.5">
@@ -562,7 +575,7 @@ export default function Communication() {
               return (
                 <div key={m.id}>
                   <MessageRow m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
-                    replyCount={replies.length} onOpenThread={setOpenThreadId} onOpenTask={openTaskRef}
+                    replyCount={replies.length} onOpenThread={(id: string) => { setOpenThreadId(id); setMobileView('thread'); }} onOpenTask={openTaskRef}
                     highlighted={highlightId === m.id}
                     seenBy={m.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
                   {/* Replies now show right here in the main feed instead of staying hidden until
@@ -587,10 +600,13 @@ export default function Communication() {
 
         {/* Thread panel — opens alongside the feed when a message's Reply is clicked */}
         {threadParent && (
-          <S.Card className="p-4 w-80 shrink-0">
+          <S.Card className={`p-4 w-full md:w-80 md:shrink-0 ${mobileView === 'thread' ? 'block' : 'hidden'} md:block`}>
             <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
+              <button onClick={() => setMobileView('feed')} className="md:hidden flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600">
+                <span className="text-sm leading-none">‹</span> Back
+              </button>
               <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Thread</span>
-              <button onClick={() => setOpenThreadId(null)} className="text-slate-400 hover:text-slate-600">✕</button>
+              <button onClick={() => { setOpenThreadId(null); setMobileView('feed'); }} className="text-slate-400 hover:text-slate-600">✕</button>
             </div>
             <div className="space-y-3 mb-3 max-h-[45vh] overflow-y-auto overflow-x-hidden pr-1">
               <div className="pb-3 border-b border-slate-100">
