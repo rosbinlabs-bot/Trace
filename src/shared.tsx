@@ -1086,10 +1086,10 @@ export const MOBILE_BREAKPOINT_PX = 768;
 export const MOBILE_NAV = [
   { group:'Mobile', items:[
     { id:'dashboard', label:'Dashboard' },
-    // Swapped from 'Client Approval' to 'Monthly Plan' (2026-09-23, per COO request) -- Monthly
-    // Plan is what gets checked on the go; Client Approval is still reachable from the full
-    // sidebar on a wider/landscape screen, just not pinned to the mobile-portrait tab bar.
-    { id:'monthlyplan', label:'Monthly Plan' },
+    // 2026-09-23, per COO request: started as 'Client Approval', swapped to 'Monthly Plan', then
+    // swapped again to 'Project Structure' -- whichever of these isn't pinned here is still
+    // reachable from the full sidebar on a wider/landscape screen, just not in this tab bar.
+    { id:'structure', label:'Project Structure' },
     { id:'communication', label:'Ping' },
     { id:'calendar', label:'Calendar' },
   ]},
