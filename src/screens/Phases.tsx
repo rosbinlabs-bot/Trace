@@ -2,59 +2,6 @@ import React, { useState, useMemo, useEffect, useContext, useRef } from 'react';
 import { useLocation } from 'react-router-dom';
 import * as S from '../shared';
 import * as db from '../db';
-import { readCachedInsights, generateProjectInsights, formatTimeAgo } from '../aiInsights';
-
-// AI Insights panel at the bottom of Phase Management -- replaces the old static approval-workflow
-// rules blurb (the rules text itself now lives in the collapsed "How approvals work" <details> right
-// below this panel, so nothing is lost, it's just not taking up permanent space) with a short,
-// project-specific brief generated server-side (api/insights.ts) from THIS project's phase tree +
-// open risks (S.buildProjectInsightPayload). Auto-generates once per project per browser session
-// (cached in sessionStorage via aiInsights.ts) and offers a manual Refresh -- deliberately not on
-// every render/edit, since that would mean an API call per keystroke.
-function AIInsightsPanel({ projectId, projMeta, phases, risks }: any) {
-  const [state, setState] = useState<{ status: 'idle' | 'loading' | 'ready' | 'error'; result?: any; error?: string }>({ status: 'idle' });
-
-  const run = React.useCallback(async () => {
-    setState(s => ({ ...s, status: 'loading' }));
-    try {
-      const result = await generateProjectInsights(projectId, projMeta, phases, risks);
-      setState({ status: 'ready', result });
-    } catch (e: any) {
-      setState({ status: 'error', error: e?.message || 'Could not generate insights right now.' });
-    }
-  }, [projectId, projMeta, phases, risks]);
-
-  useEffect(() => {
-    if (!projectId) return;
-    const cached = readCachedInsights(projectId);
-    if (cached) { setState({ status: 'ready', result: cached }); return; }
-    run();
-    // Only re-run automatically when the project changes -- edits to phases/risks during the same
-    // visit don't retrigger a call; use Refresh for that.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
-
-  return (
-    <div className="mt-4 text-xs bg-white border border-slate-200 rounded-xl px-4 py-3">
-      <div className="flex items-center justify-between mb-1.5">
-        <div className="flex items-center gap-1.5 text-slate-500 font-medium">
-          <S.Icon name="sparkles" className="w-3.5 h-3.5 text-brand-600" />
-          <span>AI Insights</span>
-          {state.status === 'ready' && state.result?.generatedAt && (
-            <span className="text-[10px] text-slate-400 font-normal">· updated {formatTimeAgo(state.result.generatedAt)}</span>
-          )}
-        </div>
-        <button onClick={run} disabled={state.status === 'loading'} className="text-[11px] text-brand-600 hover:text-brand-700 disabled:opacity-40 disabled:cursor-not-allowed">
-          {state.status === 'loading' ? 'Generating…' : 'Refresh'}
-        </button>
-      </div>
-      {state.status === 'loading' && <div className="text-slate-400">Reviewing this project's phases, approvals and risks…</div>}
-      {state.status === 'error' && <div className="text-red-500">{state.error}</div>}
-      {state.status === 'ready' && <div className="text-slate-600 whitespace-pre-line leading-relaxed">{state.result.insights}</div>}
-      {state.status === 'idle' && <div className="text-slate-300">Select a project to see AI insights.</div>}
-    </div>
-  );
-}
 
 export default function Phases(){
   const location = useLocation();
@@ -64,7 +11,6 @@ export default function Phases(){
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
-  const { risks } = React.useContext(S.GovernanceDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
@@ -854,16 +800,12 @@ export default function Phases(){
         </S.Card>
       </div>
       )}
-      <AIInsightsPanel projectId={activeProj} projMeta={projMeta} phases={phases} risks={risks} />
-      <details className="mt-2 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-2.5">
-        <summary className="cursor-pointer select-none font-medium text-slate-600">How approvals work</summary>
-        <div className="mt-2 space-y-1.5">
-          <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
-          <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
-          <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
-          <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is no more than 7 days in the past, on a phase, milestone or sub task.</div>
-        </div>
-      </details>
+      <div className="mt-4 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-1.5">
+        <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
+        <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
+        <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
+        <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is no more than 7 days in the past, on a phase, milestone or sub task.</div>
+      </div>
 
       {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
           search-icon button on a sub task row. Reuses the same StatusControl/ApprovalFlow/AssigneeChips/
