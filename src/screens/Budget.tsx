@@ -222,7 +222,12 @@ export default function Budget() {
           <div className="text-[11px] font-semibold text-slate-600">Monthly targets & collection</div>
           <div className="text-[9px] text-slate-400">Collection is only editable for a month with nothing fetched automatically</div>
         </div>
-        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+        {/* 2 cols by default (phone width), stepping up to 4/6 at wider breakpoints -- at 4+ cols
+            on a true phone-width screen the "Target"/"Coll." label (fixed w-9) plus its input's own
+            min-content forces each grid track past the column's fair share, so the grid overflows
+            the page horizontally instead of wrapping (Budget wasn't reachable on mobile until it was
+            just added as a Super Admin tab, so this was never exercised at phone width before). */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-6 gap-2">
           {rows.map((r) => {
             const suggested = r.target == null ? S.suggestedMonthTarget(projects, r.ym) : null;
             const needsManual = !r.isFuture && !(r.autoActual != null && r.autoActual > 0);
