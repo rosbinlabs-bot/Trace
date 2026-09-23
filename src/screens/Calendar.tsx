@@ -43,7 +43,7 @@ export default function Calendar(){
   // and can silently roll the date back a day (and a whole month, at the 1st) in +offset timezones.
   const [year, setYear] = useState(Number(S.TODAY_ISO.slice(0,4)));
   const [month, setMonth] = useState(Number(S.TODAY_ISO.slice(5,7))-1); // 0-indexed
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(S.TODAY_ISO);
   const [editingEvent, setEditingEvent] = useState(null); // draft object while the Add/Edit modal is open
 
   // Deep link from a notification click (shared.tsx's notificationTarget) — jumps to the right month
@@ -118,6 +118,13 @@ export default function Calendar(){
 
   const totalCells = Math.ceil((startWeekday+daysInMonth)/7)*7;
 
+  // Full-text "Selected day" agenda (rendered below the grid) -- the grid itself only has room for
+  // a handful of truncated 10px chips per cell, unreadable on a phone-width screen. Tapping any date
+  // (canEditCalendar or not -- a client couldn't select a date at all before this) surfaces
+  // everything on that day here, in plain readable rows, no truncation.
+  const selectedDayEvents = selectedDate ? (eventsByDate[selectedDate]||[]) : [];
+  const selectedDayDeadlines = selectedDate ? (deadlineMap[selectedDate]||[]) : [];
+
   const openAdd = (dateStr) => { setSelectedDate(dateStr); setEditingEvent({ id:null, date:dateStr||S.TODAY_ISO, type:'Meeting', title:'', project:projFilterName||'', tags:[], status:'Pending' }); };
   const openEdit = (ev) => setEditingEvent({...ev});
   const closeModal = () => setEditingEvent(null);
@@ -166,7 +173,7 @@ export default function Calendar(){
 
       <div className="flex items-center gap-3 mb-3 text-[11px] text-slate-500">
         {S.EVENT_TYPES.map(t=>(<span key={t} className="flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-full ${S.EVENT_TYPE_COLOR[t].dot}`}></span>{t}</span>))}
-        <span className="flex items-center gap-1 text-slate-400">{canEditCalendar ? '· click a date to add an event, or click an event to edit it' : '· view only'}</span>
+        <span className="flex items-center gap-1 text-slate-400">{canEditCalendar ? '· click a date to add an event (full agenda shows below), or click an event to edit it' : '· tap a date to see its full agenda below'}</span>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 items-start">
@@ -181,12 +188,39 @@ export default function Calendar(){
             const dayCalEvents = dateStr ? (eventsByDate[dateStr]||[]) : [];
             const isToday = dateStr===S.TODAY_ISO;
             const isSelected = dateStr && dateStr===selectedDate;
+            // Selecting a date is now for everyone (clients included -- they had no way to see a
+            // day's full contents before this), and only ADDITIONALLY opens the Add modal for
+            // canEditCalendar, exactly as it already did.
+            const selectHandler = () => {
+              if(!inMonth) return;
+              setSelectedDate(dateStr);
+              if(canEditCalendar) openAdd(dateStr);
+            };
+            const totalDayItems = dayCalEvents.length + dayDeadlines.length;
             return (
-              <div key={i} onClick={()=>inMonth && canEditCalendar && openAdd(dateStr)}
-                className={`min-h-[56px] sm:min-h-[80px] rounded-lg border p-0.5 sm:p-1 text-xs align-top ${inMonth?`bg-white border-slate-200 ${canEditCalendar?'cursor-pointer hover:border-brand-300':''}`:'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
+              <div key={i} onClick={selectHandler}
+                className={`min-h-[44px] sm:min-h-[80px] rounded-lg border p-0.5 sm:p-1 text-xs align-top ${inMonth?'bg-white border-slate-200 cursor-pointer hover:border-brand-300':'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
                 {inMonth && <>
                   <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}</div>
-                  <div className="space-y-0.5 mt-1">
+
+                  {/* Phone-width (<sm): the grid is only ~46px per cell, nowhere near enough room for
+                      readable chip text -- a day number plus a row of small colored dots is all this
+                      size can honestly show. Full detail for whichever date is selected lives in the
+                      "Selected day" agenda panel below the grid instead. */}
+                  {totalDayItems>0 && (
+                    <div className="flex flex-wrap gap-0.5 mt-1 sm:hidden">
+                      {[...dayCalEvents, ...dayDeadlines].slice(0,4).map((it:any, idx:number)=>{
+                        const pc = it.project ? colorForProject(it.project) : null;
+                        const dotCls = pc ? pc.dot : (it.type ? (S.EVENT_TYPE_COLOR[it.type]||S.EVENT_TYPE_COLOR.Meeting).dot : 'bg-slate-400');
+                        return <span key={idx} className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`}/>;
+                      })}
+                      {totalDayItems>4 && <span className="text-[8px] text-slate-400 leading-none">+{totalDayItems-4}</span>}
+                    </div>
+                  )}
+
+                  {/* sm and up: the original full chip-per-item rendering, unchanged -- there's
+                      enough room here for it to actually be readable. */}
+                  <div className="space-y-0.5 mt-1 hidden sm:block">
                     {dayCalEvents.map(ev=>{
                       // Chip background/text is colored per-PROJECT when one is set, so the same
                       // project's events read as the same color everywhere on the calendar and in the
@@ -239,6 +273,59 @@ export default function Calendar(){
         )}
       </S.Card>
       </div>
+
+      {/* Selected-day agenda -- full, un-truncated text for whichever date is selected, since the
+          grid above (especially at phone width, where it's just a day number + dots) can't show
+          readable detail per cell. Tapping any date selects it here, for everyone including clients
+          (who previously had no way to see a day's contents at all). */}
+      <S.Card className="p-4 mt-4">
+        <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
+          <div>
+            <div className="text-sm font-semibold text-slate-700">
+              {selectedDate ? new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric', year:'numeric' }) : 'Select a date'}
+            </div>
+            <div className="text-[11px] text-slate-400">{selectedDate ? `${selectedDayEvents.length + selectedDayDeadlines.length} item${(selectedDayEvents.length + selectedDayDeadlines.length)===1?'':'s'} on this day` : 'Tap a date on the calendar above'}</div>
+          </div>
+          {canEditCalendar && selectedDate && (
+            <button onClick={()=>openAdd(selectedDate)} className="text-xs px-2.5 py-1.5 rounded-lg bg-brand-500 hover:bg-brand-600 text-white whitespace-nowrap">+ Add event</button>
+          )}
+        </div>
+        {(!selectedDate || (selectedDayEvents.length===0 && selectedDayDeadlines.length===0)) ? (
+          <div className="text-xs text-slate-400">{selectedDate ? `Nothing on this day${canEditCalendar ? ' — tap "+ Add event" to create one.' : '.'}` : ''}</div>
+        ) : (
+          <div className="space-y-1.5">
+            {selectedDayEvents.map((ev:any)=>{
+              const typeColor = S.EVENT_TYPE_COLOR[ev.type]||S.EVENT_TYPE_COLOR.Meeting;
+              const projColor = ev.project ? colorForProject(ev.project) : null;
+              const cancelled = ev.status==='Cancelled'; const done = ev.status==='Completed';
+              return (
+                <div key={ev.id} onClick={()=>canEditCalendar && openEdit(ev)}
+                  className={`flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2 ${canEditCalendar?'cursor-pointer hover:border-brand-200':''} ${cancelled?'opacity-50':''}`}>
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${typeColor.dot}`}/>
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-xs font-medium text-slate-700 ${cancelled?'line-through':''}`}>{done && '✓ '}{ev.title}</div>
+                    <div className="text-[10px] text-slate-400">{ev.type} · {ev.project||'General'} · {ev.status}</div>
+                  </div>
+                  {projColor && <span className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${projColor.chip}`}>{ev.project}</span>}
+                </div>
+              );
+            })}
+            {selectedDayDeadlines.map((e:any, j:number)=>{
+              const projColor = e.project ? colorForProject(e.project) : null;
+              return (
+                <div key={j} className="flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2">
+                  <S.Icon name={e.kind==='phase'?'pin':e.kind==='milestone'?'phases':e.kind==='risk'?'risks':e.kind==='issue'?'issues':'subtasks'} className="w-3.5 h-3.5 shrink-0 text-slate-400"/>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-medium text-slate-700">{e.label}</div>
+                    <div className="text-[10px] text-slate-400 capitalize">{e.kind} deadline · {e.project}</div>
+                  </div>
+                  {projColor && <span className={`text-[9px] px-1.5 py-0.5 rounded-full shrink-0 whitespace-nowrap ${projColor.chip}`}>{e.project}</span>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </S.Card>
 
       {editingEvent && (
         <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={closeModal}>
