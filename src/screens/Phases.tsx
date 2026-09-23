@@ -11,6 +11,7 @@ export default function Phases(){
   const { projects } = React.useContext(S.ProjectsDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
+  const { risks } = React.useContext(S.GovernanceDataContext);
   const { email: myEmail, profile: myProfile } = React.useContext(S.CurrentUserContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
@@ -61,6 +62,10 @@ export default function Phases(){
 
   const phases = tree[activeProj] || [];
   const setPhases = (updater) => setTree(t => ({...t, [activeProj]: typeof updater==='function'? updater(t[activeProj]||[]) : updater}));
+
+  // Project Insights panel data -- same computed-from-live-data pattern as the Dashboard's AI
+  // Insights widget, just scoped to this one project (S.computeProjectInsights).
+  const projectInsights = S.computeProjectInsights(projMeta, phases, risks);
 
   // Roster limited to THIS project's team — only they can be tagged as assignees
   const roster = S.buildRoster(projMeta, admin);
@@ -800,12 +805,28 @@ export default function Phases(){
         </S.Card>
       </div>
       )}
-      <div className="mt-4 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-3 space-y-1.5">
-        <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
-        <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
-        <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
-        <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is no more than 7 days in the past, on a phase, milestone or sub task.</div>
-      </div>
+      {/* Project Insights -- replaces the old static approval-workflow rules blurb (still available
+          just below, collapsed, in "How approvals work") with a short, prioritized list computed
+          live from THIS project's own phase tree + risks (S.computeProjectInsights). Same
+          deterministic rules-engine pattern and card styling as the Dashboard/Reports "AI Insights"
+          widget (S.computeInsights/S.AIInsightsList) -- no external AI call, no API key, instant. */}
+      <S.Card className="mt-4 p-4 bg-gradient-to-br from-violet-50/60 to-white border border-violet-100">
+        <div className="flex items-center gap-2 mb-3">
+          <span className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center"><S.Icon name="sparkle" className="w-4 h-4 text-violet-500"/></span>
+          <span className="font-semibold text-slate-800 text-sm">Project Insights</span>
+          <span className="text-xs text-slate-400">Computed live from this project's phases, approvals and risks</span>
+        </div>
+        <S.AIInsightsList insights={projectInsights}/>
+      </S.Card>
+      <details className="mt-2 text-xs text-slate-500 bg-white border border-slate-200 rounded-xl px-4 py-2.5">
+        <summary className="cursor-pointer select-none font-medium text-slate-600">How approvals work</summary>
+        <div className="mt-2 space-y-1.5">
+          <div>Sub tasks are approved by up to <b className="text-brand-700">L2</b>; once all of a milestone's sub tasks are approved, <b className="text-brand-700">L1</b> approves the milestone; once every milestone is approved, <b className="text-brand-700">L1</b> confirms the phase. (If a level isn't on this project's team, approval simply skips to the next level up.)</div>
+          <div><b className="text-brand-700">Implemented</b> — the most important status — walks every level on this project's team from whoever marked it up to <b className="text-brand-700">L1</b>, one approval at a time, then the <b className="text-brand-700">Client Owner</b>'s sign-off in the Client Portal. Approved items lock; only <b className="text-brand-700">L1</b> can re-open them, and only <b className="text-brand-700">L2</b>-or-more-senior can change a phase's start date once it's set.</div>
+          <div>Once a deadline is set on a phase, milestone or sub task, only <b className="text-brand-700">Admin</b> or <b className="text-brand-700">Super Admin</b> can change it — anyone else can only set it the first time.</div>
+          <div>Anyone other than <b className="text-brand-700">Admin</b>/<b className="text-brand-700">Super Admin</b> can only pick a start date or deadline that is no more than 7 days in the past, on a phase, milestone or sub task.</div>
+        </div>
+      </details>
 
       {/* Sub task detail modal — full view + real attachment download/upload + remarks, opened via the
           search-icon button on a sub task row. Reuses the same StatusControl/ApprovalFlow/AssigneeChips/

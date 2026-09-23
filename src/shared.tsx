@@ -1286,6 +1286,62 @@ export const computeInsights = ({ tree, risks, issues, changes, projects, team }
   return insights;
 };
 
+// Single-project version of computeInsights above -- same deterministic rules engine (no AI model,
+// no external call), just scoped down to one project's own phase tree + risks instead of the whole
+// portfolio. Backs Phase Management's "Project Insights" panel (src/screens/Phases.tsx), which
+// replaced the old static approval-workflow rules blurb there.
+export const computeProjectInsights = (project: any, phases: any[], risks: any[]) => {
+  const insights: any[] = [];
+  if (!project) return insights;
+
+  const entries: any[] = [];
+  (phases||[]).forEach((ph:any)=>{
+    (ph.milestones||[]).forEach((ms:any)=>{
+      entries.push({ item: ms });
+      (ms.subtasks||[]).forEach((s:any)=> entries.push({ item: s }));
+    });
+  });
+
+  const overdue = entries.filter(e=>isOverdue(e.item));
+  if (overdue.length) {
+    const names = overdue.slice(0,3).map(e=>e.item.name).join(', ');
+    const extra = overdue.length>3 ? `, +${overdue.length-3} more` : '';
+    insights.push({ icon:'alert', tone:'rose', text:`${overdue.length} item${overdue.length===1?'':'s'} overdue: ${names}${extra}.` });
+  }
+
+  const stuck = entries.filter(e=>e.item.review==='Pending Review' && (daysPending(e.item)||0) >= STUCK_APPROVAL_DAYS);
+  if (stuck.length) {
+    const worst = stuck.slice().sort((a,b)=>(daysPending(b.item)||0)-(daysPending(a.item)||0))[0];
+    insights.push({ icon:'clock', tone:'amber', text:`${stuck.length} item${stuck.length===1?'':'s'} stuck in review ${STUCK_APPROVAL_DAYS}+ days — "${worst.item.name}" the longest, at ${daysPending(worst.item)} day(s).` });
+  }
+
+  const clientPending = entries.filter(e=>e.item.review==='Implemented Review' && e.item.headApprovedImpl && !e.item.clientApprovedImpl);
+  if (clientPending.length) {
+    insights.push({ icon:'approvals', tone:'violet', text:`${clientPending.length} item${clientPending.length===1?'':'s'} awaiting the client's sign-off in the Client Portal.` });
+  }
+
+  const projectRisks = (risks||[]).filter((r:any)=>r.project===project.name);
+  const highRisks = projectRisks.filter((r:any)=>(r.status==='Open'||r.status==='In Progress') && r.impact==='High');
+  if (highRisks.length) {
+    const descs = highRisks.slice(0,2).map((r:any)=>r.desc).join('; ');
+    insights.push({ icon:'alert', tone:'red', text:`${highRisks.length} open risk${highRisks.length===1?'':'s'} flagged High impact: ${descs}${highRisks.length>2?'…':''}.` });
+  }
+
+  const onHoldPhases = (phases||[]).filter((ph:any)=>ph.onHold);
+  if (onHoldPhases.length) {
+    insights.push({ icon:'ban', tone:'orange', text:`${onHoldPhases.length} phase${onHoldPhases.length===1?'':'s'} on hold: ${onHoldPhases.map((ph:any)=>ph.name).join(', ')}.` });
+  }
+
+  if (needsExtension(project)) {
+    insights.push({ icon:'calendar', tone:'orange', text:`Project end date has passed, status is still In Progress and no extension is on file.` });
+  }
+
+  if (!insights.length) {
+    insights.push({ icon:'checkcircle', tone:'emerald', text:'No urgent flags on this project right now — deliverables, approvals and risks all look within healthy thresholds.' });
+  }
+  return insights;
+};
+
 // Pastel icon badge per notification type, shown in the Dashboard's Project Activity feed.
 export const NOTIF_TONE = {
   'Milestone Completed':        { icon:'phases',       bg:'bg-emerald-50', text:'text-emerald-500' },
