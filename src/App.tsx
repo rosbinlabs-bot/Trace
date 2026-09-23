@@ -255,6 +255,14 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // Super Admin, via S.effectivePermissionLevel) instead -- that's what actually drives their access.
   const myDesignation = role==='client' ? 'Client' : (myProfile?.designation || S.ROLE_LABELS[role] || role);
   const myPermLevel = role==='client' ? 'Client' : (S.effectivePermissionLevel(myProfile, admin) || S.ROLE_LABELS[role] || role);
+  // Account-wide subscription lock (Administration -> Billing -- see shared.tsx's isAccountLocked):
+  // once the configured cycle lapses unpaid, project data across the whole app becomes read-only
+  // (enforced at the actual choke point -- App.tsx's setter wrappers, further down -- this banner is
+  // just the visible explanation). Administration itself (incl. the Billing tab's "Payment Received"
+  // button) is deliberately NOT gated by this, so whoever can reach it can always resolve the lock;
+  // a client login never sees Administration, so it only ever needs a plain heads-up, not a link.
+  const subscriptionLocked = role !== 'client' && S.isAccountLocked(admin);
+  const canOpenBilling = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'View');
   React.useEffect(() => {
     try {
       typeof localStorage !== 'undefined' && localStorage.setItem(THEME_STORAGE_KEY, theme);
@@ -460,6 +468,15 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
             </div>
           </header>
           <main className={`flex-1 overflow-y-auto p-5 bg-slate-100 ${isMobileStaff ? 'pb-24' : ''}`}>
+            {subscriptionLocked && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
+                <S.Icon name="ban" className="w-4 h-4 shrink-0"/>
+                <span>Subscription payment is overdue — you can view everything, but creating, editing or deleting project data is disabled until payment is received.</span>
+                {canOpenBilling && (
+                  <button onClick={()=>navigate('/admin')} className="ml-auto shrink-0 text-xs font-semibold text-red-700 underline underline-offset-2">Open Billing</button>
+                )}
+              </div>
+            )}
             <Suspense fallback={<div className="flex items-center justify-center py-24"><S.Icon name="logo" className="w-8 h-8 text-brand-300 animate-pulse"/></div>}>
             <Routes>
               {role === 'client' ? (
@@ -569,9 +586,10 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
 // sync + an unguarded Realtime echo could roll back characters mid-type -- see those functions'
 // comments), but this is kept as the simple building block in case a future data type is genuinely
 // fine syncing immediately (e.g. something only ever changed by a single discrete button click).
-function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>) {
+function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>, isLockedRef?: React.MutableRefObject<boolean>) {
   return (updater: React.SetStateAction<T>) => {
     setState((prev) => {
+      if (isLockedRef?.current) return prev; // subscription overdue -- see isLockedRef above, no-op
       const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
       sync(prev, next).catch((e) => console.error('Supabase sync failed:', e));
       return next;
@@ -589,10 +607,11 @@ function wrapSetter<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: 
 // last edit in a burst, diffed against the state from BEFORE the burst started (not the
 // second-to-last keystroke) so nothing in between is lost. `markEdited` runs on every call,
 // undebounced, to stamp recentLocalEditRef (see below) immediately.
-function useDebouncedSync<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>, markEdited: (prev: T, next: T) => void, delay = 700) {
+function useDebouncedSync<T>(setState: React.Dispatch<React.SetStateAction<T>>, sync: (prev: T, next: T) => Promise<void>, markEdited: (prev: T, next: T) => void, delay = 700, isLockedRef?: React.MutableRefObject<boolean>) {
   const pendingRef = React.useRef<{ base: T; timer: any } | null>(null);
   return (updater: React.SetStateAction<T>) => {
     setState((prev) => {
+      if (isLockedRef?.current) return prev; // subscription overdue -- see isLockedRef above, no-op
       const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
       markEdited(prev, next);
       if (!pendingRef.current) pendingRef.current = { base: prev, timer: null };
@@ -626,10 +645,11 @@ function changedKeys(prev: any, next: any): string[] {
 // object (a slot inside recentLocalEditRef, passed by reference so mutating it here is visible to the
 // Realtime handler below without needing a re-render) that gets stamped per changed row id,
 // undebounced, on every call.
-function useDebouncedArraySync<T extends { [k: string]: any }>(setState: React.Dispatch<React.SetStateAction<T[]>>, sync: (prev: T[], next: T[]) => Promise<void>, idKey: string, echoBucket: Record<string, number>, delay = 700) {
+function useDebouncedArraySync<T extends { [k: string]: any }>(setState: React.Dispatch<React.SetStateAction<T[]>>, sync: (prev: T[], next: T[]) => Promise<void>, idKey: string, echoBucket: Record<string, number>, delay = 700, isLockedRef?: React.MutableRefObject<boolean>) {
   const pendingRef = React.useRef<{ base: T[]; timer: any } | null>(null);
   return (updater: React.SetStateAction<T[]>) => {
     setState((prev) => {
+      if (isLockedRef?.current) return prev; // subscription overdue -- see isLockedRef above, no-op
       const next = typeof updater === 'function' ? (updater as any)(prev) : updater;
       const prevMap = new Map(prev.map((x) => [x[idKey], x]));
       const nextMap = new Map(next.map((x: T) => [x[idKey], x]));
@@ -868,6 +888,19 @@ export default function App() {
     rows: { projects: {}, risks: {}, issues: {}, changes: {}, calendarEvents: {}, libraryDocs: {}, deliverables: {}, invoices: {}, team: {} },
   });
   const SELF_ECHO_WINDOW_MS = 2500;
+  // Single choke point for the "read-only once subscription payment is overdue" lock (Administration
+  // -> Billing): a ref (not state) so the setter wrapper functions below -- called on every keystroke/
+  // click, not just on render -- always see the CURRENT lock state without needing to be recreated
+  // every time `admin` changes. Kept in sync by the effect right after it. Deliberately checked inside
+  // wrapSetter/useDebouncedSync/useDebouncedArraySync themselves (skipping both the local setState AND
+  // the Supabase sync when locked) rather than in each screen, so every one of the 11 setters built
+  // from those two functions is covered at once, including any screen added later -- and deliberately
+  // NOT applied to patchAdmin (Administration's own data, a few lines below), so Administration --
+  // including the Billing tab's "Payment Received" button that clears the lock -- always stays usable
+  // even while the rest of the app is locked. A blocked call is a silent no-op on purpose (the
+  // controlled input just won't visibly change); Shell's red banner above is what explains why.
+  const isLockedRef = React.useRef(false);
+  useEffect(() => { isLockedRef.current = S.isAccountLocked(admin); }, [admin]);
 
   // Fetch every table once a session exists AND the tenant is resolved. All data below this point
   // comes from Supabase — nothing is seeded from the in-memory mock constants in shared.tsx anymore
@@ -1060,18 +1093,18 @@ export default function App() {
   // field today or in the future (Risks.tsx/Issues.tsx/Changes.tsx detail fields and ProjectMaster's
   // Payment Receipts already were).
   const echo = recentLocalEditRef.current.rows;
-  const setProjects = useDebouncedArraySync(setProjectsState, db.syncProjects, 'id', echo.projects);
+  const setProjects = useDebouncedArraySync(setProjectsState, db.syncProjects, 'id', echo.projects, 700, isLockedRef);
   const setPhaseTree = useDebouncedSync(setPhaseTreeState, db.syncTree, (prev, next) => {
     changedKeys(prev, next).forEach((k) => { recentLocalEditRef.current.tree[k] = Date.now(); });
-  });
-  const setRisks = useDebouncedArraySync(setRisksState, db.syncRisks, 'id', echo.risks);
-  const setIssues = useDebouncedArraySync(setIssuesState, db.syncIssues, 'id', echo.issues);
-  const setChanges = useDebouncedArraySync(setChangesState, db.syncChanges, 'id', echo.changes);
-  const setCalendarEvents = useDebouncedArraySync(setCalendarEventsState, db.syncEvents, 'id', echo.calendarEvents);
-  const setLibraryDocs = useDebouncedArraySync(setLibraryDocsState, db.syncDocs, 'id', echo.libraryDocs);
-  const setDeliverables = useDebouncedArraySync(setDeliverablesState, db.syncDeliverables, 'id', echo.deliverables);
-  const setInvoices = useDebouncedArraySync(setInvoicesState, db.syncInvoices, 'id', echo.invoices);
-  const setTeam = useDebouncedArraySync(setTeamState, db.syncTeam, 'name', echo.team);
+  }, 700, isLockedRef);
+  const setRisks = useDebouncedArraySync(setRisksState, db.syncRisks, 'id', echo.risks, 700, isLockedRef);
+  const setIssues = useDebouncedArraySync(setIssuesState, db.syncIssues, 'id', echo.issues, 700, isLockedRef);
+  const setChanges = useDebouncedArraySync(setChangesState, db.syncChanges, 'id', echo.changes, 700, isLockedRef);
+  const setCalendarEvents = useDebouncedArraySync(setCalendarEventsState, db.syncEvents, 'id', echo.calendarEvents, 700, isLockedRef);
+  const setLibraryDocs = useDebouncedArraySync(setLibraryDocsState, db.syncDocs, 'id', echo.libraryDocs, 700, isLockedRef);
+  const setDeliverables = useDebouncedArraySync(setDeliverablesState, db.syncDeliverables, 'id', echo.deliverables, 700, isLockedRef);
+  const setInvoices = useDebouncedArraySync(setInvoicesState, db.syncInvoices, 'id', echo.invoices, 700, isLockedRef);
+  const setTeam = useDebouncedArraySync(setTeamState, db.syncTeam, 'name', echo.team, 700, isLockedRef);
   // Same debouncing + self-echo stamping as setPhaseTree above, keyed by project+month.
   const setMonthlyPlan = useDebouncedSync(setMonthlyPlanState, db.syncMonthlyPlan, (prev, next) => {
     const keys = new Set<string>();
@@ -1081,7 +1114,7 @@ export default function App() {
       const [pid, month] = k.split('::');
       if (prev?.[pid]?.[month] !== next?.[pid]?.[month]) recentLocalEditRef.current.monthlyPlan[k] = Date.now();
     });
-  });
+  }, 700, isLockedRef);
 
   // Single app_settings row -- debounced the same way, stamping a plain counter (no per-key map
   // needed, there's only ever one row) rather than reusing useDebouncedSync's diff-by-key logic.
@@ -1217,6 +1250,39 @@ export default function App() {
     });
   }, [loading, tenantId, projects, notifications]);
 
+  // Account-wide subscription reminders (Administration -> Billing) -- two separate notices per the
+  // explicit requirement ("a separate notification regarding payment due" from the renewal reminder),
+  // both scoped to Admin/Super Admin only via `audience:'admins'` (see visibleNotifications' filter
+  // below), never to ordinary teammates or clients. Each is deduped against admin.billing's own
+  // reminderSentForCycleEnd/dueSentForCycleEnd guards (stamped through patchAdmin, same "computed on
+  // load, fire once" shape as Billing Due Soon's `already` check above) so it fires once per cycle,
+  // not once per reload, and correctly fires again once the cycle rolls forward.
+  useEffect(() => {
+    if (loading || !tenantId) return;
+    if (S.billingNeedsReminder(admin)) {
+      const d = S.daysLeft(admin.billing.cycleEnd);
+      addNotification({
+        type: 'Subscription Renewal Reminder', audience: 'admins', priority: d < 0 ? 'high' : 'normal',
+        message: d < 0
+          ? `Subscription renewal was due ${admin.billing.cycleEnd} (${Math.abs(d)}d overdue).`
+          : `Subscription renews on ${admin.billing.cycleEnd} (${d}d away). Click "Payment Received" in Administration -> Billing once paid.`,
+      });
+      patchAdmin('billing', (b: any) => ({ ...b, reminderSentForCycleEnd: b.cycleEnd }));
+    }
+  }, [loading, tenantId, admin.billing?.cycleEnd, admin.billing?.reminderSentForCycleEnd]);
+
+  useEffect(() => {
+    if (loading || !tenantId) return;
+    if (S.billingIsOverdueUnsent(admin)) {
+      const d = Math.abs(S.daysLeft(admin.billing.cycleEnd));
+      addNotification({
+        type: 'Subscription Payment Overdue', audience: 'admins', priority: 'high',
+        message: `Subscription payment is now ${d}d overdue (cycle ended ${admin.billing.cycleEnd}). The rest of the app is read-only for everyone until payment is received.`,
+      });
+      patchAdmin('billing', (b: any) => ({ ...b, dueSentForCycleEnd: b.cycleEnd }));
+    }
+  }, [loading, tenantId, admin.billing?.cycleEnd, admin.billing?.dueSentForCycleEnd]);
+
   const myEmail = session?.user?.email || '';
   const myProfile = (admin.users || []).find((u: any) => (u.email || '').toLowerCase() === myEmail.toLowerCase());
   const role = S.deriveRole(myEmail, admin);
@@ -1291,11 +1357,19 @@ export default function App() {
   // 'General' (see Calendar.tsx) rather than leaving it blank -- treated as "no project" here too, so
   // those general reminders don't silently disappear from every non-Admin's bell.
   const hasNoProject = (n: any) => !n.projectId && (!n.project || n.project === 'General');
+  // Subscription reminders (audience:'admins', see the two effects above) are the one notification
+  // kind that must NOT reach everyone who happens to see the bell (unlike every other org-wide notice
+  // hasNoProject already lets through to any staff login) -- filtered out here for anyone whose role
+  // isn't 'admin' (Admin/Super Admin permission level, per S.deriveRole; clients are excluded below
+  // regardless since their branch never reaches this list at all).
+  const isAdminAudience = (n: any) => n.audience === 'admins';
   const visibleNotifications = role === 'client'
     ? notifications.filter((n: any) => n.projectId === myProfile?.project)
     : isProjectScoped
-      ? notifications.filter((n: any) => hasNoProject(n) || (n.projectId ? visibleProjectIds.has(n.projectId) : visibleProjectNames.has(n.project)))
-      : notifications;
+      // isProjectScoped is only ever true for non-admin staff roles (see its own definition below),
+      // so an admin-audience notice never belongs here regardless of the exact role value.
+      ? notifications.filter((n: any) => !isAdminAudience(n) && (hasNoProject(n) || (n.projectId ? visibleProjectIds.has(n.projectId) : visibleProjectNames.has(n.project))))
+      : notifications.filter((n: any) => !isAdminAudience(n) || role === 'admin');
   const visibleRisks = isProjectScoped ? risks.filter((r: any) => visibleProjectNames.has(r.project)) : risks;
   const visibleIssues = isProjectScoped ? issues.filter((i: any) => visibleProjectNames.has(i.project)) : issues;
   const visibleDeliverables = isProjectScoped ? deliverables.filter((d: any) => visibleProjectNames.has(d.project)) : deliverables;

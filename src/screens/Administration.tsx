@@ -893,50 +893,95 @@ function BillingPanel(){
   const { logActivity } = React.useContext(S.ActivityLogContext);
   // Billing lives inside Administration for this panel (the Financials & Billing matrix module
   // instead gates the Payment Receipts / Billing Tracker sections inside a project in Project Master),
-  // so this respects the Administration capability like the rest of these panels.
+  // so this respects the Administration capability like the rest of these panels. Deliberately never
+  // gated by the account-wide subscription lock itself (see App.tsx's isLockedRef) -- whoever can
+  // reach this tab must always be able to resolve the lock, or it could never be cleared.
   const canEdit = S.capAtLeast(S.capabilityFor('Administration', email, admin), 'Edit');
   const logField = useDebouncedFieldLog(logActivity, 'Billing');
   const b = admin.billing;
   const set = (k,v) => {
     if(!canEdit) return;
-    patchAdmin('billing', bl => ({ ...bl, [k]:v }));
-    // Plan/auto-renew are discrete, meaningful toggles -- log those immediately; free-text fields
-    // (payment method, billing contact) are debounced like Company's fields above.
+    patchAdmin('billing', (bl:any) => {
+      // Changing the plan or the billing date recomputes cycleEnd from scratch (rather than leaving
+      // a stale one around from whatever plan/date was picked before) and clears both dedupe guards
+      // so the new cycle's reminder/overdue notices are free to fire again on their own schedule.
+      const next = { ...bl, [k]: v };
+      if (k==='plan' || k==='billingDate') {
+        next.cycleEnd = S.billingCycleEnd(next.billingDate, next.plan);
+        next.reminderSentForCycleEnd = '';
+        next.dueSentForCycleEnd = '';
+      }
+      return next;
+    });
     if(k==='plan') logActivity({ module:'Billing', action: `Changed plan to "${v}"` });
-    else if(k==='autoRenew') logActivity({ module:'Billing', action: `${v?'Enabled':'Disabled'} auto-renew` });
+    else if(k==='billingDate') logActivity({ module:'Billing', action: `Set billing date to ${v}` });
     else logField(k, `Updated Billing "${k}"`);
   };
-  const daysToRenewal = b.plan==='Annual' ? S.daysLeft(b.renewalDate) : null;
+  const seatsUsed = S.billingSeatsUsed(admin);
+  const pricePerSeat = S.billingPricePerSeat(b.plan);
+  const totalDue = S.billingTotalDue(admin);
+  const daysToCycleEnd = S.billingDaysToCycleEnd(admin);
+  const locked = S.isAccountLocked(admin);
+  const markPaymentReceived = () => {
+    if (!canEdit) return;
+    const amount = totalDue;
+    const planAtPayment = b.plan;
+    patchAdmin('billing', (bl:any) => {
+      const advanced = S.billingAdvanceCycle(bl);
+      const invoice = { id: S.uid('INV'), date: S.TODAY_ISO, amount, status: 'Paid', plan: planAtPayment, seats: seatsUsed };
+      return { ...advanced, invoices: [invoice, ...(bl.invoices||[])] };
+    });
+    logActivity({ module:'Billing', action: `Recorded payment received (₹${S.fmt(amount)}, ${planAtPayment} plan, ${seatsUsed} seats) — next cycle started` });
+  };
   return (
     <div className="space-y-4">
       {!canEdit && <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">You have view-only access here — ask a Super Admin for Edit access on Administration to change billing.</div>}
+      {locked && (
+        <div className="text-sm rounded-lg px-3 py-2.5 flex items-center gap-2 bg-red-50 text-red-700 border border-red-200">
+          <S.Icon name="ban" className="w-4 h-4 shrink-0"/>
+          Payment is overdue — the rest of the app is read-only for every user until "Payment Received" is clicked below.
+        </div>
+      )}
       <S.Card className="p-4">
         <div className="font-semibold text-slate-800 mb-3">Plan</div>
         <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5 w-fit mb-4">
-          {['Annual','Forever'].map(p=>(
+          {S.BILLING_PLANS.map(p=>(
             <button key={p} disabled={!canEdit} onClick={()=>set('plan',p)} className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors disabled:cursor-not-allowed ${b.plan===p?'bg-white text-brand-700 shadow-sm':'text-slate-500'}`}>{p}</button>
           ))}
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
-          <S.Card className="p-3"><div className="text-xs text-slate-500">Tier</div><div className="text-lg font-semibold text-slate-800 mt-0.5">{b.tier}</div></S.Card>
-          <S.Card className="p-3"><div className="text-xs text-slate-500">Seats Used</div><div className="text-lg font-semibold text-slate-800 mt-0.5">{b.seatsUsed} / {b.seats}</div></S.Card>
-          <S.Card className="p-3"><div className="text-xs text-slate-500">Price / Seat / Month</div><div className="text-lg font-semibold text-slate-800 mt-0.5">₹{S.fmt(b.pricePerSeatMonthly)}</div></S.Card>
-          <S.Card className="p-3">
-            <div className="text-xs text-slate-500">{b.plan==='Annual' ? 'Renews' : 'Purchased'}</div>
-            <div className="text-lg font-semibold text-slate-800 mt-0.5">{b.plan==='Annual' ? b.renewalDate : b.perpetualPurchaseDate}</div>
-          </S.Card>
-        </div>
-        {b.plan==='Annual' ? (
-          <div className={`text-sm rounded-lg px-3 py-2 flex items-center gap-2 ${daysToRenewal<=30?'bg-amber-50 text-amber-800 border border-amber-200':'bg-slate-50 text-slate-600 border border-slate-200'}`}>
-            <S.Icon name="refresh" className="w-4 h-4 shrink-0"/> Annual subscription renews on <b className="mx-1">{b.renewalDate}</b> ({daysToRenewal}d away).
-            <label className="ml-auto inline-flex items-center gap-1.5 text-xs whitespace-nowrap">
-              <input type="checkbox" checked={!!b.autoRenew} disabled={!canEdit} onChange={e=>set('autoRenew', e.target.checked)}/> Auto-renew
-            </label>
-          </div>
+        {!b.plan ? (
+          <div className="text-sm text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">Pick a plan above to start the subscription.</div>
         ) : (
-          <div className="text-sm rounded-lg px-3 py-2 flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200">
-            <S.Icon name="checkcircle" className="w-4 h-4 shrink-0"/> Forever (perpetual) license — purchased {b.perpetualPurchaseDate}. No renewal required; optional annual support/maintenance can be added separately.
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+              <S.Card className="p-3"><div className="text-xs text-slate-500">Seats (active teammates)</div><div className="text-lg font-semibold text-slate-800 mt-0.5">{seatsUsed}</div></S.Card>
+              <S.Card className="p-3"><div className="text-xs text-slate-500">Price / Seat{b.plan==='Forever' ? ' (one-time)' : ' / Month'}</div><div className="text-lg font-semibold text-slate-800 mt-0.5">₹{S.fmt(pricePerSeat)}</div></S.Card>
+              <S.Card className="p-3"><div className="text-xs text-slate-500">{b.plan==='Forever' ? 'One-time Total' : 'Cycle Total'}</div><div className="text-lg font-semibold text-slate-800 mt-0.5">₹{S.fmt(totalDue)}</div></S.Card>
+            </div>
+            <div className="flex flex-col gap-1 mb-3 max-w-xs">
+              <label className="text-[10px] text-slate-400">Billing Date {b.plan!=='Forever' && '(current cycle starts here)'}</label>
+              <input type="date" value={b.billingDate||''} disabled={!canEdit} onChange={e=>set('billingDate', e.target.value)} className="border border-slate-200 rounded-lg px-2.5 py-1.5 text-sm disabled:bg-slate-50 disabled:text-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
+            </div>
+            {b.plan!=='Forever' && b.cycleEnd && (
+              <div className={`text-sm rounded-lg px-3 py-2 flex items-center gap-2 mb-3 ${locked?'bg-red-50 text-red-700 border border-red-200':(daysToCycleEnd!==null && daysToCycleEnd<=10)?'bg-amber-50 text-amber-800 border border-amber-200':'bg-slate-50 text-slate-600 border border-slate-200'}`}>
+                <S.Icon name="refresh" className="w-4 h-4 shrink-0"/>
+                {locked
+                  ? <>Cycle ended <b className="mx-1">{b.cycleEnd}</b> — payment overdue.</>
+                  : <>{b.plan} plan renews on <b className="mx-1">{b.cycleEnd}</b> ({daysToCycleEnd}d away).</>}
+              </div>
+            )}
+            {b.plan==='Forever' && (
+              <div className="text-sm rounded-lg px-3 py-2 flex items-center gap-2 bg-emerald-50 text-emerald-800 border border-emerald-200 mb-3">
+                <S.Icon name="checkcircle" className="w-4 h-4 shrink-0"/>
+                {b.lastPaymentReceivedAt
+                  ? <>Forever (perpetual) license — paid in full on {b.lastPaymentReceivedAt.slice(0,10)}. No renewal required.</>
+                  : <>Forever (perpetual) license — one-time payment of ₹{S.fmt(totalDue)} due before the portal unlocks.</>}
+              </div>
+            )}
+            <button disabled={!canEdit} onClick={markPaymentReceived} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed">
+              <S.Icon name="checkcircle" className="w-4 h-4"/> Payment Received
+            </button>
+          </>
         )}
       </S.Card>
 
@@ -954,10 +999,11 @@ function BillingPanel(){
       <S.Card className="overflow-hidden">
         <div className="px-4 pt-3 pb-1 font-semibold text-slate-800">Invoice History</div>
         <table className="w-full text-sm">
-          <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Invoice</S.Th><S.Th>Date</S.Th><S.Th>Amount</S.Th><S.Th>Status</S.Th></tr></thead>
+          <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Invoice</S.Th><S.Th>Date</S.Th><S.Th>Plan</S.Th><S.Th>Seats</S.Th><S.Th>Amount</S.Th><S.Th>Status</S.Th></tr></thead>
           <tbody className="divide-y divide-slate-100">
-            {b.invoices.map(inv=>(
-              <tr key={inv.id}><S.Td className="font-mono text-xs">{inv.id}</S.Td><S.Td>{inv.date}</S.Td><S.Td>₹{S.fmt(inv.amount)}</S.Td><S.Td><S.Badge cls="bg-emerald-100 text-emerald-700">{inv.status}</S.Badge></S.Td></tr>
+            {b.invoices.length===0 && <tr><td colSpan={6} className="px-3 py-4 text-center text-slate-400 text-sm">No payments recorded yet.</td></tr>}
+            {b.invoices.map((inv:any)=>(
+              <tr key={inv.id}><S.Td className="font-mono text-xs">{inv.id}</S.Td><S.Td>{inv.date}</S.Td><S.Td>{inv.plan||'—'}</S.Td><S.Td>{inv.seats ?? '—'}</S.Td><S.Td>₹{S.fmt(inv.amount)}</S.Td><S.Td><S.Badge cls="bg-emerald-100 text-emerald-700">{inv.status}</S.Badge></S.Td></tr>
             ))}
           </tbody>
         </table>

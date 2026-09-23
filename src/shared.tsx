@@ -790,10 +790,111 @@ export const DEFAULT_COMPANY_INFO: any = {
   timezone:'Asia/Kolkata (GMT+5:30)', currency:'INR (₹)', fiscalYearStart:'April',
 };
 
+// Account-wide subscription billing (Administration -> Billing). One subscription covers the
+// whole Trace PMT account (every project/teammate together), not per-client-org -- there is no
+// concept of multiple tenants being billed separately here. `plan` picks the pricing/cycle rules
+// below; `billingDate` is the day the admin says the current cycle started (chosen once, then
+// rolled forward automatically by "Payment Received" -- see billingAdvanceCycle); `cycleEnd` is
+// computed from billingDate+plan and is what the read-only lock (isAccountLocked) and the two
+// notification effects in App.tsx key off. `seats`/pricing are deliberately NOT stored here -- they
+// are computed live from admin.users (billingSeatsUsed) and PLAN_PRICE_PER_SEAT so the number shown
+// always matches the actual active-teammate count instead of drifting out of sync with a manually
+// typed figure. reminderSentForCycleEnd/dueSentForCycleEnd are dedupe guards (mirrors the
+// `already` check the Billing Due Soon effect uses) so the 10-day-out reminder and the overdue
+// alert each fire once per cycle, not once per reload.
 export const DEFAULT_BILLING_INFO: any = {
-  plan:'', tier:'', seats:0, seatsUsed:0, pricePerSeatMonthly:0,
-  renewalDate:'', perpetualPurchaseDate:'', autoRenew:false,
+  plan:'', billingDate:'', cycleEnd:'', lastPaymentReceivedAt:'',
   paymentMethod:'', billingContact:'', invoices:[],
+  reminderSentForCycleEnd:'', dueSentForCycleEnd:'',
+};
+
+// Rs./teammate: 6-Month and Annual are per-user-per-month rates (billed for the whole cycle up
+// front); Forever is a one-time flat fee per user, not monthly -- see billingTotalDue.
+export const PLAN_PRICE_PER_SEAT: any = { '6-Month': 800, 'Annual': 700, 'Forever': 3000 };
+export const PLAN_MONTHS: any = { '6-Month': 6, 'Annual': 12 };
+export const BILLING_PLANS = ['6-Month', 'Annual', 'Forever'];
+
+export const addMonths = (iso: string, n: number) => {
+  const d = new Date(iso);
+  d.setMonth(d.getMonth() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+// Active, non-Client users -- the same "teammates" filter already used across Administration
+// (Users tab seat counts, capacity planning, etc.), reused here so Billing's seat count is never
+// typed by hand and can't drift from who's actually active on the account.
+export const billingSeatsUsed = (admin: any) =>
+  (admin?.users || []).filter((u: any) => u.type !== 'Client' && (!u.status || u.status === 'Active')).length;
+
+export const billingPricePerSeat = (plan: string) => PLAN_PRICE_PER_SEAT[plan] || 0;
+
+// What the current/next cycle costs in total -- seats x rate x months for the two recurring plans,
+// a flat one-time seats x Rs.3,000 for Forever (clarified: per-user, not per-user-per-month).
+export const billingTotalDue = (admin: any) => {
+  const b = admin?.billing || DEFAULT_BILLING_INFO;
+  const seats = billingSeatsUsed(admin);
+  if (b.plan === 'Forever') return seats * PLAN_PRICE_PER_SEAT.Forever;
+  if (b.plan === '6-Month' || b.plan === 'Annual') return seats * PLAN_PRICE_PER_SEAT[b.plan] * PLAN_MONTHS[b.plan];
+  return 0;
+};
+
+// Forever has no renewal cycle -- once paid, it stays unlocked permanently, so this returns '' for
+// it (nothing to count down to). 6-Month/Annual roll cycleEnd forward from billingDate by their
+// term length.
+export const billingCycleEnd = (billingDate: string, plan: string) => {
+  if (!billingDate || !PLAN_MONTHS[plan]) return '';
+  return addMonths(billingDate, PLAN_MONTHS[plan]);
+};
+
+// The single source of truth for the read-only lock (see App.tsx's wrapSetter/useDebouncedSync --
+// every project-data mutation is gated on this): locked only once a plan has actually been
+// configured AND its cycle has actually lapsed unpaid. An unconfigured account (b.plan==='', the
+// state every existing account starts in until a Super Admin sets this up) is never locked, so
+// shipping this feature doesn't retroactively lock anyone out. Forever is never locked again once
+// paid once (lastPaymentReceivedAt set) since it has no cycleEnd to lapse.
+export const isAccountLocked = (admin: any): boolean => {
+  const b = admin?.billing || DEFAULT_BILLING_INFO;
+  if (!b.plan || !b.billingDate) return false;
+  if (b.plan === 'Forever') return !b.lastPaymentReceivedAt;
+  if (!b.cycleEnd) return false;
+  return daysLeft(b.cycleEnd) < 0;
+};
+
+export const billingDaysToCycleEnd = (admin: any): number | null => {
+  const b = admin?.billing || DEFAULT_BILLING_INFO;
+  if (!b.cycleEnd) return null;
+  return daysLeft(b.cycleEnd);
+};
+
+// True on the day the cycle enters its last-10-days window (and every day after, until paid) and
+// this cycle's reminder hasn't gone out yet -- App.tsx's effect fires the notification once then
+// stamps reminderSentForCycleEnd so it never re-fires for this same cycleEnd.
+export const billingNeedsReminder = (admin: any): boolean => {
+  const b = admin?.billing || DEFAULT_BILLING_INFO;
+  if (!b.plan || !b.cycleEnd || b.reminderSentForCycleEnd === b.cycleEnd) return false;
+  const d = daysLeft(b.cycleEnd);
+  return d <= 10;
+};
+
+// True once the cycle has actually lapsed unpaid and this cycle's overdue alert hasn't fired yet --
+// deliberately a separate guard/notification from the 10-day reminder above (user asked for "a
+// separate notification regarding payment due").
+export const billingIsOverdueUnsent = (admin: any): boolean => {
+  const b = admin?.billing || DEFAULT_BILLING_INFO;
+  if (!b.plan || !b.cycleEnd || b.dueSentForCycleEnd === b.cycleEnd) return false;
+  return daysLeft(b.cycleEnd) < 0;
+};
+
+// "Payment Received" -- advances the account to its next cycle (or, for Forever, just marks the
+// one-time fee paid) and resets the dedupe guards so the new cycle's own reminder/overdue alerts
+// can fire in their turn. Rolls forward from the *old* cycleEnd (not from today) so a late payment
+// doesn't shrink the next cycle -- same reasoning as Billing Due Soon's recurring due date.
+export const billingAdvanceCycle = (b: any) => {
+  const now = new Date().toISOString();
+  if (b.plan === 'Forever') return { ...b, lastPaymentReceivedAt: now };
+  const nextStart = b.cycleEnd || b.billingDate || TODAY_ISO;
+  const cycleEnd = billingCycleEnd(nextStart, b.plan);
+  return { ...b, billingDate: nextStart, cycleEnd, lastPaymentReceivedAt: now, reminderSentForCycleEnd: '', dueSentForCycleEnd: '' };
 };
 
 export const DEFAULT_NOTIFICATION_SETTINGS: any = {
@@ -1375,6 +1476,8 @@ export const NOTIF_TONE = {
   'Client Remark':              { icon:'note',          bg:'bg-blue-50',    text:'text-blue-500'    },
   'User Signup Pending Approval': { icon:'userplus',    bg:'bg-amber-50',   text:'text-amber-500'   },
   'Billing Due Soon':           { icon:'financials',    bg:'bg-amber-50',   text:'text-amber-500'   },
+  'Subscription Renewal Reminder': { icon:'financials', bg:'bg-amber-50',   text:'text-amber-500'   },
+  'Subscription Payment Overdue':  { icon:'ban',         bg:'bg-red-50',     text:'text-red-500'     },
   default:                      { icon:'notifications', bg:'bg-slate-100',  text:'text-slate-400'   },
 };
 
