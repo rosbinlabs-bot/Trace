@@ -1711,6 +1711,52 @@ export const clientPendingApprovals = (projects: any[], tree: any): any[] => {
 // by the Dashboard's approval-bottleneck panel, Approvals.tsx's Pending Approvals table, and
 // totalPendingApprovals below so all three agree on how long something has actually been stuck.
 export const daysPending = (item: any): number | null => item.reviewSince ? Math.max(0, -daysLeft(item.reviewSince)) : null;
+
+// Compact, LLM-ready summary of one project's phase tree + open risks -- for the AI Insights panel
+// at the bottom of Phase Management (api/insights.ts). Deliberately NOT the raw tree: sub tasks that
+// are on track are collapsed into subtaskCounts, and only the ones needing attention (overdue or
+// sitting in review) are listed individually as flaggedSubtasks -- keeps the payload small and keeps
+// the model's attention on what's actually actionable instead of restating a clean checklist.
+export const buildProjectInsightPayload = (projMeta: any, phases: any[], risks: any[]) => {
+  const summarizeItem = (item: any) => ({
+    name: item.name,
+    status: item.status,
+    deadline: item.deadline || null,
+    actualDate: item.actualDate || null,
+    approved: !!item.approved,
+    overdue: isOverdue(item),
+    daysPending: daysPending(item),
+    assignees: item.assignees || [],
+  });
+  const openRisks = (risks || [])
+    .filter((r: any) => r.project === projMeta?.name && r.status !== 'Closed' && r.status !== 'Mitigated')
+    .map((r: any) => ({ desc: r.desc, impact: r.impact, probability: r.prob, status: r.status, target: r.target || null }));
+  return {
+    today: TODAY_ISO,
+    project: {
+      name: projMeta?.name, client: projMeta?.client, status: projMeta?.status,
+      priority: projMeta?.priority, start: projMeta?.start, deadline: projMeta?.end,
+    },
+    phases: (phases || []).map((ph: any) => ({
+      name: ph.name, onHold: !!ph.onHold, complete: !!ph.headConfirmedComplete,
+      start: ph.start, deadline: ph.end,
+      milestones: (ph.milestones || []).map((ms: any) => {
+        const subtasks = ms.subtasks || [];
+        return {
+          ...summarizeItem(ms),
+          subtaskCounts: {
+            total: subtasks.length,
+            approved: subtasks.filter(isApproved).length,
+            overdue: subtasks.filter(isOverdue).length,
+            pendingReview: subtasks.filter((s: any) => s.review === 'Pending Review').length,
+          },
+          flaggedSubtasks: subtasks.filter((s: any) => isOverdue(s) || s.review === 'Pending Review').map(summarizeItem),
+        };
+      }),
+    })),
+    openRisks,
+  };
+};
 // An item counts as genuinely "stuck" (red/urgent) once it's been sitting in review this long. Below
 // this it still shows up everywhere it needs to (Approvals.tsx's table, the sidebar badge count) but
 // in a neutral color — the point isn't hiding fresh approvals, just not flagging something as urgent
