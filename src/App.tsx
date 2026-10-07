@@ -4,6 +4,8 @@ import * as S from './shared';
 import * as db from './db';
 import { supabase } from './supabaseClient';
 import Login from './Login';
+import PwaPrompts, { PushToggle } from './PwaPrompts';
+import { triggerPush } from './pwa';
 
 // Every screen below is only needed once a session exists AND the person navigates to it, so each is
 // its own lazily-fetched chunk instead of being bundled into the one script every visitor has to
@@ -346,6 +348,8 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
         : inactivityDays
         ? <InactivityFlash days={inactivityDays} />
         : null}
+      {/* Install-app + enable-notifications banners; only ever mounted post-login (Shell is the signed-in shell). */}
+      <PwaPrompts email={email} />
       <div className="flex h-screen overflow-hidden bg-slate-100">
         {/* Sidebar -- hidden on a phone-width staff session (isMobileStaff): a fixed-width side rail
             has nowhere to go on a narrow screen, so mobile gets the bottom tab bar (below <main>)
@@ -461,6 +465,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                       <div className="text-xs text-slate-400 truncate">{email}</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">{myDesignation}{role!=='client' ? ` · ${myPermLevel}` : ''}</div>
                     </div>
+                    <PushToggle email={email} />
                     <button onClick={onSignOut} className="w-full text-left text-sm text-red-600 hover:bg-red-50 rounded-lg px-2 py-1.5">Sign Out</button>
                   </div>
                 )}
@@ -1167,7 +1172,7 @@ export default function App() {
     }
     const full = { id: S.uid('NOTIF'), when: S.TODAY_ISO, priority: 'normal', ...n };
     setNotifications((ns) => [full, ...ns]);
-    db.insertNotification(full).catch((e) => console.error('Supabase sync failed:', e));
+    db.insertNotification(full).then(() => triggerPush(full.id)).catch((e) => console.error('Supabase sync failed:', e));
   };
 
   // Communication (see screens/Communication.tsx): same optimistic-append-then-write-through
