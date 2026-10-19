@@ -393,7 +393,8 @@ export default function Communication() {
   // Same per-project team-membership gate Phase Management uses: a full team member can post, a
   // Guest Teammate (or anyone viewing a project they're not tagged to at all) gets read-only.
   // Admin/Super Admin are exempt everywhere else in this app and stay exempt here too.
-  const readOnly = role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name);
+  const frozenChannel = S.isProjectTerminated(projMeta);
+  const readOnly = frozenChannel || (role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name));
   const canPost = !readOnly && S.capAtLeast(S.capabilityFor('Communication', myEmail, admin), 'Edit');
 
   const notifyProject = (payload: any) => addNotification({ projectId: activeProj, project: projMeta.name, tags: roster.map((r: any) => r.name), priority: 'high', ...payload });
@@ -595,6 +596,11 @@ export default function Communication() {
             })}
           </div>
 
+          {frozenChannel && (
+            <div className="text-xs text-red-700 bg-red-50 border-t border-red-200 px-3 py-2 flex items-center gap-1.5">
+              <S.Icon name="lock" className="w-3.5 h-3.5"/> This project was terminated — its Ping channel is frozen. History stays readable; no new messages or replies.
+            </div>
+          )}
           <Composer key={`composer-${activeProj}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
         </S.Card>
 

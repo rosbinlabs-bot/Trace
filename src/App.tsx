@@ -1168,7 +1168,7 @@ export default function App() {
   const addNotification = (n: any) => {
     if (n.type !== 'Billing Due Soon') {
       const proj = n.projectId ? projects.find((p: any) => p.id === n.projectId) : projects.find((p: any) => p.name === n.project);
-      if (proj && S.isProjectInactive(proj)) return;
+      if (proj && S.isProjectInactive(proj) && !String(n.type || '').startsWith('Project Termination') && n.type !== 'Project Terminated') return;
     }
     const full = { id: S.uid('NOTIF'), when: S.TODAY_ISO, priority: 'normal', ...n };
     setNotifications((ns) => [full, ...ns]);
@@ -1180,6 +1180,9 @@ export default function App() {
   // Supabase/every other tab in the background. Realtime (channel_messages handler above) is what
   // lands it for everyone else, live.
   const postChannelMessage = (m: any) => {
+    // Ping is frozen for a Terminated project -- read-only history, nobody can post to it any more.
+    const chanProj = projects.find((p: any) => (m.projectId ? p.id === m.projectId : p.name === m.project));
+    if (chanProj && S.isProjectTerminated(chanProj)) return;
     const full = { id: S.uid('MSG'), createdAt: new Date().toISOString(), ...m };
     setChannelMessagesState((ms) => [...ms, full]);
     db.insertChannelMessage(full).catch((e) => console.error('Supabase sync failed:', e));
@@ -1302,7 +1305,7 @@ export default function App() {
   // Implementation, Risks/Issues, Calendar, Client Approval, Reports) reads projects from this same
   // context, so fixing it here is what makes all of them correct at once.
   const visibleProjects = role === 'client'
-    ? projects.filter((p: any) => p.id === myProfile?.project)
+    ? projects.filter((p: any) => p.id === myProfile?.project && !S.isProjectTerminated(p))
     : S.staffVisibleProjects(projects, role, myProfile);
   // Risks, Issues, Deliverables and Calendar events aren't looked up through ProjectsDataContext --
   // Risks.tsx/Issues.tsx/the Reports "Risk Dashboard"/"Deliverable Budget" reports and Calendar all
@@ -1369,7 +1372,7 @@ export default function App() {
   // regardless since their branch never reaches this list at all).
   const isAdminAudience = (n: any) => n.audience === 'admins';
   const visibleNotifications = role === 'client'
-    ? notifications.filter((n: any) => n.projectId === myProfile?.project)
+    ? notifications.filter((n: any) => n.projectId === myProfile?.project && !String(n.type || '').startsWith('Project Termina'))
     : isProjectScoped
       // isProjectScoped is only ever true for non-admin staff roles (see its own definition below),
       // so an admin-audience notice never belongs here regardless of the exact role value.

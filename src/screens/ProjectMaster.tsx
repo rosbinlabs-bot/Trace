@@ -12,6 +12,7 @@ export default function ProjectMaster(){
   const { invoices, setInvoices } = React.useContext(S.InvoicesDataContext);
   const { settings, setSettings } = React.useContext(S.SettingsContext);
   const { team } = React.useContext(S.TeamDataContext);
+  const { addNotification } = React.useContext(S.PhaseDataContext);
   const addIndustry = (name) => setSettings(s => ({ ...s, industries: S.addUnique(s.industries, name) }));
   // rows/setRows now come from the shared ProjectsDataContext (App level) instead of a local copy,
   // so edits, confirms, and new projects made here are immediately visible to every other screen
@@ -131,9 +132,41 @@ export default function ProjectMaster(){
   const raiseSpecialRequest = (type) => {
     if(type==='Extension'){ setExtChooser(true); setReqMenuOpen(false); return; }
     if(type==='Project Hold Request' && !iAmSuperAdmin){ setReqMenuOpen(false); return; }
-    const statusMap = { 'Project Hold Request':'On Hold', 'Project Termination Request':'Terminated', 'Project Completion Request':'Completed' };
+    // Termination is never applied by whoever raises it: it goes to the Super Admin for approval
+    // (approveTermination / rejectTermination below). A Super Admin raising it is the approver, so
+    // theirs is applied straight away.
+    if(type==='Project Termination Request'){
+      setReqMenuOpen(false);
+      if(form.specialRequest?.type===type && form.specialRequest?.state==='Pending') return;
+      if(iAmSuperAdmin){
+        applyLifecycle({ status:'Terminated', specialRequest:{ type, by:role, byName:myName, on:S.TODAY_ISO, state:'Approved', approvedBy:myName, approvedOn:S.TODAY_ISO } });
+        notifyTerminated(form, myName);
+        return;
+      }
+      applyLifecycle({ specialRequest:{ type, by:role, byName:myName, on:S.TODAY_ISO, state:'Pending' } });
+      addNotification({ type:'Project Termination Request', audience:'admins', projectId:form.id, project:form.name, priority:'high',
+        message:`${myName||'A teammate'} has requested termination of project "${form.name||form.id}". Super Admin approval is required (Project Master).` });
+      return;
+    }
+    const statusMap = { 'Project Hold Request':'On Hold', 'Project Completion Request':'Completed' };
     applyLifecycle({ status: statusMap[type], specialRequest:{ type, by:role, on:S.TODAY_ISO } });
     setReqMenuOpen(false);
+  };
+  // Everyone concerned with the project: its team, guest teammates and whoever raised the request.
+  // (Admins/Super Admins see every project notification anyway; clients never get this one.)
+  const stakeholderNames = (p:any) => Array.from(new Set([...(p.team||[]).map((t:any)=>t.name), ...(p.guests||[]), p.specialRequest?.byName].filter(Boolean)));
+  const notifyTerminated = (p:any, approver:string) => addNotification({ type:'Project Terminated', projectId:p.id, project:p.name, tags:stakeholderNames(p), priority:'high',
+    message:`Project "${p.name||p.id}" has been terminated${approver?` (approved by ${approver})`:''}. It is now closed: billing and workload tracking have stopped and its Ping channel is frozen.` });
+  const approveTermination = () => {
+    if(!iAmSuperAdmin || form.specialRequest?.state!=='Pending') return;
+    applyLifecycle({ status:'Terminated', specialRequest:{ ...form.specialRequest, state:'Approved', approvedBy:myName, approvedOn:S.TODAY_ISO } });
+    notifyTerminated(form, myName);
+  };
+  const rejectTermination = () => {
+    if(!iAmSuperAdmin || form.specialRequest?.state!=='Pending') return;
+    applyLifecycle({ specialRequest:{ ...form.specialRequest, state:'Rejected', rejectedBy:myName, rejectedOn:S.TODAY_ISO } });
+    addNotification({ type:'Project Termination Rejected', projectId:form.id, project:form.name, tags:stakeholderNames(form), priority:'normal',
+      message:`The termination request for project "${form.name||form.id}" was rejected by ${myName||'a Super Admin'}. The project continues as before.` });
   };
   const canRaiseRequest = role==='admin' || role==='projectHead' || role==='strategicLead';
   // Status is a workflow field — only these roles (or admin) may change it, and it can be updated
@@ -315,7 +348,7 @@ export default function ProjectMaster(){
                 </S.Td>
                 <S.Td className="whitespace-nowrap">{showFinancials ? `${S.inLakh(p.monthlyFee)}/mo` : '••••••'}</S.Td>
                 <S.Td className="font-medium whitespace-nowrap" title={showFinancials ? `Collected ₹${S.fmt(collected)} of a ₹${S.fmt(S.projTargetRevenue(p))} target` : ''}>{showFinancials ? `${S.inLakh(collected)} / ${S.inLakh(S.projTargetRevenue(p))}` : '•••• / ••••'}</S.Td>
-                <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge></S.Td>
+                <S.Td><S.Badge cls={S.statusColor(p.status)}>{p.status}</S.Badge>{p.specialRequest?.type==='Project Termination Request' && p.specialRequest.state==='Pending' && <div className="mt-1"><S.Badge cls="bg-red-50 text-red-600">Termination pending</S.Badge></div>}</S.Td>
                 <S.Td className="whitespace-nowrap">{p.start ? p.start.split('-').reverse().join('/') : '—'}</S.Td>
                 <S.Td className="whitespace-nowrap">{p.end ? p.end.split('-').reverse().join('/') : '—'}</S.Td>
                 <S.Td>
@@ -341,7 +374,7 @@ export default function ProjectMaster(){
                 <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                   <span className="text-xs font-mono text-slate-400">MoU No.: {form.id || '—'}</span>
                   {form.confirmed ? <S.Badge cls="bg-slate-200 text-slate-600"><span className="inline-flex items-center gap-1"><S.Icon name="lock" className="w-3 h-3"/> Confirmed</span></S.Badge> : <S.Badge cls="bg-amber-100 text-amber-700">Draft</S.Badge>}
-                  {form.specialRequest && <S.Badge cls="bg-orange-100 text-orange-700">{form.specialRequest.type} · {form.specialRequest.on}</S.Badge>}
+                  {form.specialRequest && <S.Badge cls="bg-orange-100 text-orange-700">{form.specialRequest.type}{form.specialRequest.state?` (${form.specialRequest.state})`:''} · {form.specialRequest.on}</S.Badge>}
                   <S.Badge cls="bg-brand-50 text-brand-600">You: {S.ROLE_LABELS[role]||role}</S.Badge>
                 </div>
               </div>
@@ -403,10 +436,12 @@ export default function ProjectMaster(){
                   ) : (
                     <S.Badge cls={S.statusColor('On Hold')}>On Hold</S.Badge>
                   )
+                ) : (form.status==='Terminated' && !iAmSuperAdmin) ? (
+                  <S.Badge cls={S.statusColor('Terminated')}>Terminated</S.Badge>
                 ) : (
                   <div className="flex items-center gap-2 flex-wrap">
                     <select value={form.status} disabled={!canEditStatus} onChange={e=>applyLifecycle({status:e.target.value})} className={S.fieldCls(canEditStatus)}>
-                      {S.PROJECT_STATUSES.filter(s=>s!=='On Hold').map(s=><option key={s} value={s}>{s}</option>)}
+                      {S.PROJECT_STATUSES.filter(s=>s!=='On Hold' && (s!=='Terminated' || form.status==='Terminated')).map(s=><option key={s} value={s}>{s}</option>)}
                     </select>
                     {iAmSuperAdmin && (
                       <button type="button" onClick={()=>applyLifecycle({status:'On Hold'})} title="Freeze Phase Management until resumed" className="text-xs px-2.5 py-1.5 rounded-lg border border-amber-300 text-amber-600 hover:bg-amber-50 whitespace-nowrap">
@@ -416,6 +451,8 @@ export default function ProjectMaster(){
                   </div>
                 )}
                 {!canEditStatus && form.status!=='On Hold' && <div className="text-[11px] text-slate-400 mt-1">Only Project Head or Strategic Lead can update status.</div>}
+                {form.status==='Terminated' && !iAmSuperAdmin && <div className="text-[11px] text-slate-400 mt-1">This project was terminated. Only a Super Admin can change its status.</div>}
+                {form.status!=='Terminated' && <div className="text-[11px] text-slate-400 mt-1">To terminate, raise a Special Request → Project Termination Request (needs Super Admin approval).</div>}
                 {form.status==='On Hold' && !iAmSuperAdmin && <div className="text-[11px] text-slate-400 mt-1">Only a Super Admin can resume this project.</div>}
               </div>
               <S.SelF label="Priority" value={form.priority} canEdit={canEdit} onChange={v=>setF('priority',v)} opts={PRIORITIES} />
@@ -768,6 +805,17 @@ export default function ProjectMaster(){
             </div>
             </>)}
 
+            {form.specialRequest?.type==='Project Termination Request' && form.specialRequest.state==='Pending' && (
+              <div className="mt-4 text-xs text-red-800 bg-red-50 border border-red-200 rounded-lg px-3 py-2.5 flex items-center justify-between gap-3 flex-wrap">
+                <span><b>Termination requested</b> by {form.specialRequest.byName||'a teammate'} on {form.specialRequest.on}. {iAmSuperAdmin ? 'Approve to terminate this project, or reject to keep it running.' : 'Waiting for Super Admin approval — nothing changes until then.'}</span>
+                {iAmSuperAdmin && (
+                  <span className="flex gap-2">
+                    <button type="button" onClick={rejectTermination} className="px-3 py-1.5 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50">Reject</button>
+                    <button type="button" onClick={approveTermination} className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700">Approve termination</button>
+                  </span>
+                )}
+              </div>
+            )}
             {/* Actions */}
             <div className="mt-5 pt-4 border-t border-slate-100 flex items-end justify-between gap-3 flex-wrap">
               <div className="relative">
