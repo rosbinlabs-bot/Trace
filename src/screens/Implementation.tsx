@@ -3,7 +3,9 @@ import * as S from '../shared';
 
 export default function Implementation(){
   const { tree } = React.useContext(S.PhaseDataContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   const { admin } = React.useContext(S.AdminDataContext);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.

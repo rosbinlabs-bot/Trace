@@ -1168,7 +1168,7 @@ export default function App() {
   const addNotification = (n: any) => {
     if (n.type !== 'Billing Due Soon') {
       const proj = n.projectId ? projects.find((p: any) => p.id === n.projectId) : projects.find((p: any) => p.name === n.project);
-      if (proj && S.isProjectFrozen(proj)) return;
+      if (proj && S.isProjectInactive(proj)) return;
     }
     const full = { id: S.uid('NOTIF'), when: S.TODAY_ISO, priority: 'normal', ...n };
     setNotifications((ns) => [full, ...ns]);
@@ -1241,7 +1241,7 @@ export default function App() {
   // project's original signup date.
   useEffect(() => {
     if (loading || !tenantId) return;
-    projects.filter(S.billingDueSoon).forEach((p: any) => {
+    S.liveProjects(projects).filter(S.billingDueSoon).forEach((p: any) => {
       const due = S.nextBillingDueDate(p);
       if (!due) return;
       const already = notifications.some((n: any) => n.type === 'Billing Due Soon' && n.projectId === p.id && n.dueDate === due);

@@ -346,6 +346,17 @@ export const PROJECT_STATUSES = ['Yet to Start','In Progress','On Hold','Dropped
 // already in Phases.tsx (a per-phase pause a project's own senior team members can flip) -- that one
 // keeps working independently of this project-wide freeze.
 export const isProjectFrozen = (project: any) => project?.status === 'On Hold';
+// A Terminated project is closed out for good: unlike On Hold it is not coming back, so it is treated
+// as if it no longer exists for operational purposes -- no billing / dues / collections, no dashboard
+// or report figures, no approvals or notifications, and nothing it contains counts toward anyone's
+// team workload or allocation. The project record itself (and its phase tree) is left untouched in
+// the database so it stays visible, with its Terminated status, in Project Master.
+export const isProjectTerminated = (project: any) => project?.status === 'Terminated';
+// Terminated or On Hold -- anywhere a project should stop generating work-item noise (approvals,
+// notifications, badges).
+export const isProjectInactive = (project: any) => isProjectFrozen(project) || isProjectTerminated(project);
+// The projects that still count toward operational views (dashboards, reports, team load, pickers).
+export const liveProjects = (projects: any[]) => (projects || []).filter((p: any) => !isProjectTerminated(p));
 
 // Shared Phase Management data (phase/milestone/sub task tree + activity notifications) lifted to
 // App level so both Phase Management and the Client Portal read/write the exact same records —
@@ -1281,14 +1292,14 @@ export const outstandingCollections = (projects: any[], invoices: any[]): any[] 
   // showing up as outstanding/overdue while work on it is paused. Billing display fields elsewhere
   // (Revenue Collected KPI, Project Master's own Payment Receipts editing) are untouched -- this only
   // affects what counts as an OPEN/outstanding receivable.
-  const frozenProjectIds = new Set((projects||[]).filter(isProjectFrozen).map((p:any)=>p.id));
+  const frozenProjectIds = new Set((projects||[]).filter(isProjectInactive).map((p:any)=>p.id));
   (invoices||[]).forEach((i:any) => {
     if (i.status==='Received' || !i.dueDate) return;
     if (frozenProjectIds.has(i.project)) return;
     out.push({ id:i.id, project:i.project, dueDate:i.dueDate, amount:Number(i.amount)||0 });
   });
   (projects||[]).forEach((p:any) => {
-    if (isProjectFrozen(p)) return;
+    if (isProjectInactive(p)) return;
     (p.paymentReceipts||[]).forEach((r:any) => {
       if (r.status==='Received' || !r.due) return;
       const amount = receiptOutstanding(r);
@@ -1319,6 +1330,7 @@ const isoOfLocalDate = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 
 // there's nothing left to bill, so this returns null rather than an ever-more-overdue date.
 export const nextBillingDueDate = (p: any): string | null => {
   if (!p?.billingDueDate) return null;
+  if (isProjectTerminated(p)) return null;
   if (p.billing !== 'Monthly') return p.billingDueDate;
   if (['Completed', 'Terminated', 'Dropped'].includes(p.status)) return null;
   const parts = String(p.billingDueDate).slice(0, 10).split('-').map(Number);
@@ -1348,7 +1360,7 @@ export const computeInsights = ({ tree, risks, issues, changes, projects, team }
   // Work-item insights (overdue, client-pending, extension-needed) exclude a project On Hold --
   // billing (dueSoon below) deliberately stays on the raw, unfiltered `projects` list, since billing
   // keeps running regardless of hold status.
-  const workProjects = (projects||[]).filter(p=>!isProjectFrozen(p));
+  const workProjects = (projects||[]).filter(p=>!isProjectInactive(p));
   workProjects.forEach(p=>{
     (tree[p.id]||[]).forEach(ph=>{
       ph.milestones.forEach(ms=>{
@@ -1389,7 +1401,7 @@ export const computeInsights = ({ tree, risks, issues, changes, projects, team }
   if (extNeeded.length) {
     insights.push({ icon:'calendar', tone:'orange', text:`${extNeeded.length} project(s) have passed their end date, still marked In Progress, with no extension on file: ${extNeeded.map(p=>p.name).join(', ')}.` });
   }
-  const dueSoon = (projects||[]).filter(billingDueSoon);
+  const dueSoon = liveProjects(projects).filter(billingDueSoon);
   if (dueSoon.length) {
     insights.push({ icon:'financials', tone:'emerald', text:`${dueSoon.length} project(s) have a billing due date within 7 days — confirm invoices are prepared.` });
   }
@@ -1832,7 +1844,7 @@ export const myPendingApprovals = (projects: any[], tree: any, myProfile: any, a
   // A project On Hold contributes nothing to anyone's "awaiting my approval" list until it resumes --
   // whatever it was mid-review on stays frozen in place (Phases.tsx blocks further action on it too),
   // so it would otherwise sit here forever nagging when nobody can actually act on it.
-  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
+  projects.filter((p: any) => !isProjectInactive(p)).forEach((p: any) => {
     const myEntry = (p.team||[]).find((t: any) => t.name===myProfile.name);
     const myLevel = myEntry?.level || myProfile.level || designationHierarchyLevel(myProfile.designation, admin) || 'L9';
     const msApprover = approverLevelFor('milestone', p);
@@ -1863,7 +1875,7 @@ export const clientPendingApprovals = (projects: any[], tree: any): any[] => {
   // Same On Hold exclusion as myPendingApprovals above -- Portal.tsx's own sign-off actions are
   // frozen for a held project too (see its `canAct` gate), so nothing here should ask a client to
   // sign off on one anyway.
-  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
+  projects.filter((p: any) => !isProjectInactive(p)).forEach((p: any) => {
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
         if (ms.review==='Implemented Review' && ms.headApprovedImpl && !ms.clientApprovedImpl) out.push({ project:p.name, label:`Sign off milestone — ${ms.name}`, days:daysPending(ms), projectId:p.id, phaseId:ph.id, msId:ms.id });
@@ -1903,7 +1915,7 @@ export const totalPendingApprovals = (projects: any[], tree: any): { total: numb
   const tally = (item: any) => { if (item.review) { total++; if ((daysPending(item) ?? 0) >= STUCK_APPROVAL_DAYS) stuck++; } };
   // Same On Hold exclusion -- the sidebar's Phase Management/Client Approval badge shouldn't keep
   // counting a held project's frozen-in-place pending items.
-  projects.filter((p: any) => !isProjectFrozen(p)).forEach((p: any) => {
+  projects.filter((p: any) => !isProjectInactive(p)).forEach((p: any) => {
     (tree[p.id]||[]).forEach((ph: any) => {
       (ph.milestones||[]).forEach((ms: any) => {
         tally(ms);

@@ -19,7 +19,9 @@ const headBlue: React.CSSProperties = { ...cellBase, background: '#BDD7EE', font
 const plainField: React.CSSProperties = { border: 'none', borderBottom: '1px dotted #bbb', background: 'transparent', fontFamily: 'inherit', fontSize: 12, width: '100%', outline: 'none', padding: 0, color: 'inherit' };
 
 export default function MonthlyPlan(){
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   const { tree } = React.useContext(S.PhaseDataContext);
   const { plan, setPlan } = React.useContext(S.MonthlyPlanDataContext);
   const { role } = React.useContext(S.RoleContext);

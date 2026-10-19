@@ -32,7 +32,9 @@ const rollUp = (statuses) => {
 };
 
 export default function ProjectStructure(){
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   const { tree } = React.useContext(S.PhaseDataContext);
   const [active, setActive] = useState(projects[0]?.id);
   const [expandedPhase, setExpandedPhase] = useState(null);

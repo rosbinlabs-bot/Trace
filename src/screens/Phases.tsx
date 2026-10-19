@@ -8,7 +8,9 @@ export default function Phases(){
   const { tree, setTree, addNotification } = React.useContext(S.PhaseDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
   const { settings } = React.useContext(S.SettingsContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { risks } = React.useContext(S.GovernanceDataContext);

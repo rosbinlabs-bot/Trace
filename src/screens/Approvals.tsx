@@ -13,7 +13,7 @@ export default function Approvals(){
   // notification bell already use — see shared.tsx's notificationTarget).
   const allEntries: any[] = [];
   // On Hold projects are frozen: no approvals surface here until the project is resumed.
-  projects.filter((p:any)=>!S.isProjectFrozen(p)).forEach((p:any)=>{
+  projects.filter((p:any)=>!S.isProjectInactive(p)).forEach((p:any)=>{
     (tree[p.id]||[]).forEach((ph:any)=>{
       ph.milestones.forEach((ms:any)=>{
         allEntries.push({ item:ms, project:p.name, level:'Milestone', projectId:p.id, phaseId:ph.id, msId:ms.id });

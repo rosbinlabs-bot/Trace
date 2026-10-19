@@ -54,7 +54,9 @@ function initials(name: string){
 
 export default function Gantt(){
   const { tree } = React.useContext(S.PhaseDataContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   // Optional chaining: a project-scoped restricted account (see S.staffVisibleProjects) can have
   // zero visible projects, so projects[0] may be undefined -- projects[0].id would crash the screen.
   const [activeProj, setActiveProj] = useState(projects[0]?.id);

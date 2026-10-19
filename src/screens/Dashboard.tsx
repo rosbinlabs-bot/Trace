@@ -6,7 +6,9 @@ export default function Dashboard(){
   const navigate = useNavigate();
   const { tree } = React.useContext(S.PhaseDataContext);
   const { risks, issues, changes } = React.useContext(S.GovernanceDataContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   // A Suspended/deactivated account is never shown or counted on this dashboard -- same rule Team
   // Management (Team.tsx) already applies to itself. Shadows `team` so every existing usage below
   // (avgUtil/avgAvail/overloaded, dept averages, the Utilization KPI drill-down, computeInsights'
@@ -22,7 +24,7 @@ export default function Dashboard(){
   // every project they can see. Distinct from the "Approvals Pending"/"Approval Bottlenecks" widgets
   // below, which are the COO's org-wide view of who's sitting on what.
   const myApprovals = S.myPendingApprovals(projects, tree, myProfile, admin);
-  const dueBillings = projects.filter((p:any) => S.billingDueSoon(p) && !S.isProjectFrozen(p)).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
+  const dueBillings = projects.filter((p:any) => S.billingDueSoon(p) && !S.isProjectInactive(p)).sort((a,b)=>S.daysLeft(S.nextBillingDueDate(a)!)-S.daysLeft(S.nextBillingDueDate(b)!));
   const [billingDuesOpen, setBillingDuesOpen] = React.useState(true);
   // Which KPI tile's detail pop-up is open, if any — each tile is clickable and shows the live list
   // of records behind its number, so a number is never a dead end.
@@ -44,7 +46,7 @@ export default function Dashboard(){
   // `projects` list further down, since billing stays live through a hold.
   // Renamed to avoid colliding with the `activeProjects` KPI count declared further below
   // (count of status==='In Progress' projects, a pre-existing and unrelated variable).
-  const unfrozenProjects = React.useMemo(() => projects.filter((p:any) => !S.isProjectFrozen(p)), [projects]);
+  const unfrozenProjects = React.useMemo(() => projects.filter((p:any) => !S.isProjectInactive(p)), [projects]);
   const allEntries: any[] = React.useMemo(() => {
     const out: any[] = [];
     unfrozenProjects.forEach((p:any)=>{
@@ -116,7 +118,7 @@ export default function Dashboard(){
     if (dueSoon || projectOpenRisks(p).length>0) return 'amber';
     return 'green';
   };
-  const trackedProjects = projects.filter((p:any)=>p.status!=='Completed' && p.status!=='Dropped' && !S.isProjectFrozen(p));
+  const trackedProjects = projects.filter((p:any)=>p.status!=='Completed' && p.status!=='Dropped' && !S.isProjectInactive(p));
   const healthCounts = { red:0, amber:0, green:0 };
   trackedProjects.forEach((p:any)=>{ (healthCounts as any)[projectHealth(p)]++; });
   const projCompletionPct = (p:any) => {

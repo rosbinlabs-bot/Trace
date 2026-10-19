@@ -5,7 +5,9 @@ import * as Charts from '../chartWidgets';
 export default function Reports(){
   const { tree } = React.useContext(S.PhaseDataContext);
   const { risks, issues, changes } = React.useContext(S.GovernanceDataContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   // A Suspended/deactivated account is never shown or counted in these reports -- same rule Team
   // Management (Team.tsx) and the Dashboard already apply to themselves.
   const { team: rawTeam } = React.useContext(S.TeamDataContext);

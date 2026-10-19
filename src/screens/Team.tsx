@@ -43,7 +43,9 @@ export default function Team(){
   const { team } = React.useContext(S.TeamDataContext);
   const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
   const { settings } = React.useContext(S.SettingsContext);
-  const { projects } = React.useContext(S.ProjectsDataContext);
+  const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
+  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
+  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
   const { tree } = React.useContext(S.PhaseDataContext);
   const { role } = React.useContext(S.RoleContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
