@@ -80,7 +80,16 @@ export default function Portal(){
   // the Client Portal freezes the same way: sign-off actions turn off and a paused notice shows,
   // same as a View-only account, until the project is resumed.
   const frozen = S.isProjectFrozen(projMeta);
-  const canAct = S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'Edit') && !frozen;
+  // Sign-off (Approve / Request Changes / Remark) is restricted to the Client, Super Admin, or the
+  // project's L1 approver (S.approverLevelFor('milestone') -- L1, or the most senior level present if
+  // L1 isn't staffed). A plain Admin, or any other teammate, can view the portal but not sign off,
+  // even though the Client Portal matrix gives Admin Edit.
+  const meUser = (admin?.users||[]).find((x:any)=>(x.email||'').toLowerCase()===(email||'').toLowerCase());
+  const isClientUser = meUser?.type==='Client';
+  const myTeamLevel = ((projMeta.team||[]).find((t:any)=>t.name===myProfile?.name)||{}).level;
+  const isProjectL1 = !!myTeamLevel && myTeamLevel===S.approverLevelFor('milestone', projMeta);
+  const canSignOff = isClientUser || S.isSuperAdmin(email, admin) || isProjectL1;
+  const canAct = S.capAtLeast(S.capabilityFor('Client Portal', email, admin), 'Edit') && !frozen && canSignOff;
 
   // Recent Activity — the same shared notification feed the header bell reads (PhaseDataContext),
   // scoped down to just this active project. The header bell itself stays org-wide/role-scoped as
@@ -406,7 +415,7 @@ export default function Portal(){
                         </div>
                       </>
                     ) : (
-                      <div className="text-xs text-slate-400">This account has view-only access — sign-off and remarks are disabled.</div>
+                      <div className="text-xs text-slate-400">{canSignOff ? 'This account has view-only access — sign-off and remarks are disabled.' : 'Only the Client, the project\'s L1 approver or a Super Admin can approve, request changes or post remarks here.'}</div>
                     )}
                   </div>
                 )}
