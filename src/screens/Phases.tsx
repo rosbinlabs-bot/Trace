@@ -9,8 +9,9 @@ export default function Phases(){
   const { logActivity } = React.useContext(S.ActivityLogContext);
   const { settings } = React.useContext(S.SettingsContext);
   const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
-  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
-  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
+  // Terminated projects stay listed here for reference (read-only, frozen) -- live projects first so the
+  // default tab is never a closed-out one. They generate no notifications (see App.tsx addNotification).
+  const projects = React.useMemo(() => [...S.liveProjects(allScopedProjects), ...(allScopedProjects||[]).filter((p:any)=>S.isProjectTerminated(p))], [allScopedProjects]);
   const { role } = React.useContext(S.RoleContext);
   const { admin } = React.useContext(S.AdminDataContext);
   const { risks } = React.useContext(S.GovernanceDataContext);
@@ -26,7 +27,8 @@ export default function Phases(){
   // needs to actually be on THIS project's Team to edit anything here — a Guest (or anyone not tagged
   // at all, which shouldn't normally be reachable since staffVisibleProjects already filters the
   // project tabs) can view and download attachments only.
-  const readOnly = (role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name)) || S.isProjectFrozen(projMeta);
+  const isTerminatedProj = S.isProjectTerminated(projMeta);
+  const readOnly = (role!=='admin' && !S.isOnProjectTeam(projMeta, myProfile?.name)) || S.isProjectFrozen(projMeta) || isTerminatedProj;
   // "Acting as" is scoped to THIS project's actual team now — only the hierarchy levels really
   // present in Project Master's team list show up as tabs, instead of a fixed global list of four
   // (see S.projectLevelNumsPresent). It's derived from the signed-in account's own level on this
@@ -459,6 +461,12 @@ export default function Phases(){
   return (
     <div>
       {docErr && <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">{docErr}</div>}
+      {isTerminatedProj && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-1.5">
+          <S.Icon name="lock" className="w-3.5 h-3.5"/>
+          This project is Terminated — kept here for reference only. Everything is frozen and it no longer sends notifications.
+        </div>
+      )}
       {S.isProjectFrozen(projMeta) && (
         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3 flex items-center gap-1.5">
           <S.Icon name="lock" className="w-3.5 h-3.5"/>
@@ -529,7 +537,7 @@ export default function Phases(){
         {projects.map(p=>(
           <button key={p.id} onClick={()=>setActiveProj(p.id)}
             className={`whitespace-nowrap px-3 py-2 text-sm border-b-2 -mb-px transition-colors ${activeProj===p.id?'border-violet-500 text-violet-700 font-medium':'border-transparent text-slate-500 hover:text-slate-700'}`}>
-            {p.name}
+            {p.name}{S.isProjectTerminated(p) && <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Terminated</span>}
           </button>
         ))}
       </div>

@@ -33,8 +33,8 @@ const rollUp = (statuses) => {
 
 export default function ProjectStructure(){
   const { projects: allScopedProjects } = React.useContext(S.ProjectsDataContext);
-  // Terminated projects are closed out: dropped from this screen's project list, figures and team load.
-  const projects = React.useMemo(() => S.liveProjects(allScopedProjects), [allScopedProjects]);
+  // Terminated projects stay listed for reference (read-only rollup), live projects first.
+  const projects = React.useMemo(() => [...S.liveProjects(allScopedProjects), ...(allScopedProjects||[]).filter((p:any)=>S.isProjectTerminated(p))], [allScopedProjects]);
   const { tree } = React.useContext(S.PhaseDataContext);
   const [active, setActive] = useState(projects[0]?.id);
   const [expandedPhase, setExpandedPhase] = useState(null);
@@ -80,7 +80,9 @@ export default function ProjectStructure(){
               className={`flex-shrink-0 px-4 py-2.5 text-sm rounded-t-lg border-b-2 -mb-px transition-colors ${active===p.id?'border-brand-500 text-brand-700 bg-white font-medium':'border-transparent text-slate-500 hover:text-slate-700 hover:bg-slate-50'}`}>
               <div className="flex items-center gap-2 whitespace-nowrap">
                 <span>{p.name}</span>
-                <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${TRACTION_COLOR[t]}`}>{TRACTION_LABEL[t]}</span>
+                {S.isProjectTerminated(p)
+                  ? <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700">Terminated</span>
+                  : <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${TRACTION_COLOR[t]}`}>{TRACTION_LABEL[t]}</span>}
               </div>
             </button>
           );
