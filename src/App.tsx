@@ -240,6 +240,10 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // Clients never see the Ping tab (CLIENT_NAV omits it), so there's nothing to compute for that role.
   const { messages: pingMessages, readMap: pingReadMap } = React.useContext(S.CommDataContext);
   const pingUnread = role==='client' ? 0 : S.pingUnreadCount(pingMessages, email, pingReadMap);
+  // Open issues count for the Issue Management tab: every issue (already narrowed to the projects this
+  // account can see) that isn't Resolved/Closed yet. Clients don't get the Issues tab, so skip them.
+  const { issues: govIssues } = React.useContext(S.GovernanceDataContext);
+  const openIssues = role==='client' ? 0 : (govIssues||[]).filter((i: any) => i.status!=='Resolved' && i.status!=='Closed').length;
   const [theme, setTheme] = useState<'light' | 'dark'>(loadTheme);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = React.useRef<HTMLDivElement>(null);
@@ -387,6 +391,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                   // red when there's anything unread (unlike approvals, "unread" has no neutral phase).
                   const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge
                     : item.id==='communication' ? { total: pingUnread, stuck: pingUnread>0 ? 1 : 0 }
+                    : item.id==='issues' ? { total: openIssues, stuck: openIssues>0 ? 1 : 0 }
                     : { total: 0, stuck: 0 };
                   return (
                   <NavLink
@@ -394,6 +399,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                     to={`/${item.id}`}
                     title={badgeCount.total===0 ? item.label
                       : item.id==='communication' ? `${item.label} — ${badgeCount.total} unread message${badgeCount.total===1?'':'s'}`
+                      : item.id==='issues' ? `${item.label} — ${badgeCount.total} open issue${badgeCount.total===1?'':'s'}`
                       : `${item.label} — ${badgeCount.total} pending approval${badgeCount.total===1?'':'s'}${badgeCount.stuck>0?` (${badgeCount.stuck} stuck ${S.STUCK_APPROVAL_DAYS}+ days)`:''}`}
                     // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
                     // click lands, so by the time the route actually changes the code is usually already
@@ -550,6 +556,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
               {navGroups.flatMap((g: any) => g.items).map((item: any) => {
                 const badgeCount = item.id === 'approvals' ? pendingApprovalsBadge
                   : item.id === 'communication' ? { total: pingUnread, stuck: pingUnread > 0 ? 1 : 0 }
+                  : item.id === 'issues' ? { total: openIssues, stuck: openIssues > 0 ? 1 : 0 }
                   : { total: 0, stuck: 0 };
                 return (
                   <NavLink
