@@ -1004,6 +1004,10 @@ export const DEFAULT_ADMIN_DATA: any = {
   // Collection (Actual) is never stored here -- it's always computed live from invoices, same as
   // every other revenue figure in the app (see monthCollectionAllProjects above).
   budgetTargets: {},
+  // Administration -> Roles & Permissions -> Clients' Feedback access: per-account overrides of the
+  // level defaults, keyed by lowercase email -> { view, comment, edit }. See feedbackCapsFor below.
+  // Each feedback record itself lives in its own admin_data row, keyed 'cf:<projectId>:<feeDueDate>'.
+  feedbackAccess: {},
 };
 // Single context for the whole Administration area — the live object is loaded from Supabase
 // (db.loadAll -> App.tsx), with DEFAULT_ADMIN_DATA used only to fill in any key that has no row yet.
@@ -1064,6 +1068,7 @@ export const ICON_PATHS = {
   collaboration: '<path d="M21 12a8 8 0 0 1-11.5 7.2L3 21l1.8-5.3A8 8 0 1 1 21 12Z"/>',
   risks: '<path d="M12 4 2 20h20L12 4Z"/><path d="M12 10v4M12 17v.4"/>',
   issues: '<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3Z"/><path d="M12 8v4M12 15v.4"/>',
+  feedback: '<path d="M4 5h16v11H9l-5 4V5Z"/><path d="M8.5 10h7M8.5 13h4"/>',
   changes: '<path d="M20 11a8 8 0 0 0-14-4M4 6v4h4"/><path d="M4 13a8 8 0 0 0 14 4M20 18v-4h-4"/>',
   budget: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.2"/><circle cx="12" cy="12" r="0.6"/>',
   financials: '<circle cx="12" cy="12" r="9"/><path d="M15 9.2a3 3 0 0 0-3-1.4c-1.6 0-3 .9-3 2.1 0 2.7 6 1.3 6 4 0 1.2-1.3 2.1-3 2.1a3 3 0 0 1-3-1.4M12 6.4v11"/>',
@@ -1155,6 +1160,7 @@ export const NAV = [
   { group:'Governance', items:[
     { id:'risks', label:'Risk Management' },
     { id:'issues', label:'Issue Management' },
+    { id:'feedback', label:"Clients' Feedback" },
     { id:'changes', label:'Change Requests' },
     { id:'budget', label:'Budget' },
   ]},
@@ -1239,12 +1245,113 @@ export const NAV_MODULE: any = {
   doclibrary: 'Documents',
   risks: 'Risk / Issue / Change',
   issues: 'Risk / Issue / Change',
+  feedback: null,
   changes: 'Risk / Issue / Change',
   budget: 'Budget',
   team: 'Team Management',
   portal: 'Client Portal',
   reports: 'Reports',
   admin: 'Administration',
+};
+
+/* ============================ CLIENTS' FEEDBACK ============================ */
+// Feedback is collected from every client FEEDBACK_LEAD_DAYS before their next fee due date (the
+// project's nextBillingDueDate). One record per project per fee due date, stored in its own
+// admin_data row keyed 'cf:<projectId>:<feeDueDate>' -- so a new cycle starts by itself each time the
+// due date rolls forward, and past cycles stay behind as that client's history.
+export const FEEDBACK_LEAD_DAYS = 10;
+export const FEEDBACK_MODES = ['Phone call', 'Meeting', 'Video call', 'Email', 'Client Portal'];
+export const FEEDBACK_GROUPS: { title: string; questions: { text: string; short: string }[] }[] = [
+  { title: 'Delivery', questions: [
+    { text: 'Our deliverables meet your expectations on quality.', short: 'Quality' },
+    { text: 'Milestones are delivered on the dates promised.', short: 'On-time delivery' },
+    { text: 'The work matches the scope and requirements agreed.', short: 'Scope fit' },
+    { text: 'Issues you raise are resolved quickly.', short: 'Issue resolution' },
+  ]},
+  { title: 'Communication', questions: [
+    { text: 'Status updates are clear and arrive on time.', short: 'Status updates' },
+    { text: 'Our team responds promptly to your queries.', short: 'Responsiveness' },
+    { text: 'Your project manager understands your business.', short: 'PM understanding' },
+  ]},
+  { title: 'Commercial and trust', questions: [
+    { text: 'The value you receive justifies the fees.', short: 'Value for fees' },
+    { text: 'Invoices and payment terms are clear.', short: 'Invoicing clarity' },
+    { text: 'You are likely to continue with us and recommend us.', short: 'Continue / recommend' },
+  ]},
+];
+export const FEEDBACK_QUESTIONS: { text: string; short: string }[] = FEEDBACK_GROUPS.flatMap(g => g.questions);
+export const FEEDBACK_Q_COUNT = FEEDBACK_QUESTIONS.length;
+export const feedbackKey = (projectId: string, feeDue: string) => `cf:${projectId}:${String(feeDue).slice(0, 10)}`;
+export const blankFeedback = (p: any, feeDue: string) => ({
+  id: feedbackKey(p.id, feeDue), projectId: p.id, project: p.name, feeDue: String(feeDue).slice(0, 10),
+  scores: Array(FEEDBACK_Q_COUNT).fill(0), comments: Array(FEEDBACK_Q_COUNT).fill(''),
+  remarks: '', plan: '', actions: [] as any[], issues: {} as any, sharedBack: false, sharedAt: '',
+  amendments: [] as any[], status: 'Pending', riskId: '',
+  givenBy: '', mode: FEEDBACK_MODES[0], takenOn: '', recordedBy: '', recordedAt: '',
+});
+export const feedbackAvg = (scores: number[]): number => {
+  const r = (scores || []).filter(x => x > 0);
+  return r.length ? r.reduce((a, b) => a + b, 0) / r.length : 0;
+};
+export const feedbackAvgLabel = (n: number) => n ? (Math.round(n * 10) / 10).toFixed(1) : '—';
+// Auto-escalation: a complete form whose average is below 2.5, or that has any single rating of 1.
+export const feedbackNeedsEscalation = (scores: number[]) =>
+  (scores || []).filter(x => x > 0).length === FEEDBACK_Q_COUNT && (feedbackAvg(scores) < 2.5 || scores.indexOf(1) >= 0);
+// Date arithmetic done in UTC on plain YYYY-MM-DD strings, so it can't shift a day with the viewer's timezone.
+export const feedbackDueISO = (feeDue: string) => {
+  const [y, m, d] = String(feeDue).slice(0, 10).split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d - FEEDBACK_LEAD_DAYS)).toISOString().slice(0, 10);
+};
+export const feedbackDaysLeft = (dueISO: string) => Math.round((Date.parse(dueISO) - Date.parse(TODAY_ISO)) / 864e5);
+// Every live project that has a next fee due date, paired with its current-cycle record (stored, or blank).
+export const feedbackEntries = (projects: any[], admin: any) => {
+  const out: any[] = [];
+  liveProjects(projects).filter((p: any) => !isProjectInactive(p)).forEach((p: any) => {
+    const raw = nextBillingDueDate(p);
+    if (!raw) return;
+    const feeDue = String(raw).slice(0, 10);
+    const stored = admin?.[feedbackKey(p.id, feeDue)];
+    const rec = { ...blankFeedback(p, feeDue), ...(stored || {}), project: p.name };
+    const dueISO = feedbackDueISO(feeDue);
+    const done = rec.status === 'Recorded' || rec.status === 'Escalated';
+    const left = feedbackDaysLeft(dueISO);
+    const cat = done ? 'done' : left < 0 ? 'overdue' : left <= 7 ? 'week' : 'upcoming';
+    out.push({ project: p, feeDue, dueISO, left, cat, rec });
+  });
+  return out.sort((a, b) => a.dueISO.localeCompare(b.dueISO) || a.project.name.localeCompare(b.project.name));
+};
+export const feedbackOverdueCount = (projects: any[], admin: any) => feedbackEntries(projects, admin).filter(e => e.cat === 'overdue').length;
+// Past + current cycles for one project, oldest first (every stored 'cf:<projectId>:*' row).
+export const feedbackHistory = (projectId: string, admin: any) =>
+  Object.keys(admin || {}).filter(k => k.startsWith(`cf:${projectId}:`)).map(k => admin[k]).filter(Boolean)
+    .sort((a: any, b: any) => String(a.feeDue).localeCompare(String(b.feeDue)));
+
+// Who may do what on Clients' Feedback. Three independent switches, chosen per person in
+// Administration -> Roles & Permissions -> Clients' Feedback access:
+//   view    - open the page and read ratings, comments and history
+//   comment - add per-question comments, remarks, action items, amendments and the "shared back" tick
+//   edit    - record and change ratings, save/lock, create issues and escalate to the Risk Register
+// Edit implies Comment implies View. A Super Admin always has all three; Client-type logins never do.
+// With no override stored for a person, their permission level's default applies.
+export const FEEDBACK_LEVEL_DEFAULTS: any = {
+  'Super Admin': { view: true, comment: true, edit: true },
+  'Admin':       { view: true, comment: true, edit: true },
+  'Manager':     { view: true, comment: true, edit: false },
+  'Officer':     { view: false, comment: false, edit: false },
+};
+export const normalizeFeedbackCaps = (c: any) => {
+  const edit = !!c?.edit; const comment = edit || !!c?.comment; const view = comment || !!c?.view;
+  return { view, comment, edit };
+};
+export const feedbackDefaultCapsFor = (u: any, admin: any) => normalizeFeedbackCaps(FEEDBACK_LEVEL_DEFAULTS[effectivePermissionLevel(u, admin)] || {});
+export const feedbackCapsFor = (email: string, admin: any) => {
+  const none = { view: false, comment: false, edit: false };
+  const key = (email || '').toLowerCase();
+  const u = (admin?.users || []).find((x: any) => (x.email || '').toLowerCase() === key);
+  if (!u || u.status !== 'Active' || u.type === 'Client') return none;
+  if (effectivePermissionLevel(u, admin) === 'Super Admin') return { view: true, comment: true, edit: true };
+  const override = admin?.feedbackAccess?.[key];
+  return override ? normalizeFeedbackCaps(override) : feedbackDefaultCapsFor(u, admin);
 };
 
 /* ============================ MODULE SCREENS ============================ */

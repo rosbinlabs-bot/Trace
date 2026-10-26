@@ -297,7 +297,85 @@ function RolesPermissionsPanel(){
           </tbody>
         </table>
       </S.Card>
+
+      <FeedbackAccessCard canEdit={canEditRoles} />
     </div>
+  );
+}
+
+// Clients' Feedback access (Roles & Permissions tab): choose, per person, who can View, Comment and Edit
+// the Clients' Feedback page. Edit implies Comment implies View. With no override a person gets their
+// permission level's default (S.FEEDBACK_LEVEL_DEFAULTS); a Super Admin always has all three.
+function FeedbackAccessCard({ canEdit }: { canEdit: boolean }){
+  const { admin, patchAdmin } = React.useContext(S.AdminDataContext);
+  const { logActivity } = React.useContext(S.ActivityLogContext);
+  const people = (admin.users || []).filter((u: any) => u.type !== 'Client' && u.status === 'Active');
+  const keyOf = (u: any) => (u.email || '').toLowerCase();
+  const effective = (u: any) => S.feedbackCapsFor(u.email, admin);
+  const custom = (u: any) => !!admin?.feedbackAccess?.[keyOf(u)];
+  const setCaps = (u: any, next: any) => {
+    if (!canEdit) return;
+    const caps = S.normalizeFeedbackCaps(next);
+    patchAdmin('feedbackAccess', (cur: any) => ({ ...(cur || {}), [keyOf(u)]: caps }));
+    logActivity({ module: 'Roles & Permissions', action: `Set Clients' Feedback access for ${u.name || u.email}: view ${caps.view ? 'yes' : 'no'}, comment ${caps.comment ? 'yes' : 'no'}, edit ${caps.edit ? 'yes' : 'no'}` });
+  };
+  const toggle = (u: any, which: 'view' | 'comment' | 'edit') => {
+    const c = effective(u);
+    const on = !c[which];
+    if (which === 'view') setCaps(u, on ? { ...c, view: true } : { view: false, comment: false, edit: false });
+    else if (which === 'comment') setCaps(u, on ? { ...c, view: true, comment: true } : { ...c, comment: false, edit: false });
+    else setCaps(u, on ? { view: true, comment: true, edit: true } : { ...c, edit: false });
+  };
+  const resetOne = (u: any) => {
+    if (!canEdit) return;
+    patchAdmin('feedbackAccess', (cur: any) => { const cp = { ...(cur || {}) }; delete cp[keyOf(u)]; return cp; });
+    logActivity({ module: 'Roles & Permissions', action: `Reset Clients' Feedback access for ${u.name || u.email} to the default for their level` });
+  };
+  const resetAll = () => {
+    if (!canEdit) return;
+    if (!window.confirm("Reset everyone's Clients' Feedback access to the defaults for their permission level?")) return;
+    patchAdmin('feedbackAccess', () => ({}));
+    logActivity({ module: 'Roles & Permissions', action: "Reset all Clients' Feedback access to level defaults" });
+  };
+  const box = (u: any, which: 'view' | 'comment' | 'edit') => {
+    const locked = S.effectivePermissionLevel(u, admin) === 'Super Admin';
+    return (
+      <input type="checkbox" className="w-5 h-5 accent-brand-600 disabled:opacity-50" checked={!!effective(u)[which]} disabled={!canEdit || locked}
+        onChange={() => toggle(u, which)} aria-label={`${u.name || u.email}: ${which}`} />
+    );
+  };
+  return (
+    <S.Card className="p-4">
+      <div className="flex justify-between items-start gap-3 flex-wrap mb-1">
+        <div className="font-semibold text-slate-800 flex items-center gap-2"><S.Icon name="issues" className="w-4 h-4 text-slate-400"/> Clients' Feedback access</div>
+        {canEdit && <button onClick={resetAll} className="text-xs px-3 py-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 whitespace-nowrap">Reset all to level defaults</button>}
+      </div>
+      <div className="text-xs text-slate-500 mb-3 max-w-3xl">Choose who can <b>view</b> Clients' Feedback (ratings, comments, history), who can <b>comment</b> (per-question comments, remarks, action items, amendments) and who can <b>edit</b> (record ratings, save and lock, create issues, escalate to the Risk Register). Edit includes Comment, and Comment includes View. Someone with no View access does not see the menu item at all. Super Admins always have full access. Defaults: Admin = all three, Manager = view and comment, Officer = none.</div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm min-w-[620px]">
+          <thead><tr><S.Th>Person</S.Th><S.Th>Designation</S.Th><S.Th>Level</S.Th><S.Th>View</S.Th><S.Th>Comment</S.Th><S.Th>Edit</S.Th><S.Th>Setting</S.Th></tr></thead>
+          <tbody>
+            {people.map((u: any) => (
+              <tr key={u.email} className="border-t border-slate-100">
+                <S.Td className="font-medium">{u.name || u.email}</S.Td>
+                <S.Td className="text-slate-500">{u.designation || '—'}</S.Td>
+                <S.Td className="text-slate-500">{S.effectivePermissionLevel(u, admin) || '—'}</S.Td>
+                <S.Td>{box(u, 'view')}</S.Td>
+                <S.Td>{box(u, 'comment')}</S.Td>
+                <S.Td>{box(u, 'edit')}</S.Td>
+                <S.Td>
+                  {S.effectivePermissionLevel(u, admin) === 'Super Admin' ? <S.Badge cls="bg-emerald-100 text-emerald-700">Always full</S.Badge>
+                    : custom(u) ? <span className="flex items-center gap-2"><S.Badge cls="bg-amber-100 text-amber-700">Custom</S.Badge>{canEdit && <button onClick={() => resetOne(u)} className="text-xs text-brand-600 hover:underline">Reset</button>}</span>
+                    : <S.Badge cls="bg-slate-100 text-slate-500">Level default</S.Badge>}
+                </S.Td>
+              </tr>
+            ))}
+            {people.length === 0 && <tr><S.Td colSpan={7} className="text-slate-400">No active staff accounts yet.</S.Td></tr>}
+          </tbody>
+        </table>
+      </div>
+      {!canEdit && <div className="text-xs text-amber-700 mt-3">View-only: only a Super Admin can change these settings.</div>}
+    </S.Card>
   );
 }
 

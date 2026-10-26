@@ -36,6 +36,7 @@ const importScreen = {
   doclibrary: () => import('./screens/DocumentLibrary'),
   risks: () => import('./screens/Risks'),
   issues: () => import('./screens/Issues'),
+  feedback: () => import('./screens/ClientFeedback'),
   changes: () => import('./screens/Changes'),
   team: () => import('./screens/Team'),
   portal: () => import('./screens/Portal'),
@@ -59,6 +60,7 @@ const Documents = lazy(importScreen.documents);
 const DocumentLibrary = lazy(importScreen.doclibrary);
 const Risks = lazy(importScreen.risks);
 const Issues = lazy(importScreen.issues);
+const Feedback = lazy(importScreen.feedback);
 const Changes = lazy(importScreen.changes);
 const Team = lazy(importScreen.team);
 const Portal = lazy(importScreen.portal);
@@ -84,6 +86,13 @@ const loadTheme = (): 'light' | 'dark' => {
 function Gate({ module, admin, email, children }: { module: string | null; admin: any; email: string; children: React.ReactNode }) {
   if (!module) return <>{children}</>;
   if (!S.capAtLeast(S.capabilityFor(module, email, admin), 'View')) return <Navigate to="/dashboard" replace />;
+  return <>{children}</>;
+}
+
+// Clients' Feedback is governed by its own View/Comment/Edit switches (Administration -> Roles &
+// Permissions), not by the capability matrix -- same bounce-to-dashboard behaviour as Gate.
+function FeedbackGate({ admin, email, children }: { admin: any; email: string; children: React.ReactNode }) {
+  if (!S.feedbackCapsFor(email, admin).view) return <Navigate to="/dashboard" replace />;
   return <>{children}</>;
 }
 
@@ -240,6 +249,8 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // Clients never see the Ping tab (CLIENT_NAV omits it), so there's nothing to compute for that role.
   const { messages: pingMessages, readMap: pingReadMap } = React.useContext(S.CommDataContext);
   const pingUnread = role==='client' ? 0 : S.pingUnreadCount(pingMessages, email, pingReadMap);
+  // Clients' Feedback: how many clients' feedback is overdue (due 10 days before their fee due date).
+  const feedbackOverdue = (role==='client' || !S.feedbackCapsFor(email, admin).view) ? 0 : S.feedbackOverdueCount(projects, admin);
   // Open issues count for the Issue Management tab: every issue (already narrowed to the projects this
   // account can see) that isn't Resolved/Closed yet. Clients don't get the Issues tab, so skip them.
   const { issues: govIssues } = React.useContext(S.GovernanceDataContext);
@@ -299,7 +310,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
   // On mobile (isMobileStaff), swap to S.MOBILE_NAV instead -- the redirect effect just below is what
   // actually stops a typed/bookmarked URL from reaching a desktop-only screen, same role the <Gate>
   // route guards play for capability restrictions.
-  const navCapFilter = (g: any) => ({ ...g, items: g.items.filter((i: any) => { const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) });
+  const navCapFilter = (g: any) => ({ ...g, items: g.items.filter((i: any) => { if (i.id === 'feedback') return S.feedbackCapsFor(email, admin).view; const mod = S.NAV_MODULE[i.id]; return !mod || S.capAtLeast(S.capabilityFor(mod, email, admin), 'View'); }) });
   // Super Admin gets a 5th mobile tab (Budget) the rest of staff don't -- S.mobileNavFor picks the
   // right base list before the usual capability filter runs on top of it.
   const isSuperAdminAcct = role !== 'client' && S.isSuperAdmin(email, admin);
@@ -392,6 +403,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                   const badgeCount = (item.id==='phases' || item.id==='approvals') ? pendingApprovalsBadge
                     : item.id==='communication' ? { total: pingUnread, stuck: pingUnread>0 ? 1 : 0 }
                     : item.id==='issues' ? { total: openIssues, stuck: openIssues>0 ? 1 : 0 }
+                    : item.id==='feedback' ? { total: feedbackOverdue, stuck: feedbackOverdue>0 ? 1 : 0 }
                     : { total: 0, stuck: 0 };
                   return (
                   <NavLink
@@ -400,6 +412,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                     title={badgeCount.total===0 ? item.label
                       : item.id==='communication' ? `${item.label} — ${badgeCount.total} unread message${badgeCount.total===1?'':'s'}`
                       : item.id==='issues' ? `${item.label} — ${badgeCount.total} open issue${badgeCount.total===1?'':'s'}`
+                      : item.id==='feedback' ? `${item.label} — ${badgeCount.total} overdue`
                       : `${item.label} — ${badgeCount.total} pending approval${badgeCount.total===1?'':'s'}${badgeCount.stuck>0?` (${badgeCount.stuck} stuck ${S.STUCK_APPROVAL_DAYS}+ days)`:''}`}
                     // Start fetching a screen's chunk on hover/keyboard-focus/touch -- well before the
                     // click lands, so by the time the route actually changes the code is usually already
@@ -534,6 +547,7 @@ function Shell({ email, myProfile, onSignOut, inactivityDays }: { email: string;
                   <Route path="/doclibrary" element={<Gate module={S.NAV_MODULE.doclibrary} admin={admin} email={email}><DocumentLibrary /></Gate>} />
                   <Route path="/risks" element={<Gate module={S.NAV_MODULE.risks} admin={admin} email={email}><Risks /></Gate>} />
                   <Route path="/issues" element={<Gate module={S.NAV_MODULE.issues} admin={admin} email={email}><Issues /></Gate>} />
+                  <Route path="/feedback" element={<FeedbackGate admin={admin} email={email}><Feedback /></FeedbackGate>} />
                   <Route path="/changes" element={<Gate module={S.NAV_MODULE.changes} admin={admin} email={email}><Changes /></Gate>} />
                   <Route path="/budget" element={<Gate module={S.NAV_MODULE.budget} admin={admin} email={email}><Budget /></Gate>} />
                   <Route path="/team" element={<Gate module={S.NAV_MODULE.team} admin={admin} email={email}><Team /></Gate>} />
