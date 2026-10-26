@@ -210,7 +210,12 @@ export default function Dashboard(){
 
   // ---- risk register snapshot — highest severity first (probability + impact score) ----
   const sevScore = (v:string) => v==='High'?2:v==='Medium'?1:0;
-  const riskSnapshot = [...risks].sort((a:any,b:any)=>(sevScore(b.prob)+sevScore(b.impact))-(sevScore(a.prob)+sevScore(a.impact))).slice(0,6);
+  // Issue Register card: per client (project), how many issues a client contact raised -- open and total.
+  const clientIssueRows = projects.map((p:any)=>{
+    const names = new Set((p.clients||[]).map((c:any)=>c.name));
+    const mine = (issues||[]).filter((i:any)=>i.project===p.name && names.has(i.raisedBy));
+    return { name: p.name, total: mine.length, open: mine.filter((i:any)=>i.status!=='Resolved' && i.status!=='Closed').length };
+  }).filter((r:any)=>r.total>0).sort((a:any,b:any)=>b.open-a.open || b.total-a.total || a.name.localeCompare(b.name));
   const issuesBySeverity = { High:0, Medium:0, Low:0 };
   issuesOpen.forEach((i:any)=>{ if((issuesBySeverity as any)[i.severity]!==undefined) (issuesBySeverity as any)[i.severity]++; });
 
@@ -629,15 +634,22 @@ export default function Dashboard(){
           </div>
         </S.Card>
         <S.Card className="p-4">
-          <div className="font-semibold text-slate-800 mb-3">Risk Register Snapshot</div>
+          <div className="font-semibold text-slate-800 mb-3">Issue Register</div>
+          {/* Issues raised by a client contact of the project, grouped per client (project). Open = not Resolved/Closed. */}
+          <div className="flex justify-between text-[11px] uppercase tracking-wide text-slate-400 px-3 mb-1.5">
+            <span>Client</span><span className="flex gap-6"><span className="w-20 text-right">Open Issues</span><span className="w-20 text-right">Total Issues</span></span>
+          </div>
           <div className="space-y-1.5">
-            {riskSnapshot.map((r:any)=>(
-              <div key={r.id} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
-                <span className="text-slate-700 truncate">{r.desc} <span className="text-slate-400">— {r.project}</span></span>
-                <span className={`text-xs whitespace-nowrap ${r.supportBy?'text-slate-500':'text-red-600 font-medium'}`}>{r.supportBy||'Unassigned'}</span>
+            {clientIssueRows.map((r:any)=>(
+              <div key={r.name} className="flex justify-between items-center text-sm bg-slate-50 rounded-lg px-3 py-2">
+                <span className="text-slate-700 truncate">{r.name}</span>
+                <span className="flex gap-6 text-xs whitespace-nowrap">
+                  <span className={`w-20 text-right ${r.open>0?'text-red-600 font-semibold':'text-slate-400'}`}>{r.open}</span>
+                  <span className="w-20 text-right text-slate-600">{r.total}</span>
+                </span>
               </div>
             ))}
-            {riskSnapshot.length===0 && <div className="text-sm text-slate-400">No risks logged yet.</div>}
+            {clientIssueRows.length===0 && <div className="text-sm text-slate-400">No issues raised by clients yet.</div>}
           </div>
         </S.Card>
       </div>
