@@ -1766,7 +1766,7 @@ export const addDays = (iso, n) => { const d=new Date(iso); d.setDate(d.getDate(
 export const daysBetween = (a, b) => (a && b) ? Math.max(0, Math.round((+new Date(b) - +new Date(a))/864e5)) : null;
 
 export const HEAD_DECISIONS = ['Approved','Rework','Rejected'];             // reviewer's final call (PM for sub tasks, Head for milestones)
-export const DOC_ACCEPT = '.xls,.xlsx,.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png';
+export const DOC_ACCEPT = '.xls,.xlsx,.pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png,.html,.htm';
 export const docIcon = (n) => {
   const e=(n.split('.').pop()||'').toLowerCase();
   if(['xls','xlsx','csv'].includes(e)) return 'fileexcel';
