@@ -237,7 +237,9 @@ export default function Issues() {
                 <button className="text-slate-400 hover:text-slate-600" onClick={() => setDetailId(null)}>✕</button>
               </div>
               {editGeneral ? (
-                <input className={S.gInp + ' font-medium text-sm w-full mb-1'} value={i.desc} onChange={e => mut(i.id, { desc: e.target.value })} placeholder="Issue description" />
+                <textarea rows={1} className={S.gInp + ' font-medium text-sm w-full mb-1 resize-none overflow-hidden leading-relaxed'} value={i.desc}
+                  ref={el => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
+                  onChange={e => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; mut(i.id, { desc: e.target.value }); }} placeholder="Issue description" />
               ) : (
                 <div className="font-medium text-sm mb-1">{i.desc}</div>
               )}
