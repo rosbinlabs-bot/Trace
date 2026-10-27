@@ -475,7 +475,7 @@ export default function Communication() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const downloadAttachment = async (a: any) => {
     setDownloadingId(a.id || a.path);
-    try { window.open(await db.getChatFileDownloadUrl(a.path), '_blank'); }
+    try { window.open(await db.getChatFileDownloadUrl(a.path, a.n), '_blank'); }
     catch (e: any) { console.error('Could not generate a download link:', e); }
     setDownloadingId(null);
   };

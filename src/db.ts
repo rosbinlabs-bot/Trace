@@ -265,8 +265,11 @@ async function uploadToBucket(bucket: string, id: string, file: File) {
   if (error) throw error;
   return { path, name: file.name, size: file.size };
 }
-async function getBucketDownloadUrl(bucket: string, path: string, expiresIn = 60) {
-  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn);
+// `downloadName`: when given, the link is served as an attachment under that file name, so the browser
+// SAVES the file instead of showing it. Without it, Supabase serves an uploaded .html file as plain text
+// and a new tab just displays its source code. Left off for anything shown inline (voice notes, images).
+async function getBucketDownloadUrl(bucket: string, path: string, expiresIn = 60, downloadName?: string) {
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, expiresIn, downloadName ? { download: downloadName } : undefined);
   if (error) throw error;
   return data.signedUrl as string;
 }
@@ -280,7 +283,7 @@ export async function uploadLibraryDoc(docId: string, file: File) {
   const r = await uploadToBucket('library-docs', docId, file);
   return { filePath: r.path, fileName: r.name, fileSize: r.size };
 }
-export const getLibraryDocDownloadUrl = (filePath: string) => getBucketDownloadUrl('library-docs', filePath);
+export const getLibraryDocDownloadUrl = (filePath: string, name?: string) => getBucketDownloadUrl('library-docs', filePath, 60, name || filePath.split('/').pop());
 export const deleteLibraryDocFile = (filePath: string) => deleteFromBucket('library-docs', filePath);
 
 // Phase Management: milestone/sub task attachments. `id` is a fresh per-file id (S.uid('DOC')) so
@@ -289,7 +292,7 @@ export async function uploadPhaseDoc(id: string, file: File) {
   const r = await uploadToBucket('phase-docs', id, file);
   return { id, path: r.path, name: r.name, size: r.size };
 }
-export const getPhaseDocDownloadUrl = (path: string) => getBucketDownloadUrl('phase-docs', path);
+export const getPhaseDocDownloadUrl = (path: string, name?: string) => getBucketDownloadUrl('phase-docs', path, 60, name || path.split('/').pop());
 export const deletePhaseDocFile = (path: string) => deleteFromBucket('phase-docs', path);
 
 // Communication: file attachments and recorded voice notes posted in a project's channel, same
@@ -301,7 +304,7 @@ export async function uploadChatFile(id: string, file: File) {
   const r = await uploadToBucket('chat-files', id, file);
   return { id, path: r.path, name: r.name, size: r.size };
 }
-export const getChatFileDownloadUrl = (path: string) => getBucketDownloadUrl('chat-files', path, 3600);
+export const getChatFileDownloadUrl = (path: string, name?: string) => getBucketDownloadUrl('chat-files', path, 3600, name);
 
 // Risk Management: attachments on a risk entry (evidence, mitigation plans, etc.), same
 // private/tenant-scoped bucket pattern as phase-docs.
@@ -309,7 +312,7 @@ export async function uploadRiskDoc(id: string, file: File) {
   const r = await uploadToBucket('risk-docs', id, file);
   return { id, path: r.path, name: r.name, size: r.size };
 }
-export const getRiskDocDownloadUrl = (path: string) => getBucketDownloadUrl('risk-docs', path);
+export const getRiskDocDownloadUrl = (path: string, name?: string) => getBucketDownloadUrl('risk-docs', path, 60, name || path.split('/').pop());
 export const deleteRiskDocFile = (path: string) => deleteFromBucket('risk-docs', path);
 export const syncDeliverables = (prev: any[], next: any[]) => syncArray('deliverables', prev, next, deliverableToDb);
 export const syncTeam = (prev: any[], next: any[]) => syncArray('team', prev, next, teamToDb, 'name');

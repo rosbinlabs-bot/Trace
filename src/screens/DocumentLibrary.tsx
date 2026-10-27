@@ -57,7 +57,7 @@ export default function DocumentLibrary(){
     if(!d.filePath) return;
     setErr(''); setDownloadingId(d.id);
     try {
-      const url = await db.getLibraryDocDownloadUrl(d.filePath);
+      const url = await db.getLibraryDocDownloadUrl(d.filePath, d.fileName || d.name);
       window.open(url, '_blank');
     } catch(e:any) { setErr(e.message || 'Could not generate a download link.'); }
     setDownloadingId(null);

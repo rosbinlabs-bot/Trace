@@ -36,7 +36,7 @@ export default function Portal(){
   const downloadDoc = async (d:any) => {
     if(!d.path) return;
     setDocErr(''); setDownloadingDocId(d.id||d.path);
-    try { window.open(await db.getPhaseDocDownloadUrl(d.path), '_blank'); }
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path, d.n), '_blank'); }
     catch(e:any) { setDocErr(e.message || 'Could not generate a download link.'); }
     setDownloadingDocId(null);
   };

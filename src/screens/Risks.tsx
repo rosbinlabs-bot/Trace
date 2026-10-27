@@ -132,7 +132,7 @@ export default function Risks() {
   const downloadDoc = async (d: any) => {
     if (!d.path) return;
     setDocErr(''); setDownloadingId(d.id || d.path);
-    try { window.open(await db.getRiskDocDownloadUrl(d.path), '_blank'); }
+    try { window.open(await db.getRiskDocDownloadUrl(d.path, d.n), '_blank'); }
     catch (e: any) { setDocErr(e.message || 'Could not generate a download link.'); }
     setDownloadingId(null);
   };
