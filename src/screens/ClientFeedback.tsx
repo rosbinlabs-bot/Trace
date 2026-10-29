@@ -54,6 +54,7 @@ export default function ClientFeedback() {
   const [draft, setDraft] = useState<any>({ t: '', o: '', d: '' });
   const [amendText, setAmendText] = useState('');
   const [openC, setOpenC] = useState<any>({});
+  const [qEdit, setQEdit] = useState<any>(null);   // draft question set while an admin is editing it
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
   const entries = useMemo(() => S.feedbackEntries(projects, admin), [projects, admin]);
@@ -64,16 +65,18 @@ export default function ClientFeedback() {
 
   // Weakest areas across clients: per question, the average of each client's latest stored cycle.
   const weakest = useMemo(() => {
-    const sums = S.FEEDBACK_QUESTIONS.map(() => [0, 0]);
+    const acc = new Map<string, number[]>();
     const seen = new Set<string>();
     entries.forEach((e: any) => {
       if (seen.has(e.project.id)) return; seen.add(e.project.id);
       const hist = S.feedbackHistory(e.project.id, admin).filter((r: any) => (r.scores || []).some((x: number) => x > 0));
       const last = hist[hist.length - 1];
-      if (last) last.scores.forEach((v: number, i: number) => { if (v > 0) { sums[i][0] += v; sums[i][1]++; } });
+      if (!last) return;
+      const r = S.feedbackResolve(last, admin);
+      r.flat.forEach((q: any, i: number) => { const v = r.scores[i]; if (v > 0) { const t = acc.get(q.short) || [0, 0]; t[0] += v; t[1]++; acc.set(q.short, t); } });
     });
-    return sums.map((s, i) => ({ label: S.FEEDBACK_QUESTIONS[i].short, v: s[1] ? s[0] / s[1] : 0 }))
-      .filter(x => x.v > 0).sort((a, b) => a.v - b.v).slice(0, 3);
+    return Array.from(acc.entries()).map(([label, t]) => ({ label, v: t[1] ? t[0] / t[1] : 0 }))
+      .filter(x => x.v > 0).sort((x, y) => x.v - y.v).slice(0, 3);
   }, [entries, admin]);
 
   const avgAll = (() => {
@@ -83,21 +86,42 @@ export default function ClientFeedback() {
 
   if (!caps.view) return <S.Card className="p-6 text-sm text-slate-500">You don't have access to Clients' Feedback. Ask a Super Admin to enable it in Administration → Roles & Permissions.</S.Card>;
 
+  const isAdminUser = S.deriveRole(email, admin) === 'admin';
+  const openQEdit = () => setQEdit(JSON.parse(JSON.stringify(S.feedbackGroupsFor(admin))));
+  const mut = (fn: (g: any[]) => void) => setQEdit((cur: any) => { const n = JSON.parse(JSON.stringify(cur)); fn(n); return n; });
+  const move = (arr: any[], i: number, d: number) => { const j = i + d; if (j < 0 || j >= arr.length) return; const t = arr[i]; arr[i] = arr[j]; arr[j] = t; };
+  const saveQEdit = () => {
+    const cleaned = (qEdit || []).map((g: any) => ({
+      id: g.id, title: String(g.title || '').trim() || 'Section',
+      questions: (g.questions || []).map((q: any) => ({ id: q.id, text: String(q.text || '').trim(), short: String(q.short || '').trim() || String(q.text || '').trim().slice(0, 28) })).filter((q: any) => q.text),
+    })).filter((g: any) => g.questions.length);
+    if (!cleaned.length) { flash('Add at least one question before saving.'); return; }
+    patchAdmin('feedbackQuestions', cleaned);
+    logActivity({ module: "Clients' Feedback", action: `Updated the feedback question set (${cleaned.reduce((n: number, g: any) => n + g.questions.length, 0)} questions)`, project: '' });
+    setQEdit(null);
+    flash('Questions updated. Forms not yet saved will use them; saved forms keep theirs.');
+  };
+
   const owners: string[] = (team || []).filter((t: any) => t.status !== 'Suspended' && t.status !== 'Deactivated').map((t: any) => t.name).filter(Boolean);
 
   // Write a patch to the selected record. Merged against the stored row so two people editing different
   // fields at nearly the same moment don't wipe each other out.
-  const update = (e: any, patch: any) => patchAdmin(e.rec.id, (cur: any) => ({ ...S.blankFeedback(e.project, e.feeDue), ...(cur || {}), ...patch }));
+  const update = (e: any, patch: any) => patchAdmin(e.rec.id, (cur: any) => {
+    const r = e.rec;
+    const lock = patch.status === 'Recorded' || patch.status === 'Escalated';   // saved forms keep the questions they were answered with
+    return { ...S.blankFeedback(e.project, e.feeDue), ...(cur || {}), qids: r.qids, scores: r.scores, comments: r.comments, issues: r.issues, ...(lock ? { groups: r.groups } : {}), ...patch };
+  });
 
   const rec = sel?.rec;
+  const qCount = rec ? rec.flat.length : 0;
   const locked = !!rec && (rec.status === 'Recorded' || rec.status === 'Escalated');
   const answered = rec ? rec.scores.filter((x: number) => x > 0).length : 0;
   const missing = rec ? rec.scores.filter((v: number, i: number) => v > 0 && v <= 2 && !String(rec.comments[i] || '').trim()).length : 0;
   const avg = rec ? S.feedbackAvg(rec.scores) : 0;
   const canRate = caps.edit && !locked;
   const canWrite = caps.comment && !locked;       // per-question comments, remarks, plan
-  const cantSave = answered < S.FEEDBACK_Q_COUNT || missing > 0;
-  const autoRule = !!rec && S.feedbackNeedsEscalation(rec.scores);
+  const cantSave = answered < qCount || missing > 0;
+  const autoRule = !!rec && S.feedbackNeedsEscalation(rec.scores, qCount);
 
   const escalate = async (e: any, automatic: boolean) => {
     if (busy) return;
@@ -121,7 +145,7 @@ export default function ClientFeedback() {
 
   const save = async (e: any) => {
     if (cantSave || !caps.edit) return;
-    if (S.feedbackNeedsEscalation(e.rec.scores)) { await escalate(e, true); return; }
+    if (S.feedbackNeedsEscalation(e.rec.scores, e.rec.flat.length)) { await escalate(e, true); return; }
     update(e, { status: 'Recorded', recordedBy: me, recordedAt: new Date().toISOString(), takenOn: e.rec.takenOn || S.TODAY_ISO });
     logActivity({ module: "Clients' Feedback", action: `Recorded feedback for ${e.project.name} (${S.feedbackAvgLabel(S.feedbackAvg(e.rec.scores))}/5)`, project: e.project.name });
     flash(`Feedback saved and locked for ${e.project.name}`);
@@ -135,7 +159,7 @@ export default function ClientFeedback() {
       const score = e.rec.scores[qi];
       const text = String(e.rec.comments[qi] || '').trim();
       setIssues((is: any[]) => [...is, {
-        id, project: e.project.name, desc: `Client feedback Q${qi + 1} (${S.FEEDBACK_QUESTIONS[qi].short}): ${text}`.slice(0, 300),
+        id, project: e.project.name, desc: `Client feedback Q${qi + 1} (${e.rec.flat[qi]?.short || 'Question'}): ${text}`.slice(0, 300),
         raisedBy: e.project.clients?.[0]?.name || me, assignee: '', tags: [],
         severity: score > 0 && score <= 2 ? 'High' : score === 3 ? 'Medium' : 'Low', due: '', status: 'Open', pendingStatus: null,
         addedBy: me, addedAt: new Date().toISOString(), remarks: [],
@@ -187,8 +211,9 @@ export default function ClientFeedback() {
     );
   };
   const groupAvg = (gi: number) => {
-    const off = S.FEEDBACK_GROUPS.slice(0, gi).reduce((n, x) => n + x.questions.length, 0);
-    return rec ? S.feedbackAvg(rec.scores.slice(off, off + S.FEEDBACK_GROUPS[gi].questions.length)) : 0;
+    if (!rec) return 0;
+    const off = rec.groups.slice(0, gi).reduce((n: number, x: any) => n + x.questions.length, 0);
+    return S.feedbackAvg(rec.scores.slice(off, off + rec.groups[gi].questions.length));
   };
   const Switch = ({ on, onClick, disabled, label }: any) => (
     <button type="button" role="switch" aria-checked={on} aria-label={label} onClick={onClick} disabled={disabled}
@@ -211,7 +236,53 @@ export default function ClientFeedback() {
           <h1 className="text-2xl font-bold text-slate-900">Clients' Feedback</h1>
           <p className="text-sm text-slate-500 mt-1 max-w-2xl">Hear from every client <b className="text-slate-700">{S.FEEDBACK_LEAD_DAYS} days before their fee is due</b>, so concerns surface before the invoice does.</p>
         </div>
-        <div className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">Today <b className="text-slate-700">{fmtDate(S.TODAY_ISO)}</b></div>
+        <div className="flex items-center gap-2">
+          {isAdminUser && !qEdit && <button onClick={openQEdit} className="h-9 px-3 rounded-lg border border-brand-600 text-brand-700 bg-white font-semibold text-sm hover:bg-brand-50">Edit questions</button>}
+          <div className="text-xs text-slate-500 bg-white border border-slate-200 rounded-lg px-3 py-2">Today <b className="text-slate-700">{fmtDate(S.TODAY_ISO)}</b></div>
+        </div>
+        {qEdit && isAdminUser && (
+          <div className="basis-full">
+            <S.Card className="p-5 space-y-4 border-brand-200">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-base font-semibold text-slate-900">Edit feedback questions</div>
+                  <p className="text-xs text-slate-500 mt-1 max-w-2xl">Reword, reorder, add or delete questions and sections. Forms not yet saved pick up the changes (answers stay with their question; answers to a deleted question are dropped). Saved and locked forms keep the questions they were answered with, so history never changes.</p>
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <button onClick={() => setQEdit(JSON.parse(JSON.stringify(S.FEEDBACK_GROUPS)))} className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">Reset to defaults</button>
+                  <button onClick={() => setQEdit(null)} className="h-9 px-3 rounded-lg border border-slate-300 bg-white text-sm font-semibold text-slate-700 hover:bg-slate-50">Cancel</button>
+                  <button onClick={saveQEdit} className="h-9 px-4 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold">Save questions</button>
+                </div>
+              </div>
+              {qEdit.map((g: any, gi: number) => (
+                <div key={g.id} className="border border-slate-200 rounded-xl overflow-hidden">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border-b border-slate-100">
+                    <span className="w-7 h-7 rounded-lg bg-brand-600 text-white text-sm font-bold flex items-center justify-center shrink-0">{gi + 1}</span>
+                    <input aria-label={`Section ${gi + 1} title`} className="border border-slate-200 rounded-lg px-3 h-9 text-sm font-semibold bg-white flex-1 min-w-[160px]" value={g.title} onChange={e => mut(a => { a[gi].title = e.target.value; })} />
+                    <button aria-label="Move section up" disabled={gi === 0} onClick={() => mut(a => move(a, gi, -1))} className="w-9 h-9 rounded-lg border border-slate-200 bg-white disabled:opacity-40">↑</button>
+                    <button aria-label="Move section down" disabled={gi === qEdit.length - 1} onClick={() => mut(a => move(a, gi, 1))} className="w-9 h-9 rounded-lg border border-slate-200 bg-white disabled:opacity-40">↓</button>
+                    <button aria-label="Delete section" onClick={() => mut(a => { a.splice(gi, 1); })} className="h-9 px-3 rounded-lg border border-red-200 text-red-700 bg-white text-xs font-semibold hover:bg-red-50">Delete section</button>
+                  </div>
+                  <div className="divide-y divide-slate-100">
+                    {g.questions.map((q: any, qi: number) => (
+                      <div key={q.id} className="p-3 grid grid-cols-1 md:grid-cols-[1fr_200px_auto] gap-2 items-start">
+                        <textarea aria-label="Question text" rows={2} className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white w-full resize-y" value={q.text} placeholder="Question the client is asked" onChange={e => mut(a => { a[gi].questions[qi].text = e.target.value; })} />
+                        <input aria-label="Short label" className="border border-slate-200 rounded-lg px-3 h-10 text-sm bg-white w-full" value={q.short} placeholder="Short label (for charts)" onChange={e => mut(a => { a[gi].questions[qi].short = e.target.value; })} />
+                        <div className="flex gap-1">
+                          <button aria-label="Move question up" disabled={qi === 0} onClick={() => mut(a => move(a[gi].questions, qi, -1))} className="w-9 h-10 rounded-lg border border-slate-200 bg-white disabled:opacity-40">↑</button>
+                          <button aria-label="Move question down" disabled={qi === g.questions.length - 1} onClick={() => mut(a => move(a[gi].questions, qi, 1))} className="w-9 h-10 rounded-lg border border-slate-200 bg-white disabled:opacity-40">↓</button>
+                          <button aria-label="Delete question" onClick={() => mut(a => { a[gi].questions.splice(qi, 1); })} className="w-9 h-10 rounded-lg border border-red-200 text-red-700 bg-white hover:bg-red-50">✕</button>
+                        </div>
+                      </div>
+                    ))}
+                    <div className="p-3"><button onClick={() => mut(a => { a[gi].questions.push({ id: S.uid('Q'), text: '', short: '' }); })} className="text-xs font-semibold text-brand-600 hover:text-brand-700 min-h-[32px]">+ Add question</button></div>
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => mut(a => { a.push({ id: S.uid('G'), title: 'New section', questions: [{ id: S.uid('Q'), text: '', short: '' }] }); })} className="h-9 px-3 rounded-lg border border-brand-600 text-brand-700 bg-white font-semibold text-sm hover:bg-brand-50">+ Add section</button>
+            </S.Card>
+          </div>
+        )}
       </div>
 
       <S.Card className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-slate-100 lg:[&>*:nth-child(n+3)]:border-t-0 mb-5">
@@ -289,8 +360,8 @@ export default function ClientFeedback() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-slate-500">{answered} of {S.FEEDBACK_Q_COUNT} answered</div>
-                    <div className="w-36 h-2 rounded-full bg-slate-100 mt-1.5"><div className="h-2 rounded-full bg-brand-600 transition-all" style={{ width: `${answered * 10}%` }} /></div>
+                    <div className="text-xs text-slate-500">{answered} of {qCount} answered</div>
+                    <div className="w-36 h-2 rounded-full bg-slate-100 mt-1.5"><div className="h-2 rounded-full bg-brand-600 transition-all" style={{ width: `${qCount ? Math.round(answered / qCount * 100) : 0}%` }} /></div>
                   </div>
                 </div>
                 {!caps.comment && <div className="mt-4 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">You have view-only access to Clients' Feedback.</div>}
@@ -339,18 +410,18 @@ export default function ClientFeedback() {
                     </div>
                   </S.Card>
 
-                  {S.FEEDBACK_GROUPS.map((g, gi) => {
-                    const offset = S.FEEDBACK_GROUPS.slice(0, gi).reduce((n, x) => n + x.questions.length, 0);
+                  {rec.groups.map((g: any, gi: number) => {
+                    const offset = rec.groups.slice(0, gi).reduce((n: number, x: any) => n + x.questions.length, 0);
                     const ga = groupAvg(gi);
                     return (
-                      <S.Card key={g.title} className="overflow-hidden">
+                      <S.Card key={g.id || g.title} className="overflow-hidden">
                         <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 border-b border-slate-100">
                           <div className="flex items-center gap-3"><span className="w-7 h-7 rounded-lg bg-brand-600 text-white text-sm font-bold flex items-center justify-center">{gi + 1}</span><h2 className="font-semibold text-slate-900">{g.title}</h2></div>
                           <div className="flex items-center gap-3"><span className="hidden sm:inline text-[11px] text-slate-400">1 Poor · 3 Fair · 5 Excellent</span>
                             {ga > 0 && <span className={`text-sm font-bold ${avgColor(ga)}`}>{S.feedbackAvgLabel(ga)}</span>}</div>
                         </div>
                         <div className="divide-y divide-slate-100">
-                          {g.questions.map((q, k) => {
+                          {g.questions.map((q: any, k: number) => {
                             const qi = offset + k; const score = rec.scores[qi]; const low = score > 0 && score <= 2;
                             const text = String(rec.comments[qi] || ''); const issueId = (rec.issues || {})[qi];
                             const showBox = !!openC[`${rec.id}:${qi}`] || !!text || low;
@@ -460,7 +531,7 @@ export default function ClientFeedback() {
                     <div className="sticky bottom-3 z-10">
                       <div className="bg-white/95 backdrop-blur border border-slate-200 shadow-lg rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-slate-600 flex-1 min-w-[220px]">
-                          {answered < S.FEEDBACK_Q_COUNT ? `Answer all ${S.FEEDBACK_Q_COUNT} questions to save or escalate.` : missing > 0 ? `${missing} low rating${missing === 1 ? '' : 's'} still need a reason.` : autoRule ? <span className="text-red-700 font-medium">Meets the auto-escalation rule: will be escalated when saved.</span> : 'Saving locks the ratings.'}
+                          {answered < qCount ? `Answer all ${qCount} questions to save or escalate.` : missing > 0 ? `${missing} low rating${missing === 1 ? '' : 's'} still need a reason.` : autoRule ? <span className="text-red-700 font-medium">Meets the auto-escalation rule: will be escalated when saved.</span> : 'Saving locks the ratings.'}
                           <div className="text-[11px] text-slate-400 mt-0.5">Auto-escalates at an average below 2.5, or any rating of 1.</div>
                         </div>
                         <div className="flex gap-2 flex-wrap">

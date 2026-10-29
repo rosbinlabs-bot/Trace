@@ -1008,6 +1008,8 @@ export const DEFAULT_ADMIN_DATA: any = {
   // level defaults, keyed by lowercase email -> { view, comment, edit }. See feedbackCapsFor below.
   // Each feedback record itself lives in its own admin_data row, keyed 'cf:<projectId>:<feeDueDate>'.
   feedbackAccess: {},
+  // Editable question set for Clients' Feedback (sections -> questions, each with a stable id). null = built-in defaults.
+  feedbackQuestions: null,
 };
 // Single context for the whole Administration area — the live object is loaded from Supabase
 // (db.loadAll -> App.tsx), with DEFAULT_ADMIN_DATA used only to fill in any key that has no row yet.
@@ -1261,7 +1263,7 @@ export const NAV_MODULE: any = {
 // due date rolls forward, and past cycles stay behind as that client's history.
 export const FEEDBACK_LEAD_DAYS = 10;
 export const FEEDBACK_MODES = ['Phone call', 'Meeting', 'Video call', 'Email', 'Client Portal'];
-export const FEEDBACK_GROUPS: { title: string; questions: { text: string; short: string }[] }[] = [
+const FEEDBACK_GROUPS_RAW: { title: string; questions: { text: string; short: string }[] }[] = [
   { title: 'Delivery', questions: [
     { text: 'Our deliverables meet your expectations on quality.', short: 'Quality' },
     { text: 'Milestones are delivered on the dates promised.', short: 'On-time delivery' },
@@ -1279,12 +1281,24 @@ export const FEEDBACK_GROUPS: { title: string; questions: { text: string; short:
     { text: 'You are likely to continue with us and recommend us.', short: 'Continue / recommend' },
   ]},
 ];
-export const FEEDBACK_QUESTIONS: { text: string; short: string }[] = FEEDBACK_GROUPS.flatMap(g => g.questions);
+// Built-in question set. Every section and question carries a stable id so answers stay attached to the
+// right question when the set is edited (reworded, reordered, added to or removed) in Clients' Feedback.
+export type FeedbackQ = { id: string; text: string; short: string };
+export type FeedbackGroup = { id: string; title: string; questions: FeedbackQ[] };
+let _fq = 0;
+export const FEEDBACK_GROUPS: FeedbackGroup[] = FEEDBACK_GROUPS_RAW.map((g, gi) => ({
+  id: 'g' + (gi + 1), title: g.title, questions: g.questions.map(q => ({ ...q, id: 'q' + (++_fq) })),
+}));
+export const FEEDBACK_QUESTIONS: FeedbackQ[] = FEEDBACK_GROUPS.flatMap(g => g.questions);
 export const FEEDBACK_Q_COUNT = FEEDBACK_QUESTIONS.length;
+export const feedbackFlat = (groups: FeedbackGroup[]): FeedbackQ[] => (groups || []).flatMap(g => g.questions);
+// The question set currently in force (what new and unsaved forms use).
+export const feedbackGroupsFor = (admin: any): FeedbackGroup[] =>
+  Array.isArray(admin?.feedbackQuestions) && admin.feedbackQuestions.some((g: any) => (g.questions || []).length) ? admin.feedbackQuestions : FEEDBACK_GROUPS;
 export const feedbackKey = (projectId: string, feeDue: string) => `cf:${projectId}:${String(feeDue).slice(0, 10)}`;
 export const blankFeedback = (p: any, feeDue: string) => ({
   id: feedbackKey(p.id, feeDue), projectId: p.id, project: p.name, feeDue: String(feeDue).slice(0, 10),
-  scores: Array(FEEDBACK_Q_COUNT).fill(0), comments: Array(FEEDBACK_Q_COUNT).fill(''),
+  scores: [] as number[], comments: [] as string[],
   remarks: '', plan: '', actions: [] as any[], issues: {} as any, sharedBack: false, sharedAt: '',
   amendments: [] as any[], status: 'Pending', riskId: '',
   givenBy: '', mode: FEEDBACK_MODES[0], takenOn: '', recordedBy: '', recordedAt: '',
@@ -1295,8 +1309,25 @@ export const feedbackAvg = (scores: number[]): number => {
 };
 export const feedbackAvgLabel = (n: number) => n ? (Math.round(n * 10) / 10).toFixed(1) : '—';
 // Auto-escalation: a complete form whose average is below 2.5, or that has any single rating of 1.
-export const feedbackNeedsEscalation = (scores: number[]) =>
-  (scores || []).filter(x => x > 0).length === FEEDBACK_Q_COUNT && (feedbackAvg(scores) < 2.5 || scores.indexOf(1) >= 0);
+export const feedbackNeedsEscalation = (scores: number[], count: number = FEEDBACK_Q_COUNT) =>
+  count > 0 && (scores || []).filter(x => x > 0).length === count && (feedbackAvg(scores) < 2.5 || scores.indexOf(1) >= 0);
+// Lines a stored record up with the question set it should be shown against.
+//  - Saved (Recorded / Escalated) forms always show the questions they were answered with (their snapshot,
+//    or the original built-in set for forms saved before questions became editable).
+//  - Forms still in progress follow the current question set; answers are matched by question id, so
+//    reordering or adding questions never moves an answer onto the wrong question.
+export const feedbackResolve = (rec: any, admin: any) => {
+  const locked = rec?.status === 'Recorded' || rec?.status === 'Escalated';
+  const groups: FeedbackGroup[] = locked ? (rec.groups || FEEDBACK_GROUPS) : feedbackGroupsFor(admin);
+  const flat = feedbackFlat(groups);
+  const srcIds: string[] = rec?.qids || FEEDBACK_QUESTIONS.map(q => q.id);
+  const idx = (id: string) => srcIds.indexOf(id);
+  const scores = flat.map(q => { const i = idx(q.id); return i >= 0 ? Number((rec?.scores || [])[i]) || 0 : 0; });
+  const comments = flat.map(q => { const i = idx(q.id); return i >= 0 ? String((rec?.comments || [])[i] || '') : ''; });
+  const issues: any = {};
+  flat.forEach((q, n) => { const i = idx(q.id); const v = i >= 0 ? (rec?.issues || {})[i] : undefined; if (v) issues[n] = v; });
+  return { groups, flat, qids: flat.map(q => q.id), scores, comments, issues };
+};
 // Date arithmetic done in UTC on plain YYYY-MM-DD strings, so it can't shift a day with the viewer's timezone.
 export const feedbackDueISO = (feeDue: string) => {
   const [y, m, d] = String(feeDue).slice(0, 10).split('-').map(Number);
@@ -1311,7 +1342,8 @@ export const feedbackEntries = (projects: any[], admin: any) => {
     if (!raw) return;
     const feeDue = String(raw).slice(0, 10);
     const stored = admin?.[feedbackKey(p.id, feeDue)];
-    const rec = { ...blankFeedback(p, feeDue), ...(stored || {}), project: p.name };
+    const base = { ...blankFeedback(p, feeDue), ...(stored || {}), project: p.name };
+    const rec = { ...base, ...feedbackResolve(base, admin) };
     const dueISO = feedbackDueISO(feeDue);
     const done = rec.status === 'Recorded' || rec.status === 'Escalated';
     const left = feedbackDaysLeft(dueISO);
