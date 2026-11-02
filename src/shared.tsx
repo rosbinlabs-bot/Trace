@@ -1318,7 +1318,7 @@ export const feedbackNeedsEscalation = (scores: number[], count: number = FEEDBA
 //    reordering or adding questions never moves an answer onto the wrong question.
 export const feedbackResolve = (rec: any, admin: any) => {
   const locked = rec?.status === 'Recorded' || rec?.status === 'Escalated';
-  const groups: FeedbackGroup[] = locked ? (rec.groups || FEEDBACK_GROUPS) : feedbackGroupsFor(admin);
+  const groups: FeedbackGroup[] = rec?.groups || (locked ? FEEDBACK_GROUPS : feedbackGroupsFor(admin));
   const flat = feedbackFlat(groups);
   const srcIds: string[] = rec?.qids || FEEDBACK_QUESTIONS.map(q => q.id);
   const idx = (id: string) => srcIds.indexOf(id);

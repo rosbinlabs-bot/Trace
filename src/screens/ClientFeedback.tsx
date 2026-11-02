@@ -54,6 +54,7 @@ export default function ClientFeedback() {
   const [draft, setDraft] = useState<any>({ t: '', o: '', d: '' });
   const [amendText, setAmendText] = useState('');
   const [openC, setOpenC] = useState<any>({});
+  const [confirmUnlock, setConfirmUnlock] = useState(false);
   const [qEdit, setQEdit] = useState<any>(null);   // draft question set while an admin is editing it
 
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(''), 3000); };
@@ -86,6 +87,16 @@ export default function ClientFeedback() {
 
   if (!caps.view) return <S.Card className="p-6 text-sm text-slate-500">You don't have access to Clients' Feedback. Ask a Super Admin to enable it in Administration → Roles & Permissions.</S.Card>;
 
+  const meUser = (admin?.users || []).find((x: any) => (x.email || '').toLowerCase() === (email || '').toLowerCase());
+  const isSuper = !!meUser && meUser.status === 'Active' && S.effectivePermissionLevel(meUser, admin) === 'Super Admin';
+  const unlock = (e: any) => {
+    if (!isSuper) return;
+    const was = e.rec.status;
+    update(e, { status: 'Draft', groups: e.rec.groups, amendments: [...(e.rec.amendments || []), { on: S.TODAY_ISO, by: me, text: `Unlocked for editing by ${me} (was ${was}).` }] });
+    logActivity({ module: "Clients' Feedback", action: `Unlocked ${e.project.name} feedback for editing (was ${was})`, project: e.project.name });
+    setConfirmUnlock(false);
+    flash(`Unlocked. Ratings for ${e.project.name} can be changed; save and lock again when done.`);
+  };
   const isAdminUser = S.deriveRole(email, admin) === 'admin';
   const openQEdit = () => setQEdit(JSON.parse(JSON.stringify(S.feedbackGroupsFor(admin))));
   const mut = (fn: (g: any[]) => void) => setQEdit((cur: any) => { const n = JSON.parse(JSON.stringify(cur)); fn(n); return n; });
@@ -125,6 +136,12 @@ export default function ClientFeedback() {
 
   const escalate = async (e: any, automatic: boolean) => {
     if (busy) return;
+    if (e.rec.riskId) {   // already escalated once (form was unlocked and re-saved): keep the existing risk, don't raise a duplicate
+      update(e, { status: 'Escalated', recordedBy: e.rec.recordedBy || me, recordedAt: new Date().toISOString() });
+      setConfirming(false);
+      flash(`Saved. Risk ${e.rec.riskId} already exists for this form, so no new risk was created.`);
+      return;
+    }
     setBusy(true);
     try {
       const r = e.rec; const a = S.feedbackAvg(r.scores);
@@ -366,8 +383,12 @@ export default function ClientFeedback() {
                 </div>
                 {!caps.comment && <div className="mt-4 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">You have view-only access to Clients' Feedback.</div>}
                 {caps.comment && !caps.edit && <div className="mt-4 text-xs text-slate-600 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">You can comment, but changing ratings, saving and escalating needs Edit access.</div>}
-                {rec.status === 'Escalated' && <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800"><b>Escalated to Risk Register</b> as {rec.riskId}. Ratings are locked; follow it up from the risk.</div>}
-                {rec.status === 'Recorded' && <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-indigo-900"><b>Recorded and locked</b> by {rec.recordedBy || '—'}. Add an amendment below if something changes.</div>}
+                {rec.status === 'Escalated' && <div className="mt-4 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800"><b>Escalated to Risk Register</b> as {rec.riskId}. Ratings are locked; follow it up from the risk. {isSuper && (confirmUnlock
+                  ? <span className="ml-2 inline-flex flex-wrap items-center gap-2"><button onClick={() => unlock(sel)} className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-semibold">Yes, unlock</button><button onClick={() => setConfirmUnlock(false)} className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold">Cancel</button></span>
+                  : <button onClick={() => setConfirmUnlock(true)} className="ml-2 h-8 px-3 rounded-lg border border-slate-400 bg-white text-slate-800 text-xs font-semibold hover:bg-slate-50">Unlock for editing</button>)}</div>}
+                {rec.status === 'Recorded' && <div className="mt-4 bg-indigo-50 border border-indigo-200 rounded-lg px-4 py-3 text-sm text-indigo-900"><b>Recorded and locked</b> by {rec.recordedBy || '—'}. Add an amendment below if something changes. {isSuper && (confirmUnlock
+                  ? <span className="ml-2 inline-flex flex-wrap items-center gap-2"><button onClick={() => unlock(sel)} className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-semibold">Yes, unlock</button><button onClick={() => setConfirmUnlock(false)} className="h-8 px-3 rounded-lg border border-slate-300 bg-white text-xs font-semibold">Cancel</button></span>
+                  : <button onClick={() => setConfirmUnlock(true)} className="ml-2 h-8 px-3 rounded-lg border border-slate-400 bg-white text-slate-800 text-xs font-semibold hover:bg-slate-50">Unlock for editing</button>)}</div>}
                 <div className="flex gap-1 mt-4 -mb-5 border-b border-slate-200 -mx-5 px-5" role="tablist" aria-label="Panel view">
                   {(['feedback', 'history'] as const).map(k => (
                     <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
