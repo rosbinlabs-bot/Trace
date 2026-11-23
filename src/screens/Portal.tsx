@@ -202,15 +202,20 @@ export default function Portal(){
     logActivity({ module: 'Client Portal', action: `Approved "${item.name}" (${ph.name}) as Implemented`, project: projMeta.name });
   };
 
+  // Saves the client's text into the item's own Remarks log (Phase Management reads item.remarks), so the
+  // team sees it in full -- not only the truncated notification. kind lets Phases.tsx style it distinctly.
+  const withClientRemark = (x:any, text:string, kind:'change-request'|'client') =>
+    text ? [...(x.remarks||[]), { id:S.uid('RMK'), text, by:myClientName, at:new Date().toISOString(), kind }] : (x.remarks||[]);
+
   const requestChanges = (entry) => {
     if(!canAct) return;
     const { level, ph, ms, item } = entry;
-    if(level==='Milestone'){
-      setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, review:'', headApprovedImpl:false})));
-    } else {
-      setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, review:'', headApprovedImpl:false})));
-    }
     const text = (remarkDraft[item.id]||'').trim();
+    if(level==='Milestone'){
+      setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, review:'', headApprovedImpl:false, remarks:withClientRemark(m, text, 'change-request'), ...(text?{remarkAlert:{by:myClientName, at:new Date().toISOString()}}:{})})));
+    } else {
+      setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, review:'', headApprovedImpl:false, remarks:withClientRemark(s, text, 'change-request'), ...(text?{remarkAlert:{by:myClientName, at:new Date().toISOString()}}:{})})));
+    }
     notifyProject({ level:(level==='Sub Task'?'subtask':level.toLowerCase()), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Requested Changes',
       message:`Client Owner requested changes on "${item.name}" (${ph.name})${text?`: "${text}"`:'.'}` });
     logActivity({ module: 'Client Portal', action: `Requested changes on "${item.name}" (${ph.name})`, project: projMeta.name });
@@ -228,9 +233,9 @@ export default function Portal(){
     // remark on the item itself too, not only via the notification below. Manual-dismiss only, same
     // as the staff-side version -- nothing here ever clears it automatically.
     if(level==='Milestone'){
-      setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, remarkAlert:{by:myClientName, at}})));
+      setTree(t => S.mutateMs(t, activeProj, ph.id, ms.id, m => ({...m, remarks:withClientRemark(m, text, 'client'), remarkAlert:{by:myClientName, at}})));
     } else {
-      setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, remarkAlert:{by:myClientName, at}})));
+      setTree(t => S.mutateSt(t, activeProj, ph.id, ms.id, item.id, s => ({...s, remarks:withClientRemark(s, text, 'client'), remarkAlert:{by:myClientName, at}})));
     }
     notifyProject({ level:(level==='Sub Task'?'subtask':level.toLowerCase()), itemName:item.name, phaseName:ph.name, phaseId:ph.id, msId:ms.id, stId:level==='Sub Task'?item.id:undefined, type:'Client Remark',
       message:`Client remark on "${item.name}" (${ph.name}): "${text}"` });

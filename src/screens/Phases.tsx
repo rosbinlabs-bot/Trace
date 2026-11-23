@@ -677,8 +677,10 @@ export default function Phases(){
                   <div className="space-y-2 mb-2 max-h-32 overflow-auto">
                     {(ms.remarks||[]).length===0 && <div className="text-xs text-slate-300">No remarks yet.</div>}
                     {(ms.remarks||[]).map((r:any)=>(
-                      <div key={r.id} className="bg-slate-50 rounded-lg px-2.5 py-1.5">
-                        <div className="text-xs text-slate-700">{r.text}</div>
+                      <div key={r.id} className={`rounded-lg px-2.5 py-1.5 ${r.kind==='change-request'?'bg-amber-50 border border-amber-200':'bg-slate-50'}`}>
+                        {r.kind==='change-request' && <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-0.5">Client requested changes</div>}
+                        {r.kind==='client' && <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-0.5">Client</div>}
+                        <div className="text-xs text-slate-700 whitespace-pre-wrap break-words">{r.text}</div>
                         <div className="text-[10px] text-slate-400 mt-0.5">{r.by} · {new Date(r.at).toLocaleString('en-US',{dateStyle:'medium', timeStyle:'short'})}</div>
                       </div>
                     ))}
@@ -912,8 +914,10 @@ export default function Phases(){
                 <div className="space-y-2 mb-2 max-h-40 overflow-auto">
                   {(s.remarks||[]).length===0 && <div className="text-xs text-slate-300">No remarks yet.</div>}
                   {(s.remarks||[]).map((r:any)=>(
-                    <div key={r.id} className="bg-slate-50 rounded-lg px-2.5 py-1.5">
-                      <div className="text-xs text-slate-700">{r.text}</div>
+                    <div key={r.id} className={`rounded-lg px-2.5 py-1.5 ${r.kind==='change-request'?'bg-amber-50 border border-amber-200':'bg-slate-50'}`}>
+                      {r.kind==='change-request' && <div className="text-[10px] font-semibold text-amber-700 uppercase tracking-wide mb-0.5">Client requested changes</div>}
+                      {r.kind==='client' && <div className="text-[10px] font-semibold text-blue-600 uppercase tracking-wide mb-0.5">Client</div>}
+                      <div className="text-xs text-slate-700 whitespace-pre-wrap break-words">{r.text}</div>
                       <div className="text-[10px] text-slate-400 mt-0.5">{r.by} · {new Date(r.at).toLocaleString('en-US',{dateStyle:'medium', timeStyle:'short'})}</div>
                     </div>
                   ))}
