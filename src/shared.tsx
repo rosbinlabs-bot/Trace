@@ -372,6 +372,9 @@ export const PhaseDataContext = React.createContext<any>({ tree:{}, setTree:()=>
 // Communication -- and so a channel's history survives navigating away and back. `readMap`/`markRead`
 // (see pingUnreadCount below) are lifted here too, not kept local to either Shell or the screen, so
 // opening a Ping channel clears Shell's sidebar badge immediately instead of waiting for a reload.
+// Built-in common Ping channel: every staff teammate can read, reply and attach. It has no project
+// behind it, so messages carry this id as their projectId (channel_messages is jsonb, no schema change).
+export const TEAM_CHANNEL_ID = '__team__';
 export const CommDataContext = React.createContext<any>({ messages: [], postMessage: ()=>{}, readMap: {}, markRead: ()=>{}, seenMap: {} });
 // "Seen by" read receipts for the latest message in a Ping channel (WhatsApp/Slack-style: seeing
 // the newest message implies every earlier one was seen too, so this is only ever computed for the

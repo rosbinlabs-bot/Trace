@@ -19,6 +19,7 @@ import { supabase } from '../supabaseClient';
 const initials = (name: string) => (name || '').trim().split(/\s+/).map((x) => x[0]).slice(0, 2).join('').toUpperCase() || '?';
 const fmtTime = (iso: string) => { try { return new Date(iso).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }); } catch (e) { return ''; } };
 const fmtClock = (totalSec: number) => { const s = Math.max(0, Math.round(totalSec || 0)); const m = Math.floor(s / 60); return `${m}:${String(s % 60).padStart(2, '0')}`; };
+const ri = (i: number): React.CSSProperties => ({ ['--i' as any]: i });
 const fmtSize = (bytes: number) => (bytes ? `${(bytes / 1024).toFixed(0)} KB` : '');
 
 // Renders a message body with its @mentions and #subtask references highlighted. Only names/tasks
@@ -241,11 +242,11 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
   if (disabled) return <div className="text-xs text-slate-400 italic px-1 py-2">You have view-only access to this channel.</div>;
 
   return (
-    <div className="border border-slate-200 rounded-xl p-2.5 bg-white">
+    <div className="border border-slate-200 rounded-xl p-2.5 bg-white transition-shadow duration-200 focus-within:border-brand-300 focus-within:shadow-[0_0_0_3px_rgba(59,91,219,0.12)]">
       {files.length > 0 && (
         <div className="flex flex-wrap gap-1.5 mb-2">
           {files.map((f, i) => (
-            <span key={i} className="inline-flex items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1 text-[11px] text-slate-600">
+            <span key={i} className="chip-in inline-flex items-center gap-1.5 bg-slate-50 rounded-lg px-2 py-1 text-[11px] text-slate-600">
               <S.Icon name={S.docIcon(f.name)} className={`w-3 h-3 ${S.docIconTone(f.name)}`} />
               <span className="max-w-[140px] truncate">{f.name}</span>
               <button onClick={() => removeFile(i)} className="text-slate-400 hover:text-red-500">✕</button>
@@ -254,7 +255,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
         </div>
       )}
       {pendingAudio && (
-        <div className="flex items-center gap-2 mb-2 bg-violet-50 rounded-lg px-2.5 py-1.5 text-xs text-violet-700">
+        <div className="chip-in flex items-center gap-2 mb-2 bg-violet-50 rounded-lg px-2.5 py-1.5 text-xs text-violet-700">
           <S.Icon name="mic" className="w-3.5 h-3.5" />
           <span>Voice note ready — {fmtClock(pendingAudio.duration)}</span>
           <button onClick={() => setPendingAudio(null)} className="ml-auto text-violet-400 hover:text-red-500">✕</button>
@@ -266,7 +267,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
           placeholder={placeholder || 'Post an update… (@ to tag someone, # to reference a sub task)'}
           className="w-full border-0 focus:outline-none focus:ring-0 text-sm resize-none placeholder:text-slate-400" />
         {mentionOptions.length > 0 && (
-          <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-56 max-h-48 overflow-auto z-10">
+          <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-56 max-h-48 overflow-auto z-10 pop-scale">
             {mentionOptions.map((r) => (
               <button key={r.name} onClick={() => pickMention(r.name)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50 flex items-center justify-between gap-2">
                 <span className="font-medium text-slate-700 truncate">{r.name}</span>
@@ -276,7 +277,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
           </div>
         )}
         {taskQuery !== null && (
-          <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-72 max-h-48 overflow-auto z-10">
+          <div className="absolute bottom-full mb-1 left-0 bg-white border border-slate-200 rounded-lg shadow-lg py-1 w-72 max-h-48 overflow-auto z-10 pop-scale">
             {taskOptions.length === 0 && <div className="px-3 py-1.5 text-xs text-slate-400">No matching sub tasks</div>}
             {taskOptions.map((t) => (
               <button key={t.id} onClick={() => pickTask(t)} className="w-full text-left px-3 py-1.5 text-xs hover:bg-slate-50">
@@ -317,8 +318,8 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
             Recording {fmtClock(recordSeconds)} — click to stop
           </button>
         )}
-        <button onClick={submit} disabled={!canSubmit} className={`ml-auto inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 ${canSubmit ? 'bg-brand-500 hover:bg-brand-600 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
-          <S.Icon name="send" className="w-3.5 h-3.5" /> {sending ? 'Sending…' : 'Send'}
+        <button onClick={submit} disabled={!canSubmit} className={`ml-auto inline-flex items-center gap-1.5 text-xs font-medium rounded-lg px-3 py-1.5 transition-all duration-150 active:scale-95 ${canSubmit ? 'bg-brand-500 hover:bg-brand-600 text-white' : 'bg-slate-100 text-slate-400 cursor-not-allowed'}`}>
+          <S.Icon name="send" className={`w-3.5 h-3.5 ${sending ? 'send-fly' : ''}`} /> {sending ? 'Sending…' : 'Send'}
         </button>
       </div>
     </div>
@@ -327,7 +328,7 @@ function Composer({ roster, subtasks, onSend, placeholder, disabled, focusKey }:
 
 // One message row, reused for both the main feed (with a Reply/thread-count affordance) and the
 // thread panel (parent + its replies, no further nesting -- Slack-style threads are one level deep).
-function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact, seenBy, highlighted }: any) {
+function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, onOpenTask, compact, seenBy, highlighted, idx }: any) {
   // Scrolls itself into view the moment it becomes the deep-link target (see Communication()'s
   // highlightId), so clicking a @mention notification lands you looking right at the message
   // instead of leaving you to scroll the feed/thread for it.
@@ -336,7 +337,7 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, on
     if (highlighted) rowRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   }, [highlighted]);
   return (
-    <div ref={rowRef} className={`flex gap-2.5 p-1.5 rounded-lg transition-colors duration-500 ${highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
+    <div ref={rowRef} style={ri(idx || 0)} className={`msg-in flex gap-2.5 p-1.5 rounded-lg transition-colors duration-500 ${highlighted ? 'bg-amber-50 ring-2 ring-amber-300' : ''}`}>
       <div className={`${compact ? 'w-6 h-6 text-[10px]' : 'w-7 h-7 text-[11px]'} rounded-full bg-brand-100 text-brand-700 font-semibold flex items-center justify-center shrink-0`}>{initials(m.authorName)}</div>
       <div className="flex-1 min-w-0">
         <div className="flex items-baseline gap-2 flex-wrap">
@@ -358,7 +359,7 @@ function MessageRow({ m, onDownload, downloadingId, replyCount, onOpenThread, on
             Slack-style: seeing the newest message implies every earlier one was seen too), so this
             never renders on any other row. */}
         {seenBy && seenBy.length > 0 && (
-          <div className="text-[10px] text-slate-400 mt-1" title={seenBy.map((s: any) => `${s.name} — ${fmtTime(s.at)}`).join('\n')}>
+          <div className="text-[10px] text-slate-400 mt-1 pop-fade" title={seenBy.map((s: any) => `${s.name} — ${fmtTime(s.at)}`).join('\n')}>
             Seen by {seenBy.map((s: any) => `${s.name} (${fmtTime(s.at)})`).join(', ')}
           </div>
         )}
@@ -378,23 +379,34 @@ export default function Communication() {
   const { messages, postMessage, markRead, readMap, seenMap } = React.useContext(S.CommDataContext);
   const { logActivity } = React.useContext(S.ActivityLogContext);
 
-  const [activeProj, setActiveProj] = useState(projects[0]?.id);
+  const TEAM = S.TEAM_CHANNEL_ID;
+  // Lands on the common Team channel by default; project channels sit below it in the rail.
+  const [activeProj, setActiveProj] = useState<string>(TEAM);
+  const isTeam = activeProj === TEAM;
   // Mobile-only (below md): which single pane is showing. Starts on the channel list unless
   // there's only one channel, in which case skip straight to it. md: and up never reads this.
-  const [mobileView, setMobileView] = useState<'channels' | 'feed' | 'thread'>(() => projects.length === 1 ? 'feed' : 'channels');
+  const [mobileView, setMobileView] = useState<'channels' | 'feed' | 'thread'>('channels');
   // If the account's visible-project list changes (e.g. removed from a project's team) and the
   // currently selected channel disappears from it, fall back to the first one still available.
   React.useEffect(() => {
-    if (!projects.some((p: any) => p.id === activeProj)) setActiveProj(projects[0]?.id);
+    if (activeProj !== TEAM && !projects.some((p: any) => p.id === activeProj)) setActiveProj(TEAM);
   }, [projects]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const projMeta = projects.find((p: any) => p.id === activeProj) || {};
-  const roster = S.buildRoster(projMeta, admin);
+  const projMeta: any = isTeam ? { id: TEAM, name: 'Team' } : (projects.find((p: any) => p.id === activeProj) || {});
+  // The Team channel has no project team behind it: its roster is every active staff account.
+  const teamRoster = useMemo(() => {
+    const seen = new Set<string>();
+    return (admin.users || [])
+      .filter((u: any) => u.name && u.type !== 'Client' && (!u.status || u.status === 'Active'))
+      .filter((u: any) => (seen.has(u.name) ? false : (seen.add(u.name), true)))
+      .map((u: any) => ({ name: u.name, label: u.designation || u.type || 'Team' }));
+  }, [admin.users]);
+  const roster: any[] = isTeam ? teamRoster : S.buildRoster(projMeta, admin);
   // Same per-project team-membership gate Phase Management uses: a full team member can post, a
   // Guest Teammate (or anyone viewing a project they're not tagged to at all) gets read-only.
   // Admin/Super Admin are exempt everywhere else in this app and stay exempt here too.
-  const frozenChannel = S.isProjectTerminated(projMeta);
-  const readOnly = frozenChannel || (role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name));
+  const frozenChannel = !isTeam && S.isProjectTerminated(projMeta);
+  const readOnly = !isTeam && (frozenChannel || (role !== 'admin' && !S.isOnProjectTeam(projMeta, myProfile?.name)));
   const canPost = !readOnly && S.capAtLeast(S.capabilityFor('Communication', myEmail, admin), 'Edit');
 
   const notifyProject = (payload: any) => addNotification({ projectId: activeProj, project: projMeta.name, tags: roster.map((r: any) => r.name), priority: 'high', ...payload });
@@ -510,23 +522,16 @@ export default function Communication() {
     if (payload.mentions && payload.mentions.length) {
       notifyProject({
         level: 'message', itemName: projMeta.name, type: 'Mentioned', priority: 'high', itemId: msgId, parentId: parentId || null,
+        // Team channel: only the people actually @tagged are notified, not the whole company.
+        ...(isTeam ? { tags: payload.mentions } : {}),
         message: `${myProfile?.name || myEmail} tagged ${payload.mentions.join(', ')} in "${projMeta.name}" Communication${parentId ? ' (thread reply)' : ''}${payload.text ? `: "${payload.text.slice(0, 140)}"` : ''}`,
       });
     }
   };
 
-  if (projects.length === 0) {
-    return (
-      <div>
-        <S.SectionTitle sub="One running channel per project for updates, direction, and file/audio sharing across the whole team">Ping</S.SectionTitle>
-        <S.Card className="p-8 text-center text-sm text-slate-400">You're not tagged to any project yet — nothing to show here.</S.Card>
-      </div>
-    );
-  }
-
   return (
     <div>
-      <S.SectionTitle sub="One channel per project, auto-populated with that project's team — updates, direction, files, and voice notes in one running feed">Ping</S.SectionTitle>
+      <S.SectionTitle sub="A common Team channel for everyone, plus one channel per project with that project's team — updates, direction, files, and voice notes in one running feed">Ping</S.SectionTitle>
       {/* Below md (768px, same cutoff the mobile tab bar itself uses): one full-width pane at a
           time -- channel list, then feed, then thread -- driven by mobileView. md: and up shows all
           panes side by side as before, and ignores mobileView entirely. A 240px channel rail plus a
@@ -534,16 +539,31 @@ export default function Communication() {
           screen, so below md this was an awkward sideways-scrolling row instead of something usable. */}
       <div className="flex flex-col md:flex-row gap-3 md:overflow-x-auto pb-1" style={{ alignItems: 'flex-start' }}>
         {/* Channel rail — one entry per project, same name, mirrors Phase Management's project list */}
-        <S.Card className={`p-2.5 w-full md:w-60 md:shrink-0 space-y-1 ${mobileView === 'channels' ? 'block' : 'hidden'} md:block`}>
+        <S.Card className={`p-2.5 w-full md:w-60 md:shrink-0 space-y-1 panel-in ${mobileView === 'channels' ? 'block' : 'hidden'} md:block`}>
+          {(() => {
+            const unread = S.pingUnreadCount(messages, myEmail, readMap, TEAM);
+            return (
+              <button onClick={() => { setActiveProj(TEAM); setMobileView('feed'); }}
+                className={`ping-row w-full text-left px-3 py-2.5 rounded-xl border ${isTeam ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
+                <div className={`flex items-center gap-1.5 text-sm truncate ${isTeam ? 'font-medium text-brand-700' : 'text-slate-700'}`}>
+                  <S.Icon name="team" className="w-3.5 h-3.5 shrink-0 text-brand-500" />
+                  <span className="truncate flex-1">Team</span>
+                  {unread > 0 && <span key={unread} className="badge-pop shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center">{unread > 99 ? '99+' : unread}</span>}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5 pl-5">Everyone · common channel</div>
+              </button>
+            );
+          })()}
+          <div className="border-t border-slate-100 my-1" />
           {projects.map((p: any) => {
             const unread = S.pingUnreadCount(messages, myEmail, readMap, p.id);
             return (
               <button key={p.id} onClick={() => { setActiveProj(p.id); setMobileView('feed'); }}
-                className={`w-full text-left px-3 py-2.5 rounded-xl border ${activeProj === p.id ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
+                className={`ping-row w-full text-left px-3 py-2.5 rounded-xl border ${activeProj === p.id ? 'border-brand-300 bg-brand-50' : 'border-transparent hover:bg-slate-50'}`}>
                 <div className={`flex items-center gap-1.5 text-sm truncate ${activeProj === p.id ? 'font-medium text-brand-700' : 'text-slate-700'}`}>
                   <S.Icon name="communication" className="w-3.5 h-3.5 shrink-0 text-slate-400" />
                   <span className="truncate flex-1">{p.name}</span>
-                  {unread > 0 && <span className="shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center">{unread > 99 ? '99+' : unread}</span>}
+                  {unread > 0 && <span key={unread} className="badge-pop shrink-0 min-w-[16px] h-4 px-1 rounded-full bg-red-500 text-white text-[9px] font-semibold flex items-center justify-center">{unread > 99 ? '99+' : unread}</span>}
                 </div>
               </button>
             );
@@ -557,25 +577,27 @@ export default function Communication() {
               <span className="text-sm leading-none">‹</span> Channels
             </button>
             <div className="text-sm font-semibold text-slate-800">{projMeta.name}</div>
-            <div className="text-[11px] text-slate-400 mb-2">{roster.length} team member{roster.length === 1 ? '' : 's'} · visible to everyone tagged to this project</div>
-            <div className="flex flex-wrap gap-1.5">
-              {roster.map((r: any) => (
-                <span key={r.name} title={onlineNames.has(r.name) ? `${r.name} — online now` : r.name}
-                  className="inline-flex items-center gap-1.5 text-[10px] bg-slate-50 text-slate-600 rounded-full pl-1.5 pr-2 py-1">
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${onlineNames.has(r.name) ? 'bg-emerald-500' : 'bg-slate-300'}`} />
+            <div className="text-[11px] text-slate-400 mb-2">{isTeam
+              ? `${roster.length} teammate${roster.length === 1 ? '' : 's'} · common channel — everyone can read, reply and attach files`
+              : `${roster.length} team member${roster.length === 1 ? '' : 's'} · visible to everyone tagged to this project`}</div>
+            <div key={`chips-${activeProj}`} className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto overflow-x-hidden">
+              {roster.map((r: any, ci: number) => (
+                <span key={r.name} style={ri(ci)} title={onlineNames.has(r.name) ? `${r.name} — online now` : r.name}
+                  className="chip-in inline-flex items-center gap-1.5 text-[10px] bg-slate-50 text-slate-600 rounded-full pl-1.5 pr-2 py-1">
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${onlineNames.has(r.name) ? 'bg-emerald-500 presence-pulse' : 'bg-slate-300'}`} />
                   {r.name}
                 </span>
               ))}
             </div>
           </div>
 
-          <div className="space-y-4 mb-4 max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
-            {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">No updates yet — be the first to post.</div>}
-            {topLevel.map((m: any) => {
+          <div key={activeProj} className="feed-swap space-y-4 mb-4 max-h-[55vh] overflow-y-auto overflow-x-hidden pr-1">
+            {topLevel.length === 0 && <div className="text-sm text-slate-300 text-center py-10">{isTeam ? 'No messages in Team yet — say hello to everyone.' : 'No updates yet — be the first to post.'}</div>}
+            {topLevel.map((m: any, mi: number) => {
               const replies = repliesOf(m.id);
               return (
                 <div key={m.id}>
-                  <MessageRow m={m} onDownload={downloadAttachment} downloadingId={downloadingId}
+                  <MessageRow m={m} idx={Math.max(0, mi - Math.max(0, topLevel.length - 10))} onDownload={downloadAttachment} downloadingId={downloadingId}
                     replyCount={replies.length} onOpenThread={(id: string) => { setOpenThreadId(id); setMobileView('thread'); }} onOpenTask={openTaskRef}
                     highlighted={highlightId === m.id}
                     seenBy={m.id === lastOverallId ? S.seenByFor(seenMap[activeProj], roster, m, admin, myEmail) : undefined} />
@@ -601,12 +623,12 @@ export default function Communication() {
               <S.Icon name="lock" className="w-3.5 h-3.5"/> This project was terminated — its Ping channel is frozen. History stays readable; no new messages or replies.
             </div>
           )}
-          <Composer key={`composer-${activeProj}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={`Post an update in ${projMeta.name}…`} />
+          <Composer key={`composer-${activeProj}`} roster={roster} subtasks={subtasks} disabled={!canPost} onSend={(p) => send(p, null)} placeholder={isTeam ? 'Message the whole team… (@ to tag someone)' : `Post an update in ${projMeta.name}…`} />
         </S.Card>
 
         {/* Thread panel — opens alongside the feed when a message's Reply is clicked */}
         {threadParent && (
-          <S.Card className={`p-4 w-full md:w-80 md:shrink-0 ${mobileView === 'thread' ? 'block' : 'hidden'} md:block`}>
+          <S.Card key={openThreadId} className={`panel-in p-4 w-full md:w-80 md:shrink-0 ${mobileView === 'thread' ? 'block' : 'hidden'} md:block`}>
             <div className="flex items-center justify-between mb-3 pb-3 border-b border-slate-100">
               <button onClick={() => setMobileView('feed')} className="md:hidden flex items-center gap-1 text-xs text-slate-400 hover:text-brand-600">
                 <span className="text-sm leading-none">‹</span> Back

@@ -127,3 +127,26 @@ body {
   .kpi-card { transition: none; }
   .kpi-card:hover, .kpi-card:active { transform: none; }
 }
+
+/* ===== Ping motion ===== messages rise in (staggered on channel open), channel switches slide the feed,
+   thread panel slides in from the right, unread badges pop, online dots breathe, send arrow flies while sending. */
+@keyframes msg-in { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes feed-swap { from { opacity:0; transform:translateX(16px); } to { opacity:1; transform:none; } }
+@keyframes panel-in { from { opacity:0; transform:translateX(28px); } to { opacity:1; transform:none; } }
+@keyframes badge-pop { 0% { transform:scale(.3); opacity:0; } 60% { transform:scale(1.25); opacity:1; } 100% { transform:scale(1); } }
+@keyframes chip-in { from { opacity:0; transform:scale(.85); } to { opacity:1; transform:none; } }
+@keyframes presence-pulse { 0%,100% { box-shadow:0 0 0 0 rgba(16,185,129,.5); } 50% { box-shadow:0 0 0 4px rgba(16,185,129,0); } }
+@keyframes send-fly { 0%,100% { transform:translate(0,0); } 50% { transform:translate(3px,-3px); } }
+.msg-in { animation: msg-in .42s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(min(var(--i,0), 10) * 45ms); }
+.feed-swap { animation: feed-swap .32s cubic-bezier(.22,1,.36,1); }
+.panel-in { animation: panel-in .32s cubic-bezier(.22,1,.36,1); }
+.badge-pop { animation: badge-pop .38s cubic-bezier(.22,1,.36,1); }
+.chip-in { animation: chip-in .28s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(min(var(--i,0), 12) * 28ms); }
+.presence-pulse { animation: presence-pulse 2.2s ease-out infinite; }
+.send-fly { animation: send-fly .6s ease-in-out infinite; }
+.ping-row { transition: background-color .2s ease, border-color .2s ease, transform .2s ease; }
+.ping-row:hover { transform: translateX(2px); }
+@media (prefers-reduced-motion: reduce) {
+  .msg-in, .feed-swap, .panel-in, .badge-pop, .chip-in, .presence-pulse, .send-fly { animation: none !important; }
+  .ping-row, .ping-row:hover { transition: none; transform: none; }
+}

@@ -1397,7 +1397,7 @@ export default function App() {
     : isProjectScoped
       // isProjectScoped is only ever true for non-admin staff roles (see its own definition below),
       // so an admin-audience notice never belongs here regardless of the exact role value.
-      ? notifications.filter((n: any) => !isAdminAudience(n) && (hasNoProject(n) || (n.projectId ? visibleProjectIds.has(n.projectId) : visibleProjectNames.has(n.project))))
+      ? notifications.filter((n: any) => !isAdminAudience(n) && (hasNoProject(n) || (n.projectId ? (visibleProjectIds.has(n.projectId) || n.projectId===S.TEAM_CHANNEL_ID) : visibleProjectNames.has(n.project))))
       : notifications.filter((n: any) => !isAdminAudience(n) || role === 'admin');
   const visibleRisks = isProjectScoped ? risks.filter((r: any) => visibleProjectNames.has(r.project)) : risks;
   const visibleIssues = isProjectScoped ? issues.filter((i: any) => visibleProjectNames.has(i.project)) : issues;
@@ -1406,7 +1406,7 @@ export default function App() {
   // needs the same non-admin project-scoping every other project-tagged list above already uses --
   // no separate role==='client' branch like visibleNotifications has.
   const visibleChannelMessages = isProjectScoped
-    ? channelMessages.filter((m: any) => (m.projectId ? visibleProjectIds.has(m.projectId) : visibleProjectNames.has(m.project)))
+    ? channelMessages.filter((m: any) => (m.projectId ? (visibleProjectIds.has(m.projectId) || m.projectId===S.TEAM_CHANNEL_ID) : visibleProjectNames.has(m.project)))
     : channelMessages;
   const visibleCalendarEvents = isProjectScoped ? calendarEvents.filter((e: any) => !e.project || visibleProjectNames.has(e.project)) : calendarEvents;
 
