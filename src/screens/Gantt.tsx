@@ -108,21 +108,21 @@ export default function Gantt(){
         ))}
       </div>
 
-      <S.Card className="p-5 overflow-x-auto">
+      <S.Card className="dash-rise p-5 overflow-x-auto">
         {phases.length===0 ? (
           <div className="text-sm text-slate-400 text-center py-8">No phases yet for this project — add some in Phase Management.</div>
         ) : (
-        <div className="min-w-[820px] relative">
+        <div key={activeProj} className="min-w-[820px] relative">
           {/* Date ruler */}
-          <div className="flex" style={{marginLeft:LABEL_REM}}>
+          <div key={zoom} className="flex" style={{marginLeft:LABEL_REM}}>
             {ticks.map((t,i)=>(
-              <div key={i} className="flex-1 text-[10px] uppercase tracking-wide text-slate-400 border-l border-slate-100 pl-1.5 pb-1.5 border-b border-b-slate-200 truncate">{t}</div>
+              <div key={i} style={{['--i' as any]: i}} className="chip-in flex-1 text-[10px] uppercase tracking-wide text-slate-400 border-l border-slate-100 pl-1.5 pb-1.5 border-b border-b-slate-200 truncate">{t}</div>
             ))}
           </div>
 
           <div className="relative mt-3" style={{height: phases.length*ROW_H}}>
             {showToday && (
-              <div className="absolute top-0 bottom-0 border-l-2 border-dashed border-red-300 z-10" style={{left:`calc(${LABEL_REM} + ${todayLeft}%)`}} title={`Today · ${S.TODAY_ISO}`}></div>
+              <div className="line-grow absolute top-0 bottom-0 border-l-2 border-dashed border-red-300 z-10" style={{left:`calc(${LABEL_REM} + ${todayLeft}%)`}} title={`Today · ${S.TODAY_ISO}`}></div>
             )}
 
             {/* Dependency connectors -- one elbow per phase that has a resolvable dependency, fanning
@@ -142,7 +142,7 @@ export default function Gantt(){
                 const midX = depEndPct + 1.1;
                 const isCrit = criticalPath.has(ph.id) && criticalPath.has(est.depId);
                 return (
-                  <path key={ph.id} fill="none"
+                  <path key={ph.id} fill="none" className="path-fade" style={{['--i' as any]: i}}
                     stroke={isCrit ? '#7c3aed' : '#cbd5e1'} strokeWidth={isCrit ? 1.75 : 1.25}
                     d={`M ${depEndPct} ${y1} L ${midX} ${y1} L ${midX} ${y2} L ${childStartPct} ${y2}`} />
                 );
@@ -159,7 +159,7 @@ export default function Gantt(){
               const isCrit = criticalPath.has(ph.id);
               const isBlocking = ph.id===blockingId;
               return (
-                <div key={ph.id} className="flex items-center gap-2" style={{height:ROW_H}}>
+                <div key={ph.id} className="row-slide flex items-center gap-2" style={{height:ROW_H, ['--i' as any]: pi}}>
                   <div className={`${AVATAR_W} shrink-0 flex`}>
                     {team.length ? team.slice(0,3).map((name:string)=>(
                       <div key={name} title={name} className={`w-5 h-5 rounded-full ${S.colorForClient(name).dot} text-white text-[9px] font-semibold flex items-center justify-center border-2 border-white -ml-1.5 first:ml-0`}>{initials(name)}</div>
@@ -169,7 +169,7 @@ export default function Gantt(){
                   </div>
                   <div className={`${LABEL_W} shrink-0 flex items-center gap-1.5 min-w-0`}>
                     <span className="text-sm text-slate-600 truncate">{S.toRoman(pi+1)}. {ph.name}</span>
-                    {isBlocking && <S.Badge cls="bg-amber-100 text-amber-700 shrink-0">Blocking</S.Badge>}
+                    {isBlocking && <S.Badge cls="bg-amber-100 text-amber-700 shrink-0 sparkle-glow">Blocking</S.Badge>}
                     {isCrit && !isBlocking && <S.Badge cls="bg-violet-100 text-violet-700 shrink-0">Critical</S.Badge>}
                   </div>
                   <div className="flex-1 relative h-7 bg-slate-50 rounded">
@@ -182,12 +182,12 @@ export default function Gantt(){
                       const st = bar(est.start, est.end);
                       const estimatedLook = est.dateSource==='estimated';
                       return (
-                        <div className={`absolute h-7 rounded ${overdue?'bg-red-100':'bg-brand-100'} ${estimatedLook?'border border-dashed border-brand-300 bg-transparent':''} ${isCrit?'ring-2 ring-violet-400':''}`} style={st}>
-                          <div className={`h-7 rounded ${overdue?'bg-red-400':'bg-brand-500'} text-[10px] text-white flex items-center px-2 whitespace-nowrap`} style={{width:pct+'%'}}>{pct}%</div>
+                        <div className={`absolute h-7 rounded ${overdue?'bg-red-100':'bg-brand-100'} ${estimatedLook?'border border-dashed border-brand-300 bg-transparent':''} ${isCrit?'ring-2 ring-violet-400':''} gantt-wipe`} style={{...st, ['--i' as any]: pi}}>
+                          <div className={`h-7 rounded ${overdue?'bg-red-400':'bg-brand-500'} text-[10px] text-white flex items-center px-2 whitespace-nowrap bar-grow`} style={{width:pct+'%', ['--i' as any]: pi}}>{pct}%</div>
                           {ph.milestones.map((ms:any)=>(
                             <div key={ms.id} title={`${ms.name} · ${ms.deadline||'no deadline'} · ${S.derivedMilestoneStatus(ms)}`}
-                              className={`absolute top-1/2 w-2.5 h-2.5 rotate-45 border-2 border-white shadow-sm ${diamondCls(ms)}`}
-                              style={{left:(pctPos(ms.deadline||est.end)-pctPos(est.start))/(pctPos(est.end)-pctPos(est.start)||1)*100+'%', transform:'translate(-50%,-50%) rotate(45deg)'}}>
+                              className={`diamond-pop absolute top-1/2 w-2.5 h-2.5 rotate-45 border-2 border-white shadow-sm ${diamondCls(ms)}`}
+                              style={{left:(pctPos(ms.deadline||est.end)-pctPos(est.start))/(pctPos(est.end)-pctPos(est.start)||1)*100+'%', transform:'translate(-50%,-50%) rotate(45deg)', ['--i' as any]: pi}}>
                             </div>
                           ))}
                         </div>

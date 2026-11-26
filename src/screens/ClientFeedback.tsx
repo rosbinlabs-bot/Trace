@@ -302,7 +302,7 @@ export default function ClientFeedback() {
         )}
       </div>
 
-      <S.Card className="grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-slate-100 lg:[&>*:nth-child(n+3)]:border-t-0 mb-5">
+      <S.Card className="dash-rise grid grid-cols-2 lg:grid-cols-4 divide-x divide-slate-100 [&>*:nth-child(n+3)]:border-t [&>*:nth-child(n+3)]:border-slate-100 lg:[&>*:nth-child(n+3)]:border-t-0 mb-5">
         {stat('Clients reviewed', count('done'), `of ${entries.length}`)}
         {stat('Average rating', S.feedbackAvgLabel(avgAll), '/ 5', avgAll ? avgColor(avgAll) : 'text-slate-900')}
         {stat('Overdue', count('overdue'), undefined, count('overdue') ? 'text-red-600' : 'text-slate-900')}
@@ -310,13 +310,13 @@ export default function ClientFeedback() {
       </S.Card>
 
       {weakest.length > 0 && (
-        <S.Card className="p-4 mb-5">
+        <S.Card style={{['--i' as any]: 1}} className="dash-rise p-4 mb-5">
           <div className="flex justify-between flex-wrap gap-1 mb-3"><div className="text-sm font-semibold text-slate-800">Weakest areas across clients</div><div className="text-xs text-slate-400">From each client's latest recorded cycle</div></div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
             {weakest.map(w => (
               <div key={w.label}>
                 <div className="flex justify-between text-sm mb-1.5"><span className="text-slate-700">{w.label}</span><b className={avgColor(w.v)}>{S.feedbackAvgLabel(w.v)}</b></div>
-                <div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full ${barColor(w.v)}`} style={{ width: `${w.v * 20}%` }} /></div>
+                <div className="h-2 rounded-full bg-slate-100"><div className={`h-2 rounded-full bar-grow ${barColor(w.v)}`} style={{ width: `${w.v * 20}%` }} /></div>
               </div>
             ))}
           </div>
@@ -339,11 +339,11 @@ export default function ClientFeedback() {
               ))}
             </div>
             <div className="space-y-2">
-              {shown.map((e: any) => {
+              {shown.map((e: any, si: number) => {
                 const a = S.feedbackAvg(e.rec.scores); const on = sel && sel.rec.id === e.rec.id;
                 return (
-                  <button key={e.rec.id} onClick={() => { setSelKey(e.rec.id); setConfirming(false); }} aria-current={on}
-                    className={`w-full text-left rounded-xl border border-l-4 ${accent(e.cat)} px-4 py-3 transition-all ${on ? 'bg-indigo-50/70 border-indigo-200 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}>
+                  <button key={e.rec.id} onClick={() => { setSelKey(e.rec.id); setConfirming(false); }} aria-current={on} style={{['--i' as any]: si}}
+                    className={`msg-in lift w-full text-left rounded-xl border border-l-4 ${accent(e.cat)} px-4 py-3 transition-all ${on ? 'bg-indigo-50/70 border-indigo-200 shadow-sm' : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}>
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0"><div className="font-semibold text-slate-900 leading-snug">{e.project.name}</div>
                         <div className="text-xs text-slate-500 mt-0.5">Feedback due <b className="text-slate-700 font-semibold">{fmtDate(e.dueISO)}</b></div></div>
@@ -363,7 +363,7 @@ export default function ClientFeedback() {
 
           {/* DETAIL PANEL */}
           {sel && rec && (
-            <div className="min-w-0 space-y-4">
+            <div key={sel.rec.id} className="feed-swap min-w-0 space-y-4">
               <S.Card className="p-5">
                 <div className="flex items-center gap-5 flex-wrap">
                   <Ring value={avg} />
@@ -407,7 +407,7 @@ export default function ClientFeedback() {
                     return (
                       <div key={h.id} className="grid grid-cols-[80px_1fr_44px_64px] gap-3 items-center text-sm">
                         <span className="text-slate-500">{cycleLabel(h.feeDue)}</span>
-                        <div className="h-3 rounded-full bg-slate-100"><div className={`h-3 rounded-full ${barColor(a)}`} style={{ width: `${a * 20}%` }} /></div>
+                        <div className="h-3 rounded-full bg-slate-100"><div className={`h-3 rounded-full bar-grow ${barColor(a)}`} style={{ width: `${a * 20}%` }} /></div>
                         <b className="text-right">{S.feedbackAvgLabel(a)}</b>
                         <span className={`text-xs font-semibold ${d === null ? 'text-slate-400' : d > 0.05 ? 'text-emerald-600' : d < -0.05 ? 'text-red-600' : 'text-slate-400'}`}>{d === null ? '' : d > 0.05 ? `+${d.toFixed(1)}` : d < -0.05 ? d.toFixed(1) : 'steady'}</span>
                       </div>
@@ -435,7 +435,7 @@ export default function ClientFeedback() {
                     const offset = rec.groups.slice(0, gi).reduce((n: number, x: any) => n + x.questions.length, 0);
                     const ga = groupAvg(gi);
                     return (
-                      <S.Card key={g.id || g.title} className="overflow-hidden">
+                      <S.Card key={g.id || g.title} style={{['--i' as any]: gi}} className="dash-rise overflow-hidden">
                         <div className="flex items-center justify-between gap-3 px-5 py-3 bg-slate-50 border-b border-slate-100">
                           <div className="flex items-center gap-3"><span className="w-7 h-7 rounded-lg bg-brand-600 text-white text-sm font-bold flex items-center justify-center">{gi + 1}</span><h2 className="font-semibold text-slate-900">{g.title}</h2></div>
                           <div className="flex items-center gap-3"><span className="hidden sm:inline text-[11px] text-slate-400">1 Poor · 3 Fair · 5 Excellent</span>
@@ -454,7 +454,7 @@ export default function ClientFeedback() {
                                     {[1, 2, 3, 4, 5].map(v => (
                                       <button key={v} disabled={!canRate} aria-pressed={score === v} aria-label={`${v} out of 5`}
                                         onClick={() => { const s = rec.scores.slice(); s[qi] = v; update(sel, { scores: s, status: rec.status === 'Pending' ? 'Draft' : rec.status }); }}
-                                        className={`w-11 h-11 rounded-xl border text-sm font-bold transition-all disabled:cursor-not-allowed ${ratingBtn(score === v, v)} ${score === v ? 'shadow-sm scale-105' : ''} ${!canRate && score !== v ? 'opacity-50' : ''}`}>{v}</button>
+                                        className={`w-11 h-11 rounded-xl border text-sm font-bold transition-all disabled:cursor-not-allowed ${ratingBtn(score === v, v)} ${score === v ? 'shadow-sm scale-105 badge-pop' : ''} ${!canRate && score !== v ? 'opacity-50' : ''}`}>{v}</button>
                                     ))}
                                   </div>
                                 </div>
@@ -550,7 +550,7 @@ export default function ClientFeedback() {
 
                   {caps.edit && !locked && (
                     <div className="sticky bottom-3 z-10">
-                      <div className="bg-white/95 backdrop-blur border border-slate-200 shadow-lg rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                      <div className="bar-up bg-white/95 backdrop-blur border border-slate-200 shadow-lg rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
                         <div className="text-sm text-slate-600 flex-1 min-w-[220px]">
                           {answered < qCount ? `Answer all ${qCount} questions to save or escalate.` : missing > 0 ? `${missing} low rating${missing === 1 ? '' : 's'} still need a reason.` : autoRule ? <span className="text-red-700 font-medium">Meets the auto-escalation rule: will be escalated when saved.</span> : 'Saving locks the ratings.'}
                           <div className="text-[11px] text-slate-400 mt-0.5">Auto-escalates at an average below 2.5, or any rating of 1.</div>
@@ -569,7 +569,7 @@ export default function ClientFeedback() {
         </div>
       )}
 
-      {toast && <div role="status" className="fixed bottom-6 right-6 z-50 bg-slate-900 text-white rounded-lg px-4 py-3 text-sm shadow-lg max-w-sm">{toast}</div>}
+      {toast && <div role="status" className="pop-scale fixed bottom-6 right-6 z-50 bg-slate-900 text-white rounded-lg px-4 py-3 text-sm shadow-lg max-w-sm">{toast}</div>}
     </div>
   );
 }

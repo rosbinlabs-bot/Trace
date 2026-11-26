@@ -150,3 +150,35 @@ body {
   .msg-in, .feed-swap, .panel-in, .badge-pop, .chip-in, .presence-pulse, .send-fly { animation: none !important; }
   .ping-row, .ping-row:hover { transition: none; transform: none; }
 }
+
+/* ===== Page motion: Gantt / Calendar / Client Portal / Clients' Feedback =====
+   Same philosophy as the Dashboard + Ping blocks above (pure CSS, fill-mode `backwards` so hover/inline
+   transforms win once an entrance finishes, --i = stagger order, everything off under reduced-motion). */
+@keyframes bar-grow { from { transform:scaleX(0); } to { transform:scaleX(1); } }
+@keyframes line-grow { from { transform:scaleY(0); } to { transform:scaleY(1); } }
+@keyframes diamond-pop {
+  0%   { opacity:0; transform:translate(-50%,-50%) rotate(45deg) scale(0); }
+  70%  { opacity:1; transform:translate(-50%,-50%) rotate(45deg) scale(1.4); }
+  100% { opacity:1; transform:translate(-50%,-50%) rotate(45deg) scale(1); }
+}
+@keyframes path-fade { from { opacity:0; } to { opacity:1; } }
+@keyframes cell-in { from { opacity:0; transform:scale(.9) translateY(6px); } to { opacity:1; transform:none; } }
+@keyframes bar-up { from { opacity:0; transform:translateY(26px); } to { opacity:1; transform:none; } }
+@keyframes ring-ping { 0%,100% { box-shadow:0 0 0 0 rgba(59,91,219,.5); } 50% { box-shadow:0 0 0 5px rgba(59,91,219,0); } }
+.bar-grow { transform-origin:left center; animation: bar-grow .85s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(300ms + min(var(--i,0), 14) * 50ms); }
+.gantt-wipe { animation: bar-wipe .75s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(150ms + min(var(--i,0), 14) * 60ms); }
+.row-slide { animation: dash-row .45s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(min(var(--i,0), 14) * 55ms); }
+.line-grow { transform-origin:top center; animation: line-grow .8s cubic-bezier(.22,1,.36,1) .35s backwards; }
+.diamond-pop { animation: diamond-pop .5s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(750ms + min(var(--i,0), 14) * 60ms); }
+.path-fade { animation: path-fade .6s ease-out backwards; animation-delay: calc(650ms + min(var(--i,0), 14) * 50ms); }
+.cell-in { animation: cell-in .38s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(min(var(--i,0), 41) * 11ms); }
+.bar-up { animation: bar-up .45s cubic-bezier(.22,1,.36,1) backwards; animation-delay: .25s; }
+.ring-ping { animation: ring-ping 2.2s ease-out infinite; }
+.lift { transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.lift:hover { transform: translateY(-2px); box-shadow: 0 6px 16px -8px rgba(15,23,42,.22); }
+.lift:active { transform: translateY(0) scale(.99); }
+@media (prefers-reduced-motion: reduce) {
+  .bar-grow, .gantt-wipe, .row-slide, .line-grow, .diamond-pop, .path-fade, .cell-in, .bar-up, .ring-ping { animation: none !important; }
+  .lift { transition: none; }
+  .lift:hover, .lift:active { transform: none; box-shadow: none; }
+}

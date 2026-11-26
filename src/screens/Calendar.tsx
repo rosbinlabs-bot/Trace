@@ -163,9 +163,9 @@ export default function Calendar(){
             {myTaggedProjects.map((p:any)=><option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
           <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
-            <button onClick={()=>shiftMonth(-1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white">‹</button>
-            <span className="px-2 text-sm font-medium text-slate-700 whitespace-nowrap">{monthLabel}</span>
-            <button onClick={()=>shiftMonth(1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white">›</button>
+            <button onClick={()=>shiftMonth(-1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white transition-transform active:scale-90">‹</button>
+            <span key={monthLabel} className="feed-swap px-2 text-sm font-medium text-slate-700 whitespace-nowrap">{monthLabel}</span>
+            <button onClick={()=>shiftMonth(1)} className="px-2 py-1 text-sm rounded-md text-slate-500 hover:bg-white transition-transform active:scale-90">›</button>
           </div>
           {canEditCalendar && <button onClick={()=>openAdd(S.TODAY_ISO)} className="bg-brand-500 hover:bg-brand-600 text-white text-sm px-3 py-1.5 rounded-lg whitespace-nowrap">+ Add Event</button>}
         </div>
@@ -177,9 +177,9 @@ export default function Calendar(){
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4 items-start">
-      <S.Card className="p-3 sm:p-5 flex-1 min-w-0 w-full">
+      <S.Card className="dash-rise p-3 sm:p-5 flex-1 min-w-0 w-full">
         <div className="grid grid-cols-7 gap-1 text-center text-xs text-slate-400 mb-1">{['Mon','Tue','Wed','Thu','Fri','Sat','Sun'].map(d=><div key={d}>{d}</div>)}</div>
-        <div className="grid grid-cols-7 gap-1">
+        <div key={`${year}-${month}`} className="grid grid-cols-7 gap-1">
           {Array.from({length: totalCells}).map((_,i)=>{
             const dayNum = i - startWeekday + 1;
             const inMonth = dayNum>=1 && dayNum<=daysInMonth;
@@ -198,10 +198,10 @@ export default function Calendar(){
             };
             const totalDayItems = dayCalEvents.length + dayDeadlines.length;
             return (
-              <div key={i} onClick={selectHandler}
-                className={`min-h-[44px] sm:min-h-[80px] rounded-lg border p-0.5 sm:p-1 text-xs align-top ${inMonth?'bg-white border-slate-200 cursor-pointer hover:border-brand-300':'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
+              <div key={i} onClick={selectHandler} style={{['--i' as any]: i}}
+                className={`cell-in min-h-[44px] sm:min-h-[80px] rounded-lg border p-0.5 sm:p-1 text-xs align-top ${inMonth?'bg-white border-slate-200 cursor-pointer hover:border-brand-300 lift':'bg-slate-50 border-transparent text-slate-300'} ${isToday?'ring-2 ring-brand-400':''} ${isSelected?'ring-2 ring-brand-500':''}`}>
                 {inMonth && <>
-                  <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}</div>
+                  <div className={isToday?'text-brand-600 font-semibold':'text-slate-400'}>{dayNum}{isToday && <span className="inline-block w-1.5 h-1.5 ml-1 rounded-full bg-brand-500 ring-ping align-middle"/>}</div>
 
                   {/* Phone-width (<sm): the grid is only ~46px per cell, nowhere near enough room for
                       readable chip text -- a day number plus a row of small colored dots is all this
@@ -212,7 +212,7 @@ export default function Calendar(){
                       {[...dayCalEvents, ...dayDeadlines].slice(0,4).map((it:any, idx:number)=>{
                         const pc = it.project ? colorForProject(it.project) : null;
                         const dotCls = pc ? pc.dot : (it.type ? (S.EVENT_TYPE_COLOR[it.type]||S.EVENT_TYPE_COLOR.Meeting).dot : 'bg-slate-400');
-                        return <span key={idx} className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`}/>;
+                        return <span key={idx} className={`badge-pop w-1.5 h-1.5 rounded-full shrink-0 ${dotCls}`}/>;
                       })}
                       {totalDayItems>4 && <span className="text-[8px] text-slate-400 leading-none">+{totalDayItems-4}</span>}
                     </div>
@@ -233,7 +233,7 @@ export default function Calendar(){
                       const cancelled=ev.status==='Cancelled'; const done=ev.status==='Completed'; return (
                       <div key={ev.id} onClick={e=>{e.stopPropagation(); canEditCalendar && openEdit(ev);}}
                         title={`${ev.type}: ${ev.title}${ev.project?` · ${ev.project}`:''} · ${ev.status}`}
-                        className={`rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${chipCls} ${cancelled?'opacity-50 line-through':''} ${canEditCalendar?'':'cursor-default'}`}>
+                        className={`chip-in rounded px-1 py-0.5 text-[10px] truncate flex items-center gap-1 ${chipCls} ${cancelled?'opacity-50 line-through':''} ${canEditCalendar?'':'cursor-default'}`}>
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${typeColor.dot}`}></span>
                         {done && '✓ '}{ev.title}
                       </div>
@@ -257,7 +257,7 @@ export default function Calendar(){
 
       {/* Project legend — every project I'm tagged to, each with its own distinct color (colorForProject
           above), matching its events/deadlines on the calendar to the left. */}
-      <S.Card className="p-4 w-full lg:w-44 shrink-0">
+      <S.Card style={{['--i' as any]: 1}} className="dash-rise p-4 w-full lg:w-44 shrink-0">
         <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-2">Project</div>
         {distinctProjectNames.length===0 ? (
           <div className="text-xs text-slate-400">You're not tagged to any projects yet.</div>
@@ -293,14 +293,14 @@ export default function Calendar(){
         {(!selectedDate || (selectedDayEvents.length===0 && selectedDayDeadlines.length===0)) ? (
           <div className="text-xs text-slate-400">{selectedDate ? `Nothing on this day${canEditCalendar ? ' — tap "+ Add event" to create one.' : '.'}` : ''}</div>
         ) : (
-          <div className="space-y-1.5">
+          <div key={selectedDate} className="space-y-1.5">
             {selectedDayEvents.map((ev:any)=>{
               const typeColor = S.EVENT_TYPE_COLOR[ev.type]||S.EVENT_TYPE_COLOR.Meeting;
               const projColor = ev.project ? colorForProject(ev.project) : null;
               const cancelled = ev.status==='Cancelled'; const done = ev.status==='Completed';
               return (
                 <div key={ev.id} onClick={()=>canEditCalendar && openEdit(ev)}
-                  className={`flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2 ${canEditCalendar?'cursor-pointer hover:border-brand-200':''} ${cancelled?'opacity-50':''}`}>
+                  className={`msg-in flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2 ${canEditCalendar?'cursor-pointer hover:border-brand-200':''} ${cancelled?'opacity-50':''}`}>
                   <span className={`w-2 h-2 rounded-full shrink-0 ${typeColor.dot}`}/>
                   <div className="flex-1 min-w-0">
                     <div className={`text-xs font-medium text-slate-700 ${cancelled?'line-through':''}`}>{done && '✓ '}{ev.title}</div>
@@ -313,7 +313,7 @@ export default function Calendar(){
             {selectedDayDeadlines.map((e:any, j:number)=>{
               const projColor = e.project ? colorForProject(e.project) : null;
               return (
-                <div key={j} className="flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2">
+                <div key={j} className="msg-in flex items-center gap-2.5 rounded-lg border border-slate-100 px-3 py-2">
                   <S.Icon name={e.kind==='phase'?'pin':e.kind==='milestone'?'phases':e.kind==='risk'?'risks':e.kind==='issue'?'issues':'subtasks'} className="w-3.5 h-3.5 shrink-0 text-slate-400"/>
                   <div className="flex-1 min-w-0">
                     <div className="text-xs font-medium text-slate-700">{e.label}</div>
@@ -328,8 +328,8 @@ export default function Calendar(){
       </S.Card>
 
       {editingEvent && (
-        <div className="fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={closeModal}>
-          <div className="bg-white rounded-xl max-w-md w-full p-6 my-8 sm:my-0 max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
+        <div className="pop-fade fixed inset-0 bg-black/30 flex items-start sm:items-center justify-center z-50 p-4 overflow-y-auto" onClick={closeModal}>
+          <div className="pop-scale bg-white rounded-xl max-w-md w-full p-6 my-8 sm:my-0 max-h-[85vh] overflow-y-auto" onClick={e=>e.stopPropagation()}>
             <div className="flex justify-between items-start mb-4">
               <h3 className="text-lg font-semibold">{editingEvent.id ? 'Edit Event' : 'New Event'}</h3>
               <button className="text-slate-400 hover:text-slate-600" onClick={closeModal}>✕</button>

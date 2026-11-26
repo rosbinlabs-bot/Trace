@@ -298,10 +298,10 @@ export default function Portal(){
 
       {/* Project Health — on track / delayed at a glance, plus exactly what's late if anything is,
           before the client has to go digging through the timeline for it. */}
-      <S.Card className={`p-4 mb-5 border-l-4 ${overallHealth==='red'?'border-l-red-400':overallHealth==='amber'?'border-l-amber-400':'border-l-emerald-400'}`}>
+      <S.Card style={{['--i' as any]: 0}} className={`dash-rise p-4 mb-5 border-l-4 ${overallHealth==='red'?'border-l-red-400':overallHealth==='amber'?'border-l-amber-400':'border-l-emerald-400'}`}>
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <div className="flex items-center gap-2">
-            <S.Icon name={overallHealth==='red'?'alert':overallHealth==='amber'?'clock':'checkcircle'} className={`w-5 h-5 ${overallHealth==='red'?'text-red-500':overallHealth==='amber'?'text-amber-500':'text-emerald-500'}`}/>
+            <S.Icon name={overallHealth==='red'?'alert':overallHealth==='amber'?'clock':'checkcircle'} className={`badge-pop ${overallHealth==='red'?'pulse-soft':''} w-5 h-5 ${overallHealth==='red'?'text-red-500':overallHealth==='amber'?'text-amber-500':'text-emerald-500'}`}/>
             <span className={`font-semibold ${overallHealth==='red'?'text-red-700':overallHealth==='amber'?'text-amber-700':'text-emerald-700'}`}>
               {overallHealth==='red' ? 'Delayed' : overallHealth==='amber' ? 'On Track — keep an eye on this' : 'On Track'}
             </span>
@@ -313,7 +313,7 @@ export default function Portal(){
           <div>
             <div className="text-xs text-slate-400 mb-1">Milestones Completed</div>
             <div className="flex items-center gap-2">
-              <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className="h-2 rounded-full bg-brand-500" style={{width:`${msPct}%`}}></div></div>
+              <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className="h-2 rounded-full bg-brand-500 bar-grow" style={{width:`${msPct}%`}}></div></div>
               <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{msDone}/{msOnly.length}</span>
             </div>
             <div className="text-[11px] text-slate-400 mt-1">{stDone}/{stOnly.length} sub tasks done</div>
@@ -322,7 +322,7 @@ export default function Portal(){
             <div className="text-xs text-slate-400 mb-1">Time Elapsed</div>
             {timeElapsedPct!==null ? (<>
               <div className="flex items-center gap-2">
-                <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full ${paceTrailing?'bg-amber-500':'bg-slate-400'}`} style={{width:`${timeElapsedPct}%`}}></div></div>
+                <div className="flex-1 h-2 bg-slate-100 rounded-full"><div className={`h-2 rounded-full bar-grow ${paceTrailing?'bg-amber-500':'bg-slate-400'}`} style={{width:`${timeElapsedPct}%`, ['--i' as any]: 1}}></div></div>
                 <span className="text-xs font-medium text-slate-600 whitespace-nowrap">{timeElapsedPct}%</span>
               </div>
               <div className={`text-[11px] mt-1 ${paceTrailing?'text-amber-600':'text-slate-400'}`}>{paceTrailing?'Work is trailing the schedule':'Pace looks healthy'}</div>
@@ -361,17 +361,17 @@ export default function Portal(){
       </S.Card>
 
       {/* Pending Your Approval — phase-wise, expandable */}
-      <S.Card className="p-4 mb-5">
+      <S.Card style={{['--i' as any]: 1}} className="dash-rise p-4 mb-5">
         <div className="flex items-center gap-2 mb-3">
           <span className="font-semibold text-slate-800">Pending Your Approval</span>
-          {pending.length>0 && <S.Badge cls="bg-violet-100 text-violet-700">{pending.length}</S.Badge>}
+          {pending.length>0 && <S.Badge cls="bg-violet-100 text-violet-700 badge-pop">{pending.length}</S.Badge>}
         </div>
         {pending.length===0 ? (
           <div className="text-sm text-slate-400">Nothing is waiting on you right now.</div>
         ) : (
           <div className="space-y-2">
-            {pending.map(entry=>{ const { level, ph, item } = entry; const open = expandedApproval===item.id; return (
-              <div key={item.id} className="border border-violet-200 rounded-lg overflow-hidden">
+            {pending.map((entry, ei)=>{ const { level, ph, item } = entry; const open = expandedApproval===item.id; return (
+              <div key={item.id} style={{['--i' as any]: ei}} className="msg-in border border-violet-200 rounded-lg overflow-hidden">
                 <button onClick={()=>setExpandedApproval(open?null:item.id)} className="w-full flex flex-wrap items-center gap-3 px-3 py-2.5 bg-violet-50/60 text-left">
                   <span className="text-slate-400 text-xs w-4">{open?'▼':'▶'}</span>
                   <S.Badge cls="bg-sky-100 text-sky-700">{ph.name}</S.Badge>
@@ -433,7 +433,7 @@ export default function Portal(){
       {/* Upcoming Events & Activities -- everything from the phase tree still due this calendar
           month (phase end dates, milestone & sub task deadlines), so a client can see what's
           coming up without reading the full Project Timeline below. */}
-      <S.Card className="p-4 mb-5">
+      <S.Card style={{['--i' as any]: 2}} className="dash-rise p-4 mb-5">
         <button onClick={()=>setUpcomingOpen(o=>!o)} className="w-full flex items-center justify-between gap-2 mb-0 text-left" aria-expanded={upcomingOpen}>
           <div className="flex items-center gap-2">
             <span className="text-slate-400 text-xs w-4">{upcomingOpen?'▼':'▶'}</span>
@@ -449,7 +449,7 @@ export default function Portal(){
             ) : (
               <div className="space-y-1.5">
                 {upcomingThisMonth.map((u,i)=>(
-                  <div key={i} className="flex items-center gap-3 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
+                  <div key={i} style={{['--i' as any]: i}} className="msg-in flex items-center gap-3 text-sm bg-slate-50 border border-slate-100 rounded-lg px-3 py-2">
                     <S.Badge cls="bg-sky-100 text-sky-700 shrink-0">{u.type}</S.Badge>
                     <div className="min-w-0 flex-1">
                       <div className="text-slate-700 truncate">{u.name}</div>
@@ -467,7 +467,7 @@ export default function Portal(){
 
       {/* Issues -- raise one, and see only the ones you raised or were tagged on (same visibility
           rule Issue Management enforces for staff, see screens/Issues.tsx) */}
-      <S.Card className="p-4 mb-5">
+      <S.Card style={{['--i' as any]: 3}} className="dash-rise p-4 mb-5">
         <div className="font-semibold text-slate-800 mb-3">Issues</div>
         {canAct ? (
           <div className="flex flex-wrap items-end gap-2 mb-4 bg-slate-50 border border-slate-200 rounded-lg p-3">
@@ -507,16 +507,16 @@ export default function Portal(){
       </S.Card>
 
       {/* Simple timeline: Phase -> Milestone -> Sub Task, deadline & status only */}
-      <S.Card className="p-4 mb-5">
+      <S.Card style={{['--i' as any]: 4}} className="dash-rise p-4 mb-5">
         <div className="font-semibold text-slate-800 mb-3">Project Timeline</div>
         {docErr && <div className="text-xs text-red-500 mb-2">{docErr}</div>}
         <div className="space-y-2">
-          {phases.map(ph=>{
+          {phases.map((ph, pix)=>{
             const phOpen = !!openPhase[ph.id]; const phStatus = S.derivedPhaseStatus(ph);
             const phDelayed = ph.end && ph.end<S.TODAY_ISO && phStatus!=='Completed' && !ph.onHold;
             const phDone = ph.milestones.filter(S.isApproved).length;
             return (
-            <div key={ph.id} className={`border rounded-lg overflow-hidden ${phDelayed?'border-red-200':'border-slate-200'}`}>
+            <div key={ph.id} style={{['--i' as any]: pix}} className={`msg-in border rounded-lg overflow-hidden ${phDelayed?'border-red-200':'border-slate-200'}`}>
               <button onClick={()=>togglePhase(ph.id)} className={`w-full flex flex-wrap items-center gap-3 px-3 py-2.5 text-left ${phDelayed?'bg-red-50/50':'bg-slate-50'}`}>
                 <span className="text-slate-400 text-xs w-4">{phOpen?'▼':'▶'}</span>
                 <span className="font-medium text-slate-800">{ph.name}</span>
@@ -592,7 +592,7 @@ export default function Portal(){
       {/* Recent Activity -- reuses the same clickable notification-row component the header bell
           uses, so an entry here jumps straight to what it's about too. Scoped to this project only
           (see projectNotifications above), so it never leaks another client's activity. */}
-      <S.Card className="p-4">
+      <S.Card style={{['--i' as any]: 5}} className="dash-rise p-4">
         <div className="flex items-center gap-2 mb-3">
           <span className="font-semibold text-slate-800">Recent Activity</span>
           {projectNotifications.length>0 && <S.Badge cls="bg-slate-100 text-slate-600">{projectNotifications.length}</S.Badge>}
