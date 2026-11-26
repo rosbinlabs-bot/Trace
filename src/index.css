@@ -96,3 +96,34 @@ body {
 .dark .border-blue-200 { border-color: rgba(59,130,246,.35); }
 .dark .border-violet-100 { border-color: rgba(139,92,246,.3); }
 .dark .border-violet-200 { border-color: rgba(139,92,246,.35); }
+
+/* ===== Executive Dashboard motion =====
+   One orchestrated page-load: cards rise in a staggered sequence (--i = order), table rows slide in,
+   progress bars wipe open, KPI numbers count up (CountUp in Dashboard.tsx), urgent markers breathe.
+   fill-mode is `backwards` (not `both`) so hover transforms still work once an entrance has finished.
+   Everything is switched off under prefers-reduced-motion. */
+@keyframes dash-rise { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:none; } }
+@keyframes dash-row { from { opacity:0; transform:translateX(-10px); } to { opacity:1; transform:none; } }
+@keyframes bar-wipe { from { clip-path:inset(0 100% 0 0); } to { clip-path:inset(0 0 0 0); } }
+@keyframes pop-fade { from { opacity:0; } to { opacity:1; } }
+@keyframes pop-scale { from { opacity:0; transform:translateY(10px) scale(.96); } to { opacity:1; transform:none; } }
+@keyframes pulse-soft { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+@keyframes sparkle-glow { 0%,100% { box-shadow:0 0 0 0 rgba(139,92,246,.35); } 50% { box-shadow:0 0 0 7px rgba(139,92,246,0); } }
+
+.dash-rise { animation: dash-rise .6s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(min(var(--i,0), 14) * 60ms); }
+.row-in { animation: dash-row .45s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(450ms + min(var(--i,0), 12) * 40ms); }
+.bar-wipe { animation: bar-wipe .9s cubic-bezier(.22,1,.36,1) backwards; animation-delay: .55s; }
+.bar-wipe-2 { animation-delay: .75s; }
+.pop-fade { animation: pop-fade .18s ease-out; }
+.pop-scale { animation: pop-scale .24s cubic-bezier(.22,1,.36,1); }
+.pulse-soft { animation: pulse-soft 1.8s ease-in-out infinite; }
+.sparkle-glow { animation: sparkle-glow 2.6s ease-out infinite; }
+.kpi-card { transition: transform .2s ease, box-shadow .2s ease, border-color .2s ease; }
+.kpi-card:hover { transform: translateY(-3px); box-shadow: 0 8px 20px -8px rgba(15,23,42,.18); }
+.kpi-card:active { transform: translateY(-1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dash-rise, .row-in, .bar-wipe, .pop-fade, .pop-scale, .pulse-soft, .sparkle-glow { animation: none !important; }
+  .kpi-card { transition: none; }
+  .kpi-card:hover, .kpi-card:active { transform: none; }
+}

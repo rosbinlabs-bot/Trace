@@ -2,6 +2,39 @@ import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as S from '../shared';
 
+// Stagger order for the page-load entrance (see .dash-rise in index.css).
+const ri = (i:number): React.CSSProperties => ({ ['--i' as any]: i });
+const prefersReducedMotion = () => typeof window!=='undefined' && !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+
+// Counts every number inside a KPI value up from 0 (or from its previous value when live data changes),
+// keeping the surrounding text ("62%", "3/1/2", "₹4.2L") intact. Static under reduced motion.
+function CountUp({ value, duration=1000 }:{ value:string|number; duration?:number }){
+  const text = String(value);
+  const target = (text.match(/\d+(?:\.\d+)?/g)||[]).map(Number);
+  const key = target.join('|');
+  const reduced = prefersReducedMotion();
+  const shownRef = React.useRef<number[]>(reduced ? target : target.map(()=>0));
+  const [shown,setShown] = React.useState<number[]>(shownRef.current);
+  React.useEffect(()=>{
+    if (reduced || !target.length) { shownRef.current = target; setShown(target); return; }
+    const base = shownRef.current.slice();
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now:number) => {
+      const k = Math.min(1, (now-t0)/duration);
+      const e = 1-Math.pow(1-k,3);
+      const next = target.map((v,i)=> (base[i]??0) + (v-(base[i]??0))*e);
+      shownRef.current = next; setShown(next);
+      if (k<1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return ()=>cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[key]);
+  let n = 0;
+  return <>{text.replace(/\d+(?:\.\d+)?/g, m=>{ const v = shown[n++]; return v===undefined ? m : v.toFixed((m.split('.')[1]||'').length); })}</>;
+}
+
 export default function Dashboard(){
   const navigate = useNavigate();
   const { tree } = React.useContext(S.PhaseDataContext);
@@ -254,7 +287,7 @@ export default function Dashboard(){
       {/* My Pending Approvals — personalized to the signed-in account, not the org-wide COO widgets
           further down. Only renders when something is actually waiting on this specific person. */}
       {myApprovals.length>0 && (
-        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-brand-400">
+        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-brand-400 dash-rise" style={ri(0)}>
           <div className="px-4 py-3 bg-brand-50/40 flex items-center gap-2 flex-wrap">
             <S.Icon name="approvals" className="w-4 h-4 text-brand-500"/>
             <span className="font-semibold text-slate-800">My Pending Approvals</span>
@@ -277,9 +310,9 @@ export default function Dashboard(){
           pointing at the item and where to act on it. Everything here is a real live query, not a
           separate tracked list. */}
       {(unassignedHighRisks.length>0 || oldestPending || overdueInvoices.length>0 || extNeeded.length>0 || changesPending.length>0) && (
-        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-red-400">
+        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-red-400 dash-rise" style={ri(1)}>
           <div className="px-4 py-3 bg-red-50/40 flex items-center gap-2">
-            <S.Icon name="alert" className="w-4 h-4 text-red-500"/>
+            <S.Icon name="alert" className="w-4 h-4 text-red-500 pulse-soft"/>
             <span className="font-semibold text-slate-800">Decisions Needed</span>
           </div>
           <div className="px-4 pb-3 divide-y divide-slate-100">
@@ -318,7 +351,7 @@ export default function Dashboard(){
       )}
 
       {dueBillings.length>0 && (
-        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-amber-400">
+        <S.Card className="mb-4 overflow-hidden border-l-4 border-l-amber-400 dash-rise" style={ri(2)}>
           <button onClick={()=>setBillingDuesOpen(o=>!o)} className="w-full flex items-center gap-2 px-4 py-3 text-left bg-amber-50/40">
             <span className="text-slate-400 text-xs w-3 shrink-0">{billingDuesOpen?'▼':'▶'}</span>
             <S.Icon name="financials" className="w-4 h-4 text-amber-500"/>
@@ -327,7 +360,7 @@ export default function Dashboard(){
             <span className="text-xs text-slate-400 ml-auto">Due within 7 days</span>
           </button>
           {billingDuesOpen && (
-            <div className="px-4 pb-4 space-y-1.5">
+            <div className="px-4 pb-4 space-y-1.5 pop-fade">
               {dueBillings.map((p:any)=>{ const due = S.nextBillingDueDate(p); const d = S.daysLeft(due!); return (
                 <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 text-sm bg-white rounded-lg px-3 py-2 border border-amber-100">
                   <div className="flex items-center gap-2 min-w-0">
@@ -347,10 +380,10 @@ export default function Dashboard(){
       )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        {kpis.map(k=>(
-          <S.Card key={k.label} className="p-4 cursor-pointer hover:border-brand-300 hover:shadow-sm transition-shadow" onClick={()=>setOpenKpi(k.label)}>
+        {kpis.map((k,idx)=>(
+          <S.Card key={k.label} className="p-4 cursor-pointer hover:border-brand-300 kpi-card dash-rise" style={ri(3+idx)} onClick={()=>setOpenKpi(k.label)}>
             <div className="text-xs text-slate-500">{k.label}</div>
-            <div className={`text-2xl font-bold mt-1 ${k.tone}`}>{k.value}</div>
+            <div className={`text-2xl font-bold mt-1 tabular-nums ${k.tone}`}><CountUp value={k.value}/></div>
             <div className="text-xs text-slate-400 mt-1">{k.sub}</div>
           </S.Card>
         ))}
@@ -359,8 +392,8 @@ export default function Dashboard(){
       {/* KPI detail pop-up — every tile above opens the live list of records behind its number, so
           a stat is never a dead end. Content is picked per label from data already computed above. */}
       {openKpi && (
-        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setOpenKpi(null)}>
-          <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4 pop-fade" onClick={()=>setOpenKpi(null)}>
+          <div className="bg-white rounded-xl max-w-lg w-full max-h-[80vh] overflow-auto p-6 pop-scale" onClick={e=>e.stopPropagation()}>
             <div className="flex justify-between items-center mb-3">
               <div className="font-semibold text-slate-800">{openKpi}</div>
               <button className="text-slate-400 hover:text-slate-600" onClick={()=>setOpenKpi(null)} title="Close" aria-label="Close">✕</button>
@@ -497,13 +530,13 @@ export default function Dashboard(){
 
       {/* Project health matrix — every active/on-hold project scannable in one table: who leads it,
           how healthy it is, how far along, how much is collected, and what's due next. */}
-      <S.Card className="p-4 mb-4 overflow-hidden">
+      <S.Card className="p-4 mb-4 overflow-hidden dash-rise" style={ri(11)}>
         <div className="font-semibold text-slate-800 mb-3">Project Health Matrix</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200"><tr><S.Th>Project</S.Th><S.Th>Project Manager</S.Th><S.Th>Pending Approvals</S.Th><S.Th>Health</S.Th><S.Th>Complete</S.Th><S.Th>Collected</S.Th><S.Th>Risk</S.Th><S.Th>Team</S.Th><S.Th>Next Milestone</S.Th></tr></thead>
             <tbody className="divide-y divide-slate-100">
-              {[...trackedProjects].sort((a:any,b:any)=>{ const order:any={red:0,amber:1,green:2}; return order[projectHealth(a)]-order[projectHealth(b)]; }).map((p:any)=>{
+              {[...trackedProjects].sort((a:any,b:any)=>{ const order:any={red:0,amber:1,green:2}; return order[projectHealth(a)]-order[projectHealth(b)]; }).map((p:any,rowIdx:number)=>{
                 const health = projectHealth(p);
                 const healthDot = health==='red' ? 'text-red-600' : health==='amber' ? 'text-amber-600' : 'text-emerald-600';
                 const target = S.projTargetRevenue(p), achieved = S.projInvoicedRevenue(p,invoices);
@@ -515,11 +548,11 @@ export default function Dashboard(){
                 const pendingCount = pendingReviewEntries.filter(e=>e.project===p.name).length;
                 const nmLabel = nm ? `${nm.name} — ${nm.deadline}${nmOverdue?' (overdue)':''}` : '—';
                 return (
-                  <tr key={p.id} className="hover:bg-slate-50 whitespace-nowrap">
+                  <tr key={p.id} className="hover:bg-slate-50 whitespace-nowrap row-in" style={ri(rowIdx)}>
                     <S.Td className="font-medium max-w-[160px] truncate" title={p.name}>{p.name}</S.Td>
                     <S.Td className="max-w-[130px] truncate" title={projectManagerFor(p)}>{projectManagerFor(p)}</S.Td>
                     <S.Td>{pendingCount>0 ? <span className="text-amber-600 font-medium">{pendingCount}</span> : <span className="text-slate-400">0</span>}</S.Td>
-                    <S.Td><span className={healthDot}>●</span> <span className="capitalize">{health}</span></S.Td>
+                    <S.Td><span className={healthDot+(health==='red'?' pulse-soft':'')}>●</span> <span className="capitalize">{health}</span></S.Td>
                     <S.Td>{projCompletionPct(p)}%</S.Td>
                     <S.Td>{collectedPct}%</S.Td>
                     <S.Td><span className={S.priorityColor(worstRisk==='None'?'':worstRisk)}>{worstRisk}</span></S.Td>
@@ -535,7 +568,7 @@ export default function Dashboard(){
       </S.Card>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
-        <S.Card className="p-4 overflow-hidden">
+        <S.Card className="p-4 overflow-hidden dash-rise" style={ri(12)}>
           <div className="font-semibold text-slate-800 mb-3">Milestones — Next 14 Days</div>
           <div className="space-y-1.5 max-h-72 overflow-auto">
             {[...allEntries].filter(e=>e.level==='Milestone' && !S.isApproved(e.item) && e.item.deadline && e.item.deadline<=S.addDays(S.TODAY_ISO,14))
@@ -551,7 +584,7 @@ export default function Dashboard(){
             {allEntries.filter(e=>e.level==='Milestone' && !S.isApproved(e.item) && e.item.deadline && e.item.deadline<=S.addDays(S.TODAY_ISO,14)).length===0 && <div className="text-sm text-slate-400">Nothing due in the next 14 days.</div>}
           </div>
         </S.Card>
-        <S.Card className="p-4">
+        <S.Card className="p-4 dash-rise" style={ri(13)}>
           <div className="font-semibold text-slate-800 mb-3">Approval Bottlenecks</div>
           <div className="space-y-1.5">
             {bottlenecks.map((b,i)=>(
@@ -566,7 +599,7 @@ export default function Dashboard(){
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 mb-4">
-        <S.Card className="p-4 lg:col-span-2">
+        <S.Card className="p-4 lg:col-span-2 dash-rise" style={ri(14)}>
           {(() => {
             const maxTarget = Math.max(1, ...projects.map(S.projTargetRevenue));
             const totalTarget = projects.reduce((a:number,p:any)=>a+S.projTargetRevenue(p),0);
@@ -584,8 +617,8 @@ export default function Dashboard(){
                     <div key={p.id} className="flex items-center gap-3">
                       <div className="w-36 text-sm text-slate-600 truncate" title={p.name}>{p.name}</div>
                       <div className="flex-1 h-5 bg-slate-100 rounded relative" title={`Target ${S.inLakh(target)}`} style={{width:'100%'}}>
-                        <div className="absolute inset-y-0 left-0 bg-slate-200 rounded" style={{width:Math.round(target/maxTarget*100)+'%'}}></div>
-                        <div className="absolute inset-y-0 left-0 bg-brand-500 rounded text-[10px] text-white px-2 flex items-center" style={{width:Math.round(achieved/maxTarget*100)+'%'}}>{S.inLakh(achieved)}</div>
+                        <div className="absolute inset-y-0 left-0 bg-slate-200 rounded bar-wipe" style={{width:Math.round(target/maxTarget*100)+'%'}}></div>
+                        <div className="absolute inset-y-0 left-0 bg-brand-500 rounded text-[10px] text-white px-2 flex items-center bar-wipe bar-wipe-2" style={{width:Math.round(achieved/maxTarget*100)+'%'}}>{S.inLakh(achieved)}</div>
                       </div>
                       <div className="w-28 text-right text-xs text-slate-400 whitespace-nowrap">/ {S.inLakh(target)} · {pct}%</div>
                     </div>
@@ -599,7 +632,7 @@ export default function Dashboard(){
             </>);
           })()}
         </S.Card>
-        <S.Card className="p-4">
+        <S.Card className="p-4 dash-rise" style={ri(15)}>
           <div className="font-semibold text-slate-800 mb-3">Collections Aging</div>
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className="bg-emerald-50 rounded-lg p-2"><div className="text-[11px] text-emerald-700">Not yet due</div><div className="text-sm font-bold text-emerald-700">{S.inLakh(aging.notDue)}</div></div>
@@ -620,20 +653,20 @@ export default function Dashboard(){
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 mb-4">
-        <S.Card className="p-4">
+        <S.Card className="p-4 dash-rise" style={ri(16)}>
           <div className="font-semibold text-slate-800 mb-3">Utilization by Department</div>
           <div className="space-y-2.5">
             {deptAvg.map(([d,pct]:any)=>(
               <div key={d} className="flex items-center gap-3">
                 <div className="w-28 text-sm text-slate-600 truncate">{d||'Unassigned'}</div>
-                <div className="flex-1 h-2.5 bg-slate-100 rounded-full"><div className={`h-2.5 rounded-full ${pct>90?'bg-red-500':pct>75?'bg-amber-500':'bg-emerald-500'}`} style={{width:Math.min(100,pct)+'%'}}></div></div>
+                <div className="flex-1 h-2.5 bg-slate-100 rounded-full"><div className={`h-2.5 rounded-full bar-wipe ${pct>90?'bg-red-500':pct>75?'bg-amber-500':'bg-emerald-500'}`} style={{width:Math.min(100,pct)+'%'}}></div></div>
                 <div className="w-10 text-right text-xs text-slate-500">{pct}%</div>
               </div>
             ))}
             {deptAvg.length===0 && <div className="text-sm text-slate-400">No team members yet.</div>}
           </div>
         </S.Card>
-        <S.Card className="p-4">
+        <S.Card className="p-4 dash-rise" style={ri(17)}>
           <div className="font-semibold text-slate-800 mb-3">Issue Register</div>
           {/* Issues raised by a client contact of the project, grouped per client (project). Open = not Resolved/Closed. */}
           <div className="flex justify-between text-[11px] uppercase tracking-wide text-slate-400 px-3 mb-1.5">
@@ -657,7 +690,7 @@ export default function Dashboard(){
       {/* Immediate project capacity — one open slot per Project Manager below their ideal load of 2
           concurrent projects, so a PM with zero projects (never tagged to any project team, and so
           otherwise invisible anywhere in this data) still shows up with open capacity. */}
-      <S.Card className="p-4 mb-4">
+      <S.Card className="p-4 mb-4 dash-rise" style={ri(18)}>
         <div className="font-semibold text-slate-800 mb-3">Immediate Project Capacity</div>
         <div className="grid grid-cols-3 gap-3 mb-3">
           <div className="bg-brand-50 rounded-lg p-3"><div className="text-xs text-brand-700">Slots now</div><div className="text-xl font-bold text-brand-800">{slotsNow}</div><div className="text-[11px] text-brand-600 mt-0.5">{projectManagers.length} PM(s), ideal load {IDEAL_PM_LOAD}/PM</div></div>
@@ -677,18 +710,18 @@ export default function Dashboard(){
       </S.Card>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Consultants Overloaded</div><div className="text-lg font-semibold text-slate-700">{overloaded} ≥ 100% util</div></S.Card>
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Open Issues</div><div className="text-lg font-semibold text-slate-700">{issuesBySeverity.High}H / {issuesBySeverity.Medium}M / {issuesBySeverity.Low}L</div></S.Card>
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Avg Resource Availability</div><div className="text-lg font-semibold text-slate-700">{avgAvail}%</div></S.Card>
-        <S.Card className="p-4 text-center"><div className="text-xs text-slate-500 mb-1">Implemented This Month</div><div className="text-lg font-semibold text-slate-700">{implementedThisMonth.length}</div></S.Card>
+        <S.Card className="p-4 text-center dash-rise" style={ri(19)}><div className="text-xs text-slate-500 mb-1">Consultants Overloaded</div><div className="text-lg font-semibold text-slate-700">{overloaded} ≥ 100% util</div></S.Card>
+        <S.Card className="p-4 text-center dash-rise" style={ri(20)}><div className="text-xs text-slate-500 mb-1">Open Issues</div><div className="text-lg font-semibold text-slate-700">{issuesBySeverity.High}H / {issuesBySeverity.Medium}M / {issuesBySeverity.Low}L</div></S.Card>
+        <S.Card className="p-4 text-center dash-rise" style={ri(21)}><div className="text-xs text-slate-500 mb-1">Avg Resource Availability</div><div className="text-lg font-semibold text-slate-700">{avgAvail}%</div></S.Card>
+        <S.Card className="p-4 text-center dash-rise" style={ri(22)}><div className="text-xs text-slate-500 mb-1">Implemented This Month</div><div className="text-lg font-semibold text-slate-700">{implementedThisMonth.length}</div></S.Card>
       </div>
 
       {/* AI Insights — a short, prioritized list of observations computed live from the same tree/
           governance/team data as everything above. Shared with the Reports page, plus a few extra
           observations specific to this page's panels. */}
-      <S.Card className="p-4 bg-gradient-to-br from-violet-50/60 to-white border border-violet-100">
+      <S.Card className="p-4 bg-gradient-to-br from-violet-50/60 to-white border border-violet-100 dash-rise" style={ri(23)}>
         <div className="flex items-center gap-2 mb-3">
-          <span className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center"><S.Icon name="sparkle" className="w-4 h-4 text-violet-500"/></span>
+          <span className="w-7 h-7 rounded-full bg-violet-100 flex items-center justify-center sparkle-glow"><S.Icon name="sparkle" className="w-4 h-4 text-violet-500"/></span>
           <span className="font-semibold text-slate-800">AI Insights</span>
           <span className="text-xs text-slate-400">Auto-generated from live delivery data</span>
         </div>
