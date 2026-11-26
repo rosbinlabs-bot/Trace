@@ -182,3 +182,20 @@ body {
   .lift { transition: none; }
   .lift:hover, .lift:active { transform: none; box-shadow: none; }
 }
+
+/* ===== Phase Management motion =====
+   Progress rings (conic-gradient driven by a registered --p so the fill animates on load AND whenever a
+   milestone gets approved), a sheen sweeping across in-flight progress bars, staggered rails/lists,
+   slide-swapped detail panel, popping status badges. Off under reduced-motion like the rest. */
+@property --p { syntax: '<number>'; inherits: false; initial-value: 0; }
+@keyframes ring-fill { from { --p: 0; } }
+@keyframes sheen { 0% { transform: translateX(-120%); } 55%, 100% { transform: translateX(120%); } }
+.prog-ring { background: conic-gradient(var(--c, #3b5bdb) calc(var(--p, 0) * 1%), #e2e8f0 0); transition: --p .9s cubic-bezier(.22,1,.36,1);
+  animation: ring-fill 1.1s cubic-bezier(.22,1,.36,1) backwards; animation-delay: calc(150ms + min(var(--i,0), 10) * 70ms); }
+.bar-sheen { position: relative; overflow: hidden; }
+.bar-sheen::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255,255,255,.65), transparent);
+  transform: translateX(-120%); animation: sheen 2.6s ease-in-out 1.4s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .prog-ring { animation: none !important; transition: none; }
+  .bar-sheen::after { animation: none !important; display: none; }
+}

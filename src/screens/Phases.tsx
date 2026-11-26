@@ -425,6 +425,11 @@ export default function Phases(){
     'Not Started':'bg-slate-100 text-slate-400','Yet to Start':'bg-slate-100 text-slate-400','In Progress':'bg-brand-100 text-brand-700','On Hold':'bg-amber-100 text-amber-700',
     'Completed':'bg-emerald-100 text-emerald-700','Implemented':'bg-violet-100 text-violet-700','Dropped':'bg-red-100 text-red-700','Terminated':'bg-red-100 text-red-700'
   }[s] || 'bg-slate-100 text-slate-400');
+  // Hex twin of dotColor, for the conic-gradient progress ring around each phase number (CSS can't read a Tailwind class name).
+  const ringHex = (s) => ({
+    'Not Started':'#cbd5e1','Yet to Start':'#cbd5e1','In Progress':'#3b5bdb','On Hold':'#fbbf24',
+    'Completed':'#10b981','Implemented':'#8b5cf6','Dropped':'#f87171','Terminated':'#ef4444'
+  }[s] || '#94a3b8');
 
   // "Needs your action" — only phase/milestone/sub task items the CURRENT actor can act on AND that
   // are actually urgent (overdue, or due within the next 2 days). Previously this listed every
@@ -503,11 +508,11 @@ export default function Phases(){
 
       {/* Needs your action — collapsed by default; click to expand the list. Replaces a stack of
           separate banners with one compact, on-demand summary. */}
-      <S.Card className={`mb-4 overflow-hidden ${myActionItems.length>0?'border-amber-200':''}`}>
+      <S.Card className={`dash-rise mb-4 overflow-hidden ${myActionItems.length>0?'border-amber-200':''}`}>
         <button onClick={()=>setActionOpen(o=>!o)} className={`w-full flex items-center gap-2 px-4 py-3 text-left ${myActionItems.length>0?'bg-amber-50/40':''}`}>
-          <span className="text-slate-400 text-xs w-3 shrink-0">{actionOpen?'▼':'▶'}</span>
+          <span className={`text-slate-400 text-xs w-3 shrink-0 inline-block transition-transform duration-200 ${actionOpen?'rotate-90':''}`}>▶</span>
           <span className="font-semibold text-slate-800">Needs your action</span>
-          {myActionItems.length>0 && <S.Badge cls="bg-amber-100 text-amber-700">{myActionItems.length}</S.Badge>}
+          {myActionItems.length>0 && <S.Badge key={myActionItems.length} cls="bg-amber-100 text-amber-700 badge-pop">{myActionItems.length}</S.Badge>}
           {!actionOpen && (
             <span className="text-xs text-slate-400 truncate ml-1">
               {myActionItems.length===0 ? '— nothing waiting on you' : `— ${myActionItems[0].label}${myActionItems.length>1?` +${myActionItems.length-1} more`:''}`}
@@ -515,13 +520,13 @@ export default function Phases(){
           )}
         </button>
         {actionOpen && (
-          <div className="px-4 pb-4">
+          <div className="px-4 pb-4 feed-swap">
             {myActionItems.length===0 ? (
               <div className="text-sm text-slate-400">{actor==='L1' ? 'Nothing needs your action — you can still re-open any approved item if needed.' : 'Nothing is waiting on you right now.'}</div>
             ) : (
               <div className="space-y-1.5">
                 {myActionItems.map((a,i)=>(
-                  <button key={i} onClick={()=>jumpTo(a)} className="w-full flex items-center justify-between gap-2 text-sm bg-white hover:bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-left">
+                  <button key={i} onClick={()=>jumpTo(a)} style={{['--i' as any]: i}} className="msg-in w-full flex items-center justify-between gap-2 text-sm bg-white hover:bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 text-left">
                     <span className="text-slate-700 truncate">{a.label}</span>
                     <span className="text-xs text-amber-600 whitespace-nowrap">Go →</span>
                   </button>
@@ -562,16 +567,16 @@ export default function Phases(){
       ) : (
       <div className="flex gap-3 overflow-x-auto pb-1" style={{alignItems:'flex-start'}}>
         {/* Phase rail — timeline of numbered phase cards; click a phase to browse its milestones */}
-        <S.Card className="p-2.5 w-64 shrink-0 space-y-1.5">
+        <S.Card className="dash-rise p-2.5 w-64 shrink-0 space-y-1.5">
           {phases.map((ph, pi)=>{
             const status = S.derivedPhaseStatus(ph);
             const msDone = ph.milestones.filter(S.isApproved).length;
             const pct = ph.milestones.length ? Math.round(msDone/ph.milestones.length*100) : 0;
             const isSel = selPhase && selPhase.id===ph.id;
             return (
-              <button key={ph.id} onClick={()=>selectPhase(ph)}
-                className={`w-full flex items-start gap-2.5 text-left px-2.5 py-2.5 rounded-xl border transition-colors ${isSel?'border-brand-300 bg-brand-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
-                <span className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-semibold shrink-0 ${ringColor(status)}`}>{pi+1}</span>
+              <button key={ph.id} onClick={()=>selectPhase(ph)} style={{['--i' as any]: pi}}
+                className={`row-slide lift w-full flex items-start gap-2.5 text-left px-2.5 py-2.5 rounded-xl border ${isSel?'border-brand-300 bg-brand-50':'border-slate-200 hover:border-slate-300 hover:bg-slate-50'}`}>
+                <span className="prog-ring w-9 h-9 rounded-full p-[3px] shrink-0" style={{['--p' as any]: pct, ['--c' as any]: ringHex(status), ['--i' as any]: pi}}><span className={`w-full h-full rounded-full flex items-center justify-center text-[11px] font-semibold ${ringColor(status)}`}>{pi+1}</span></span>
                 <span className="min-w-0 flex-1">
                   <span className="flex items-center gap-1.5">
                     <span className={`block text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}>{ph.name || 'Untitled phase'}</span>
@@ -580,7 +585,7 @@ export default function Phases(){
                   </span>
                   <span className="block text-[11px] text-slate-400 truncate mt-0.5">{msDone}/{ph.milestones.length} milestones done{ph.onHold?' · on hold':''}</span>
                   <span className="block h-1 bg-slate-100 rounded-full overflow-hidden mt-1.5">
-                    <span className={`block h-full ${dotColor(status)}`} style={{width:`${pct}%`}}></span>
+                    <span className={`block h-full bar-grow transition-[width] duration-700 ${pct>0&&pct<100?'bar-sheen':''} ${dotColor(status)}`} style={{width:`${pct}%`, ['--i' as any]: pi}}></span>
                   </span>
                 </span>
               </button>
@@ -589,7 +594,7 @@ export default function Phases(){
         </S.Card>
 
         {/* Milestone list — scoped to the selected phase only */}
-        <S.Card className="p-3 w-72 shrink-0">
+        <S.Card style={{['--i' as any]: 1}} className="dash-rise p-3 w-72 shrink-0">
           {selPhase ? (<>
             <div className="flex justify-between items-center mb-2.5 pb-2 border-b border-slate-100">
               <span className="text-xs font-semibold text-brand-700 uppercase tracking-wide truncate">{selPhase.name}</span>
@@ -601,21 +606,21 @@ export default function Phases(){
                 {!readOnly && <button onClick={()=>addMs(selPhase.id)} className="text-xs text-brand-600 hover:text-brand-700 whitespace-nowrap font-medium">+ Add</button>}
               </span>
             </div>
-            <div className="space-y-1.5">
-              {selPhase.milestones.map(ms=>{
+            <div key={selPhase.id} className="space-y-1.5">
+              {selPhase.milestones.map((ms, mi)=>{
                 const msOverdue = S.isOverdue(ms);
                 const subReady = S.subtasksReady(ms);
                 const isSel = selMs && selMs.id===ms.id;
                 const msStatus = ms.review || S.derivedMilestoneStatus(ms);
                 return (
-                  <button key={ms.id} onClick={()=>setSelectedMsId(ms.id)}
-                    className={`w-full text-left px-3 py-2.5 rounded-xl border-l-[3px] border ${isSel?'border-l-brand-500 border-brand-200 bg-brand-50':`border-l-transparent border-slate-200 hover:bg-slate-50`} ${msOverdue?'bg-red-50/40':''}`}>
+                  <button key={ms.id} onClick={()=>setSelectedMsId(ms.id)} style={{['--i' as any]: mi}}
+                    className={`row-slide lift w-full text-left px-3 py-2.5 rounded-xl border-l-[3px] border ${isSel?'border-l-brand-500 border-brand-200 bg-brand-50':`border-l-transparent border-slate-200 hover:bg-slate-50`} ${msOverdue?'bg-red-50/40':''}`}>
                     <div className={`flex items-center gap-1.5 text-sm truncate ${isSel?'font-medium text-brand-700':'text-slate-700'}`}><span className="truncate">{ms.name || 'Untitled milestone'}</span><StatusAlertIcon item={ms} onClear={()=>clearMsAlert(selPhase.id,ms.id)}/><RemarkAlertIcon item={ms} onClear={()=>clearMsRemarkAlert(selPhase.id,ms.id)}/></div>
                     <div className="flex items-center justify-between gap-2 mt-1">
                       <span className={`text-[11px] whitespace-nowrap inline-flex items-center gap-1 ${msOverdue?'text-red-500 font-medium':'text-slate-400'}`}>{msOverdue && <S.Icon name="alert" className="w-3 h-3"/>}{msOverdue?'overdue':`due ${ms.deadline||'—'}`}</span>
-                      <S.Badge cls={S.statusColor(msStatus)}>{msStatus}</S.Badge>
+                      <S.Badge key={msStatus} cls={`${S.statusColor(msStatus)} badge-pop`}>{msStatus}</S.Badge>
                     </div>
-                    {ms.subtasks.length>0 && <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5"><span className="flex-1 h-[3px] bg-slate-100 rounded-full overflow-hidden max-w-[60px]"><span className="block h-full bg-brand-400" style={{width:`${Math.round(ms.subtasks.filter(S.isApproved).length/ms.subtasks.length*100)}%`}}></span></span>{ms.subtasks.filter(S.isApproved).length}/{ms.subtasks.length}{!subReady?' · pending':''}</div>}
+                    {ms.subtasks.length>0 && <div className="text-[11px] text-slate-400 mt-1 flex items-center gap-1.5"><span className="flex-1 h-[3px] bg-slate-100 rounded-full overflow-hidden max-w-[60px]"><span className="block h-full bg-brand-400 bar-grow transition-[width] duration-700" style={{width:`${Math.round(ms.subtasks.filter(S.isApproved).length/ms.subtasks.length*100)}%`}}></span></span>{ms.subtasks.filter(S.isApproved).length}/{ms.subtasks.length}{!subReady?' · pending':''}</div>}
                   </button>
                 );
               })}
@@ -625,7 +630,7 @@ export default function Phases(){
         </S.Card>
 
         {/* Detail panel — shows the selected milestone, or the phase itself if none is selected */}
-        <S.Card className="p-4 flex-1 min-w-[300px]">
+        <S.Card key={selMs?selMs.id:(selPhase?selPhase.id:'none')} className="feed-swap p-4 flex-1 min-w-[300px]">
           {selMs ? (() => {
             const ms = selMs, ph = selPhase;
             const msLocked = S.isApproved(ms); const msDis = readOnly || (msLocked && actor!=='L1'); const msOverdue = S.isOverdue(ms); const subReady = S.subtasksReady(ms);
@@ -701,8 +706,8 @@ export default function Phases(){
                   {!readOnly && <button onClick={()=>addSt(ph.id,ms.id)} className="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add sub task</button>}
                 </div>
                 <div className={`rounded-xl border border-blue-100 ${S.LEVEL.subtask.tint} divide-y divide-blue-100`}>
-                  {(ms.subtasks||[]).map(s=>{ const stLock=S.isApproved(s); const genDis=readOnly||(stLock&&actor!=='L1'); const overdue=S.isOverdue(s); return (
-                    <div key={s.id} id={`st-${s.id}`} className={`flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
+                  {(ms.subtasks||[]).map((s, si)=>{ const stLock=S.isApproved(s); const genDis=readOnly||(stLock&&actor!=='L1'); const overdue=S.isOverdue(s); return (
+                    <div key={s.id} id={`st-${s.id}`} style={{['--i' as any]: si}} className={`msg-in flex flex-wrap items-center gap-2 px-2 py-2 ${overdue?'bg-red-50':''}`}>
                       {overdue && <span title="Deadline exceeded — not completed" className="text-red-500"><S.Icon name="alert" className="w-3.5 h-3.5"/></span>}
                       <StatusAlertIcon item={s} onClear={()=>clearStAlert(ph.id,ms.id,s.id)}/>
                       <RemarkAlertIcon item={s} onClear={()=>clearStRemarkAlert(ph.id,ms.id,s.id)}/>
@@ -847,8 +852,8 @@ export default function Phases(){
         const ph = detailPh, ms = detailMs, s = detailSt;
         const stLocked = S.isApproved(s); const stDis = readOnly || (stLocked && actor!=='L1'); const overdue = S.isOverdue(s);
         return (
-          <div className="fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setDetailStIds(null)}>
-            <div className="bg-white rounded-xl max-w-lg w-full max-h-[88vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
+          <div className="pop-fade fixed inset-0 bg-black/30 flex items-center justify-center z-50 p-4" onClick={()=>setDetailStIds(null)}>
+            <div className="pop-scale bg-white rounded-xl max-w-lg w-full max-h-[88vh] overflow-auto p-6" onClick={e=>e.stopPropagation()}>
               <div className="flex justify-between items-start mb-1">
                 <div className="text-[11px] text-slate-400">{ph.name} → {ms.name}</div>
                 <button className="text-slate-400 hover:text-slate-600" onClick={()=>setDetailStIds(null)}>✕</button>
