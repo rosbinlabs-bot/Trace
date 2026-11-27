@@ -3,6 +3,7 @@ import * as S from '../shared';
 import * as db from '../db';
 
 export default function Documents(){
+  const { logActivity } = React.useContext(S.ActivityLogContext);
   const { tree } = React.useContext(S.PhaseDataContext);
   // Every project's docs, not just the ones this account is personally tagged to (see
   // AllProjectsDataContext in shared.tsx) -- Document Management is a cross-project archive every
@@ -21,7 +22,7 @@ export default function Documents(){
   const openDoc = async (d:any) => {
     if(!d?.path) return;
     setErr(''); setDownloadingId(d.id||d.path);
-    try { window.open(await db.getPhaseDocDownloadUrl(d.path, d.n), '_blank', 'noopener,noreferrer'); }
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path, d.n), '_blank', 'noopener,noreferrer'); logActivity({ module: 'Documents', action: `Downloaded document "${d.n}"` }); }
     catch(e:any) { setErr(e.message || 'Could not generate a download link.'); }
     setDownloadingId(null);
   };
