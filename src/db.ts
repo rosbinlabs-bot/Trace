@@ -403,8 +403,12 @@ export async function fetchPreviousLoginAt(email: string): Promise<string | null
   if (error) throw error;
   return data && data[0] ? data[0].at : null;
 }
+// Log retention: the Login Log Book only ever shows the last LOG_RETENTION_DAYS days. Older rows are
+// also purged server-side (see supabase/migrations/20261127_log_retention.sql).
+export const LOG_RETENTION_DAYS = 10;
+const logCutoffIso = () => new Date(Date.now() - LOG_RETENTION_DAYS * 86400000).toISOString();
 export async function fetchLoginLogs(limit = 1000) {
-  const { data, error } = await supabase.from('login_logs').select('*').order('at', { ascending: false }).limit(limit);
+  const { data, error } = await supabase.from('login_logs').select('*').gte('at', logCutoffIso()).order('at', { ascending: false }).limit(limit);
   if (error) throw error;
   return (data || []).map(loginLogFromDb);
 }
@@ -413,7 +417,7 @@ export async function insertActivityLog(row: { id: string; userEmail: string; us
   if (error) throw error;
 }
 export async function fetchActivityLogs(limit = 1000) {
-  const { data, error } = await supabase.from('activity_logs').select('*').order('at', { ascending: false }).limit(limit);
+  const { data, error } = await supabase.from('activity_logs').select('*').gte('at', logCutoffIso()).order('at', { ascending: false }).limit(limit);
   if (error) throw error;
   return (data || []).map(activityLogFromDb);
 }
