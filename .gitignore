@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local scratch / sensitive
+_to_delete/
+supabase/.temp/
+supabase/.env.push
+.env*
+!.env.example

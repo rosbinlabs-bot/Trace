@@ -13,8 +13,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 
+// Only the app's own origin may call this from a browser. Set ALLOWED_ORIGIN (e.g. https://trace.rosbinlabs.com)
+// via `supabase secrets set ALLOWED_ORIGIN=...`.
 const cors = {
-  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || 'https://trace.rosbinlabs.com',
+  'Vary': 'Origin',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 const json = (body: unknown, status = 200) =>

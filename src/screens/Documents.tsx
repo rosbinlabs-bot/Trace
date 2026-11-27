@@ -21,7 +21,7 @@ export default function Documents(){
   const openDoc = async (d:any) => {
     if(!d?.path) return;
     setErr(''); setDownloadingId(d.id||d.path);
-    try { window.open(await db.getPhaseDocDownloadUrl(d.path, d.n), '_blank'); }
+    try { window.open(await db.getPhaseDocDownloadUrl(d.path, d.n), '_blank', 'noopener,noreferrer'); }
     catch(e:any) { setErr(e.message || 'Could not generate a download link.'); }
     setDownloadingId(null);
   };

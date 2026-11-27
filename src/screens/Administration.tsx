@@ -379,13 +379,14 @@ function FeedbackAccessCard({ canEdit }: { canEdit: boolean }){
   );
 }
 
-// Default password rule: first 4 letters of the person's name (lowercased, spaces/punctuation
-// stripped) + "1234" — e.g. "Abin C Pascal" -> "abin1234". Always exactly 8 characters, which meets
-// the 8-char minimum enforced below. Falls back to "user1234" when no name has been typed yet.
-const defaultPasswordFor = (name: string) => {
-  const letters = (name || '').replace(/[^a-zA-Z]/g, '').toLowerCase();
-  const base = letters.slice(0, 4) || 'user';
-  return base + '1234';
+// Temporary password: 14 random characters from a CSPRNG (no ambiguous 0/O/1/l/I). Shown to the admin
+// once, never stored in admin_data -- the account is forced to set its own password on first sign-in.
+// The `name` argument is kept only so existing call sites don't change; it is deliberately ignored.
+const defaultPasswordFor = (_name?: string) => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  const buf = new Uint32Array(14);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => chars[n % chars.length]).join('');
 };
 
 function UsersPanel(){
@@ -433,8 +434,8 @@ function UsersPanel(){
   const [busy, setBusy] = useState<string|null>(null); // user id currently mid-action
   const [err, setErr] = useState('');
 
-  const setDraftName = (name: string) => setDraft(d => ({ ...d, name, password: pwTouched ? d.password : defaultPasswordFor(name) }));
-  const setClientDraftName = (name: string) => setClientDraft(d => ({ ...d, name, password: clientPwTouched ? d.password : defaultPasswordFor(name) }));
+  const setDraftName = (name: string) => setDraft(d => ({ ...d, name }));
+  const setClientDraftName = (name: string) => setClientDraft(d => ({ ...d, name }));
 
   const addUser = async () => {
     if(!canEditUsers) return;
@@ -445,7 +446,7 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, draft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', dept:draft.dept||'', capacity:draft.capacity||'40h/wk', status:'Active', joined: S.TODAY_ISO, password: draft.password }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, designation:draft.designation, level:draft.level||S.designationHierarchyLevel(draft.designation, admin)||'L9', dept:draft.dept||'', capacity:draft.capacity||'40h/wk', status:'Active', joined: S.TODAY_ISO}]);
       logUser(`Added teammate "${name}" (${email}, ${draft.designation})`);
       setDraft({ name:'', email:'', designation:'Associate', level:S.DEFAULT_HIERARCHY_LEVEL['Associate'], dept:'', capacity:'40h/wk', password: defaultPasswordFor('') }); setPwTouched(false); setLevelTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
@@ -464,7 +465,7 @@ function UsersPanel(){
     setBusy('adding');
     try {
       await db.createUserAccount(email, clientDraft.password, name);
-      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO, password: clientDraft.password }]);
+      patchAdmin('users', (us:any[]) => [...us, { id:S.uid('USR'), name, email, type:'Client', project:clientDraft.projectId, status:'Active', joined: S.TODAY_ISO}]);
       logUser(`Added client login "${name}" (${email})`);
       setClientDraft({ name:'', email:'', projectId:'', password: defaultPasswordFor('') }); setClientPwTouched(false); setAddMode(null);
     } catch(e:any) { setErr(e.message || 'Could not create the login.'); }
@@ -508,8 +509,7 @@ function UsersPanel(){
     setErr(''); setBusy(resetFor.user.id);
     try {
       await db.resetUserPassword(resetFor.user.email, resetFor.password);
-      patchAdmin('users', (us:any[]) => us.map(x=>x.id===resetFor.user.id?{...x,password:resetFor.password}:x));
-      logUser(`Reset password for "${resetFor.user.name}"`);
+            logUser(`Reset password for "${resetFor.user.name}"`);
       setResetDone({ name: resetFor.user.name, email: resetFor.user.email, password: resetFor.password });
       setResetFor(null);
     }
@@ -591,7 +591,7 @@ function UsersPanel(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
                 <input autoComplete="new-password" value={draft.password} onChange={e=>{setPwTouched(true); setDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-brand-500"/>
-                <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+                <button type="button" title="Generate a new random password" aria-label="Reset password to default" onClick={()=>{setPwTouched(false); setDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addUser} disabled={busy==='adding'} className="flex-1 text-xs bg-brand-500 hover:bg-brand-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
@@ -621,7 +621,7 @@ function UsersPanel(){
             <div className="flex flex-col gap-1"><label className="text-[10px] text-slate-400">Temporary Password</label>
               <div className="flex gap-1">
                 <input autoComplete="new-password" value={clientDraft.password} onChange={e=>{setClientPwTouched(true); setClientDraft(d=>({...d,password:e.target.value}));}} placeholder="8+ characters" className="border border-slate-200 rounded-lg px-2 py-1.5 text-sm flex-1 min-w-0 focus:outline-none focus:ring-2 focus:ring-violet-500"/>
-                <button type="button" title="Reset to default (first 4 letters of name + 1234)" aria-label="Reset password to default" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
+                <button type="button" title="Generate a new random password" aria-label="Reset password to default" onClick={()=>{setClientPwTouched(false); setClientDraft(d=>({...d,password:defaultPasswordFor(d.name)}));}} className="text-slate-400 hover:text-violet-600 hover:bg-violet-50 rounded-lg px-2"><S.Icon name="refresh" className="w-3.5 h-3.5"/></button>
               </div></div>
             <div className="flex gap-1.5">
               <button onClick={addClient} disabled={busy==='adding'} className="flex-1 text-xs bg-violet-500 hover:bg-violet-600 disabled:opacity-50 text-white rounded-lg px-3 py-2">{busy==='adding'?'Adding…':'Add'}</button>
@@ -734,7 +734,7 @@ function UsersPanel(){
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Department</S.Th><S.Th>Weekly Capacity</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Designation</S.Th><S.Th>Permission Level</S.Th><S.Th>Hierarchy Level</S.Th><S.Th>Department</S.Th><S.Th>Weekly Capacity</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {teamUsers.map((u:any)=>{
@@ -742,7 +742,6 @@ function UsersPanel(){
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
                     {NameEmailCells({u})}
-                    <S.Td className="font-mono text-xs">{canEditUsers ? (u.password || '—') : '—'}</S.Td>
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.designation} onChange={e=>setDesignation(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-brand-500">
@@ -807,7 +806,7 @@ function UsersPanel(){
             <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Password</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
+                <tr><S.Th>Name</S.Th><S.Th>Email</S.Th><S.Th>Project</S.Th><S.Th>Access</S.Th><S.Th>Status</S.Th><S.Th>Joined</S.Th><S.Th>Actions</S.Th></tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {clientUsers.map((u:any)=>{
@@ -815,7 +814,6 @@ function UsersPanel(){
                   return (
                   <tr key={u.id} className={rowCls(u, isEditing)}>
                     {NameEmailCells({u})}
-                    <S.Td className="font-mono text-xs">{canEditUsers ? (u.password || '—') : '—'}</S.Td>
                     <S.Td>
                       {canEditUsers ? (
                         <select value={u.project||''} onChange={e=>setClientProject(u.id, e.target.value)} className="border border-slate-200 rounded-lg px-1.5 py-1 text-xs max-w-[9rem] focus:outline-none focus:ring-2 focus:ring-violet-500">

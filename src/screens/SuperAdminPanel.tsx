@@ -8,9 +8,9 @@ import * as db from '../db';
 // its entire world: see every tenant, spin up new ones, and hand each one an owner login.
 const genTempPassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
-  let out = '';
-  for (let i=0;i<12;i++) out += chars[Math.floor(Math.random()*chars.length)];
-  return out;
+  const buf = new Uint32Array(14);
+  crypto.getRandomValues(buf);
+  return Array.from(buf, (n) => chars[n % chars.length]).join('');
 };
 
 export default function SuperAdminPanel({ email, onSignOut }: { email: string; onSignOut: () => void }) {
